@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 프로젝트 문서
+    url: https://github.com/mulino-coreano/mulino-coreano-erp/tree/main/docs
+    about: 이슈 생성 전 프로젝트 문서를 먼저 확인해 주세요.
