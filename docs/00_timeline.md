@@ -1,20 +1,12 @@
 # MULINO COREANO — 프로젝트 진행 타임라인
 
 > Mulino Bianco 한국 진출 가상 ERP + AI 에이전트 시스템
-> SAP STAR 인턴 채용(개발 트랙) 포트폴리오 / 2027 사이클
 
 ---
 
-## 전체 로드맵 한눈에 보기
-
-```
-[기획]──[ERD]──[DDL]──[문서/Git]──[L0]──[L1]──[L2]──[L3]──[발표준비]
-  ✅      ✅     🔄        ⏳        ⏳     ⏳     ⏳     ⏳       ⏳
-```
-
 ---
 
-## Phase 0 — 기획 및 방향 설정  ✅ 완료
+## Phase 0 — 기획 및 방향 설정  
 
 | 항목 | 결정 사항 |
 |---|---|
@@ -27,7 +19,7 @@
 
 ---
 
-## Phase 1 — 데이터 모델 설계 (ERD)  ✅ 완료
+## Phase 1 — 데이터 모델 설계 (ERD)  
 
 | 버전 | 내용 |
 |---|---|
@@ -42,16 +34,16 @@
 
 ---
 
-## Phase 2 — DDL 작성 (PostgreSQL)  🔄 진행 중  ← 현재 위치
+## Phase 2 — DDL 작성 (PostgreSQL)  
 
-| 단계 | 상태 |
-|---|---|
-| ENUM 타입 8종 정의 | 작성 가이드 완료 |
-| 테이블 24개 (FK 의존성 순서) | 작성 가이드 완료 |
-| 인덱스 (에이전트 조회 패턴 반영) | 작성 가이드 완료 |
-| 제약(UNIQUE/CHECK) 체크리스트 | 작성 가이드 완료 |
-| seed 데이터 (allergens 22종) | 작성 가이드 완료 |
-| 본인 직접 작성 + pgAdmin/psql 실행 | 진행 중 |
+| 단계 |
+|---|
+| ENUM 타입 8종 정의 | 
+| 테이블 24개 (FK 의존성 순서) |
+| 인덱스 (에이전트 조회 패턴 반영) | 
+| 제약(UNIQUE/CHECK) 체크리스트 | 
+| seed 데이터 (allergens 22종) | 
+| pgAdmin/psql 실행 | 
 
 **작업 환경**: PostgreSQL (DB명 mulino_coreano) + pgAdmin / psql
 
@@ -67,7 +59,7 @@ sql/
 
 ---
 
-## Phase 3 — 문서화 및 Git 레포 구축  ⏳ 예정
+## Phase 3 — 문서화 및 Git 레포 구축  
 
 ```
 mulino-coreano-erp/
@@ -90,7 +82,7 @@ mulino-coreano-erp/
 
 ---
 
-## Phase 4 — L0: Spring Boot + MCP Server  ⏳ 예정
+## Phase 4 — L0: Spring Boot + MCP Server  
 
 | 작업 | 내용 |
 |---|---|
@@ -101,7 +93,7 @@ mulino-coreano-erp/
 
 ---
 
-## Phase 5 — L1: Governance Engine  ⏳ 예정
+## Phase 5 — L1: Governance Engine  
 
 | 작업 | 내용 |
 |---|---|
@@ -111,7 +103,7 @@ mulino-coreano-erp/
 
 ---
 
-## Phase 6 — L2: Multi-Agent  ⏳ 예정
+## Phase 6 — L2: Multi-Agent  
 
 | 에이전트 | 핵심 시나리오 |
 |---|---|
@@ -124,7 +116,7 @@ mulino-coreano-erp/
 
 ---
 
-## Phase 7 — L3: 자연어 대시보드  ⏳ 예정
+## Phase 7 — L3: 자연어 대시보드  
 
 | 작업 | 내용 |
 |---|---|
@@ -134,7 +126,7 @@ mulino-coreano-erp/
 
 ---
 
-## Phase 8 — 발표 / 포트폴리오 준비  ⏳ 예정
+## Phase 8 — 발표 / 포트폴리오 준비  
 
 | 산출물 | 내용 |
 |---|---|
@@ -142,10 +134,6 @@ mulino-coreano-erp/
 | SAP 모듈 매핑표 | 설계 테이블 ↔ SAP MM/WM/PP/SD/QM/GRC |
 | 데모 시나리오 | 에이전트 자동화 실제 시연 흐름 |
 | 발표 자료 | 분석 → 설계 → 구현 사고 과정 |
-
----
-
-## 현재 우선순위
 
 ```
 지금       DDL 직접 작성 + PostgreSQL 실행 검증
