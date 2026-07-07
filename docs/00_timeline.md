@@ -53,7 +53,8 @@ database/
 │   ├── 01_master_tables.sql
 │   ├── 02_relation_tables.sql
 │   ├── 03_transaction_tables.sql
-│   └── 04_indexes.sql
+│   ├── 04_indexes.sql
+│   └── 05_foreign_keys.sql
 └── seed/
     └── allergens.sql
 ```
