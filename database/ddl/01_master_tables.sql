@@ -48,12 +48,12 @@ CREATE TABLE customers(
     contact_email VARCHAR(100),
     contact_phone VARCHAR(20),
     address VARCHAR(255),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE allergens(
     allergens_id SERIAL PRIMARY KEY,
-    name VARCHAR(50) NOT NULL,
+    name VARCHAR(50) NOT NULL
 );
 
 CREATE TABLE warehouses(
