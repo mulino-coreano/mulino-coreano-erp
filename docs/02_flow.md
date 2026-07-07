@@ -46,7 +46,7 @@
 │  발주 헤더 생성 [purchase_orders]                                    │
 │  ├── supplier_id / order_date / expected_delivery_date             │
 │  ├── status : DRAFT → ORDERED → PARTIAL → COMPLETED               │
-│  ├── created_by → user.id                                          │
+│  ├── created_by → users.user_id                                          │
 │  ├──  전자세금계산서 [tax_invoice_number / tax_invoice_date]      │
 │  │     └── 한국 B2B 의무 발행 (국세청 전자세금계산서)               │
 │  │                                                                  │
@@ -122,7 +122,7 @@
 │                                                                     │
 │  생산 공정 기록                                                      │
 │  ├── 공정 유형 ENUM (혼합 / 가열 / 냉각 / 포장)                    │
-│  ├── operator_id → user.id (작업자 추적)                           │
+│  ├── operator_id → users.user_id (작업자 추적)                     │
 │  ├── warehouse_id / start_time / end_time                          │
 │  ├──  가공 온도 기록 (temperature 컬럼)                           │
 │  │                                                                  │
@@ -160,7 +160,7 @@
 │  ├── customer_id → customers.id                                    │
 │  ├── order_date / expected_delivery_date                           │
 │  ├── status : PENDING → CONFIRMED → SHIPPED → CANCELLED           │
-│  ├── created_by → user.id                                          │
+│  ├── created_by → users.user_id                                          │
 │  └──  전자세금계산서 [tax_invoice_number / tax_invoice_date]      │
 │                                                                     │
 │  수주 상세 등록 [order_items]                                        │
@@ -287,7 +287,7 @@
   orders / order_items / outbound      →  SAP SD  수주오더 (VA01)
   customers                            →  SAP SD  거래처 마스터
   recalls                              →  SAP QM  품질알림
-  user                                 →  SAP HCM 사용자 관리
+  users                                →  SAP HCM 사용자 관리
   Governance Engine                    →  SAP GRC 거버넌스/컴플라이언스
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
