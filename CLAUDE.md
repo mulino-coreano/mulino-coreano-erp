@@ -69,3 +69,17 @@ suppliers → purchase_orders → purchase_order_items → inbound
 - 이슈/PR 라벨 체계는 `docs/06_labels.md` (카테고리 + `L0-db`~`L3-dashboard` 레이어 라벨)
 - 시크릿(`application-local.yml`, `.env`) 커밋 금지 — `.gitignore`에 이미 정의됨
 - 스키마 변경 시 `docs/02_flow.md`와 ERD 일치를 유지할 것 (Phase 1에서 "흐름도-ERD 100% 일치"가 검수 기준이었음)
+
+## 이슈/PR 템플릿 (필수)
+
+템플릿은 `.github/`에 정의되어 있음. Claude Code는 이슈/PR 생성 시 반드시 해당 템플릿의 구조를 그대로 따를 것 — 임의로 섹션을 생략하거나 자체 포맷을 만들지 말 것.
+
+**PR**: `.github/pull_request_template.md` — `작업 내용` / `변경 사항` / `체크리스트` / `리뷰 요청 사항` 4섹션. 체크리스트 3항(로컬 실행 확인, 시크릿 파일 커밋 안 함, 관련 문서 업데이트)은 PR 본문에 반드시 포함.
+
+**이슈**: 작업 성격에 따라 아래 중 하나 선택 (title 접두어와 라벨 자동 부착).
+- `bug.md` — `[BUG]` · `bug` — 버그 리포트 (버그 내용 / 재현 방법 / 예상·실제 동작 / 환경)
+- `feature.md` — `[FEAT]` · `feature` — 기능 개발 (작업 개요 / 레이어 체크박스 L0–L3 / 상세 작업 / 완료 조건 / 참고 자료)
+- `qc.md` — `[QC]` · `qc` — QC/테스트 (검증 대상 / 항목 / 방법 / 결과 Pass·Fail)
+- `research.md` — `[RESEARCH]` · `research` — 사전조사 (조사 목적 / 항목 / 결과 + 출처 / 설계 반영 사항 / 출처)
+
+이슈 생성 전 `config.yml` contact link(프로젝트 문서)를 먼저 확인. 빈 이슈(blank issue)는 허용되지만 템플릿이 존재하는 유형은 템플릿 사용이 기본.
