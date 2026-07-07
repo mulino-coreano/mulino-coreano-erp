@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Italian food brand) enters the Korean market. A SAP consulting portfolio project that localizes a EU-standard ERP to Korean food regulations (Food Traceability Act, 22 allergens, electronic tax invoices, etc.).
 
-**Current status**: Phase 3 complete (planning / ERD / DDL / documentation). `backend/`, `governance/`, `agents/`, `dashboard/` are empty scaffolds — no runnable code yet. All documentation is written in Korean.
+**Current status**: Phase 3 complete (planning / ERD / DDL / documentation). `backend/`, `governance/`, `dashboard/` are empty scaffolds; `agents/` holds layout and CLAUDE.md guidance only — no runnable code yet. All documentation is written in Korean.
 
 ## Commands
 
@@ -23,15 +23,15 @@ psql -d mulino_coreano -f database/ddl/04_indexes.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```
 
-**Planned stack** (new code follows this baseline): Backend is Spring Boot 3.x + Java 17 + Gradle, tools exposed via MCP Server, agents are Multi-Agent + A2A, dashboard is React.
+**Planned stack** (new code follows this baseline): Backend is Spring Boot 3.x + Java 17 + Gradle exposing a REST API. Agents are Claude sessions (Claude Code / Cowork) driven by per-role skills; their only backend access is a single Zig CLI (`mulino`) that calls the REST API. Dashboard is React. There is no MCP server and no A2A protocol — Claude's native subagent dispatch replaces A2A, and the CLI is the sole tool surface.
 
 ## Architecture (4 layers = directory mapping)
 
 | Layer | Directory | Role |
 |---|---|---|
-| L0 | `database/`, `backend/` | PostgreSQL 24 tables + Spring Boot + MCP Server (expose ERP features as tools) |
-| L1 | `governance/` | Intercept action-bearing tool calls → approve / block / hold + audit log. **Reads pass through; only writes are gated** |
-| L2 | `agents/` | Orchestrator / Supply Chain / Procurement / QC (A2A collaboration) |
+| L0 | `database/`, `backend/` | PostgreSQL 24 tables + Spring Boot REST API (single entry point for CLI and dashboard) |
+| L1 | `governance/` | Intercept action-bearing API calls → approve / block / hold + audit log. **Reads pass through; only writes are gated** |
+| L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude is the agent runtime; the orchestrator dispatches role subagents. See `agents/CLAUDE.md` |
 | L3 | `dashboard/` | Natural-language query → Intent Parsing → chart generation |
 
 ### Governance approval matrix (follow when implementing L1)

@@ -50,8 +50,8 @@
 
   ┌────────────────────────────────────────────────────────────────────┐
   │  L0 : ERP 데이터 + 백엔드                                           │
-  │       PostgreSQL (24개 테이블) + Spring Boot + MCP Server           │
-  │       → ERP의 모든 기능을 "Tool" 형태로 외부에 노출                 │
+  │       PostgreSQL (24개 테이블) + Spring Boot REST API               │
+  │       → ERP의 모든 기능을 REST API로 노출 (CLI·대시보드 공용)       │
   └───────────────────────────────┬────────────────────────────────────┘
                                   │
   ┌───────────────────────────────▼────────────────────────────────────┐
@@ -63,12 +63,12 @@
   └───────────────────────────────┬────────────────────────────────────┘
                                   │
   ┌───────────────────────────────▼────────────────────────────────────┐
-  │  L2 : Multi-Agent (다중 AI 에이전트)                                │
-  │       ├─ Orchestrator  : 요청 분석 후 적합한 에이전트로 라우팅      │
+  │  L2 : Claude 에이전트 + 스킬 + Zig CLI                              │
+  │       ├─ Orchestrator  : 메인 세션, 역할 서브에이전트 디스패치      │
   │       ├─ Supply Chain  : 재고/유통기한/LOT 추적                     │
   │       ├─ Procurement   : 발주/납품지연/인증서만료                   │
   │       └─ QC            : 알레르겐/온도이탈/리콜                      │
-  │       → 에이전트끼리 A2A 프로토콜로 협업                            │
+  │       → 역할 정의는 스킬(SKILL.md), 백엔드 접근은 Zig CLI(mulino)   │
   └───────────────────────────────┬────────────────────────────────────┘
                                   │
   ┌───────────────────────────────▼────────────────────────────────────┐
@@ -166,8 +166,8 @@
 
   DB          : PostgreSQL (DB명: mulino_coreano)
   백엔드      : Spring Boot 3.x + Java 17 + Gradle
-  Tool 노출   : MCP (Model Context Protocol) Server
-  에이전트    : Multi-Agent + A2A 프로토콜
+  Tool 노출   : Zig CLI `mulino` (백엔드 REST API 클라이언트)
+  에이전트    : Claude (Claude Code/Cowork) + 역할별 스킬
   프론트      : React (대시보드)
   협업        : GitHub (모노레포)
 
@@ -180,7 +180,7 @@
   Phase 1  ERD 설계 (24개 테이블)        
   Phase 2  PostgreSQL DDL 작성         
   Phase 3  Git 레포 + 문서화             
-  Phase 4  L0 : Spring Boot + MCP       
+  Phase 4  L0 : Spring Boot REST API       
   Phase 5  L1 : Governance Engine       
-  Phase 6  L2 : Multi-Agent             
+  Phase 6  L2 : Zig CLI + 스킬             
   Phase 7  L3 : 대시보드                 
