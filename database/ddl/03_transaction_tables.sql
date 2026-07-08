@@ -3,9 +3,9 @@ CREATE TABLE purchase_orders (
     supplier_id INT NOT NULL,
     created_by INT NOT NULL,
     order_date DATE NOT NULL,
-    expected_date DATE NULL,
+    expected_delivery_date DATE NULL,
     status purchase_order_status NOT NULL DEFAULT 'DRAFT',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     tax_invoice_number VARCHAR(50) NULL,
     tax_invoice_date DATE NULL
 );
@@ -31,11 +31,11 @@ CREATE TABLE inbound(
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE inbound_temperatures_logs(
+CREATE TABLE inbound_temperature_logs(
     inbound_temperature_id SERIAL PRIMARY KEY,
     inbound_id INT NOT NULL,
     temperature DECIMAL(5, 2) NOT NULL,
-    recorded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    recorded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     location_note VARCHAR(100) NULL
 );
 
@@ -61,7 +61,7 @@ CREATE TABLE recalls(
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE warehouse_temperatures_logs(
+CREATE TABLE warehouse_temperature_logs(
     warehouse_temperature_id SERIAL PRIMARY KEY,
     warehouse_id INT NOT NULL,
     temperature DECIMAL(5, 2) NOT NULL,
@@ -91,7 +91,7 @@ CREATE TABLE orders(
     created_by INT NOT NULL,
     order_date DATE NOT NULL,
     expected_delivery_date DATE NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     status order_status NOT NULL DEFAULT 'PENDING',
     tax_invoice_number VARCHAR(50) NULL,
     tax_invoice_date DATE NULL

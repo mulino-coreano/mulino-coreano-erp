@@ -38,21 +38,24 @@
 |---|
 | ENUM 타입 8종 정의 | 
 | 테이블 24개 (FK 의존성 순서) |
-| 인덱스 (에이전트 조회 패턴 반영) | 
+| 인덱스 (에이전트 조회 패턴 반영) — 작성 예정 | 
 | 제약(UNIQUE/CHECK) 체크리스트 | 
-| seed 데이터 (allergens 22종) | 
+| seed 데이터 (allergens 22종) — 작성 예정 | 
 | pgAdmin/psql 실행 | 
 
 **작업 환경**: PostgreSQL (DB명 mulino_coreano) + pgAdmin / psql
 
 **파일 분리 전략**
 ```
-sql/
-├── 00_types.sql
-├── 01_tables.sql
-├── 02_indexes.sql
-├── 03_comments.sql
-└── seed/allergens.sql
+database/
+├── ddl/
+│   ├── 00_types.sql
+│   ├── 01_master_tables.sql
+│   ├── 02_relation_tables.sql
+│   ├── 03_transaction_tables.sql
+│   └── 04_indexes.sql
+└── seed/
+    └── allergens.sql
 ```
 
 ---
@@ -62,19 +65,22 @@ sql/
 ```
 mulino-coreano-erp/
 ├── README.md                  (프로젝트 개요 + SAP 모듈 매핑 + As-Is/To-Be)
+├── .github/                   (이슈/PR 템플릿)
 ├── docs/
-│   ├── 01_project_overview.md
+│   ├── 00_timeline.md         (진행 타임라인)
+│   ├── 01_project_overview.txt (기획안 + 구조 설명)
 │   ├── 02_flow.md             (추적 흐름도 — 작성 완료)
-│   ├── 03_erd_changelog.md    (v1→v2→v3 변경 이력)
-│   ├── 04_localization.md     (EU→한국 현지화 근거)
-│   └── 05_agent_scenarios.md  (에이전트별 시나리오)
-├── erd/                       (v1, v2, v3 이미지)
-├── sql/                       (DDL + seed)
+│   ├── 04_benchmark.txt       (현지 제조 벤치마크 사례)
+│   ├── 06_labels.md           (이슈/PR 라벨 정의)
+│   └── assets/                (ERD 이미지 등)
+├── database/                  (DDL + seed)
 ├── backend/                   (L0)
 ├── governance/                (L1)
 ├── agents/                    (L2)
 └── dashboard/                 (L3)
 ```
+
+※ 작성 예정 문서: 03_erd_changelog.md (v1→v2→v3 변경 이력), 04_localization.md (EU→한국 현지화 근거), 05_agent_scenarios.md (에이전트별 시나리오)
 
 커밋 컨벤션: feat / fix / refactor / docs / chore
 

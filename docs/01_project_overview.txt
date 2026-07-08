@@ -117,7 +117,7 @@
     recalls                 리콜 관리
 
   [시스템]
-    user                    사용자 (권한 5종: ADMIN/MANAGER/OPERATOR/QC/VIEWER)
+    users                   사용자 (권한 5종: ADMIN/MANAGER/OPERATOR/QC/VIEWER)
 
 
 ────────────────────────────────────────────────────────────────────────────
