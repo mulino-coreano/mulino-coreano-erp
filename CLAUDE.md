@@ -20,6 +20,7 @@ psql -d mulino_coreano -f database/ddl/01_master_tables.sql
 psql -d mulino_coreano -f database/ddl/02_relation_tables.sql
 psql -d mulino_coreano -f database/ddl/03_transaction_tables.sql
 psql -d mulino_coreano -f database/ddl/04_indexes.sql
+psql -d mulino_coreano -f database/ddl/05_foreign_keys.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```
 
