@@ -1,6 +1,6 @@
 # agents/ — L2 agents layer
 
-Claude sessions (Claude Code / Cowork) are the agent runtime. This directory contains **no agent framework, no LLM client, no A2A, no MCP** — only the two things Claude needs to act as ERP agents:
+Claude sessions (Claude Code / Cowork) are the agent runtime. This directory contains **no agent framework, no LLM client, no A2A, and no MCP implementation** — only the two things Claude needs to act as ERP agents. An MCP Server is deferred pending a complexity-management decision.
 
 | Dir | Contents |
 |---|---|
