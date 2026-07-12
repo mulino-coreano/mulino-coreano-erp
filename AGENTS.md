@@ -1,12 +1,12 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Project Overview
 
 A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Italian food brand) enters the Korean market. A SAP consulting portfolio project that localizes a EU-standard ERP to Korean food regulations (Food Traceability Act, 22 allergens, electronic tax invoices, etc.).
 
-**Current status**: Phase 3 complete (planning / ERD / DDL / documentation). `backend/`, `governance/`, `dashboard/` are empty scaffolds; `agents/` holds layout and CLAUDE.md guidance only — no runnable code yet. All documentation is written in Korean.
+**Current status**: Phase 3 complete (planning / ERD / DDL / documentation). `backend/`, `governance/`, `dashboard/` are empty scaffolds; `agents/` holds layout and AGENTS.md guidance only — no runnable code yet. All documentation is written in Korean.
 
 ## Commands
 
@@ -20,11 +20,10 @@ psql -d mulino_coreano -f database/ddl/01_master_tables.sql
 psql -d mulino_coreano -f database/ddl/02_relation_tables.sql
 psql -d mulino_coreano -f database/ddl/03_transaction_tables.sql
 psql -d mulino_coreano -f database/ddl/04_indexes.sql
-psql -d mulino_coreano -f database/ddl/05_foreign_keys.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```
 
-**Planned stack** (new code follows this baseline): Backend is Spring Boot 3.x + Java 17 + Gradle exposing a REST API. Agents are Claude sessions (Claude Code / Cowork) driven by per-role skills; their only backend access is a single Zig CLI (`mulino`) that calls the REST API. Dashboard is React. There is no A2A protocol — Claude's native subagent dispatch replaces it. An MCP Server is deferred pending a complexity-management decision; until then, the CLI is the sole tool surface.
+**Planned stack** (new code follows this baseline): Backend is Spring Boot 3.x + Java 17 + Gradle exposing a REST API. Agents are Codex sessions (Codex / Cowork) driven by per-role skills; their only backend access is a single Zig CLI (`mulino`) that calls the REST API. Dashboard is React. There is no A2A protocol — Codex's native subagent dispatch replaces it. An MCP Server is deferred pending a complexity-management decision; until then, the CLI is the sole tool surface.
 
 ## Architecture (4 layers = directory mapping)
 
@@ -32,7 +31,7 @@ psql -d mulino_coreano -f database/seed/allergens.sql
 |---|---|---|
 | L0 | `database/`, `backend/` | PostgreSQL 24 tables + Spring Boot REST API (single entry point for CLI and dashboard) |
 | L1 | `governance/` | Intercept action-bearing API calls → approve / block / hold + audit log. **Reads pass through; only writes are gated** |
-| L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude is the agent runtime; the orchestrator dispatches role subagents. See `agents/CLAUDE.md` |
+| L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Codex is the agent runtime; the orchestrator dispatches role subagents. See `agents/AGENTS.md` |
 | L3 | `dashboard/` | Natural-language query → Intent Parsing → chart generation |
 
 ### Governance approval matrix (follow when implementing L1)
@@ -73,7 +72,7 @@ The full flow and agent intervention points are the single source of truth (SSOT
 
 ## Issue/PR templates (mandatory)
 
-Templates live in `.github/`. When creating issues or PRs, Claude Code must follow the structure of the relevant template exactly — do not omit sections or invent your own format.
+Templates live in `.github/`. When creating issues or PRs, Codex must follow the structure of the relevant template exactly — do not omit sections or invent your own format.
 
 **PR**: `.github/pull_request_template.md` — 4 sections (작업 내용 / 변경 사항 / 체크리스트 / 리뷰 요청 사항). The 3 checklist items (verify local run, do not commit secrets, update related docs) must appear in the PR body.
 
