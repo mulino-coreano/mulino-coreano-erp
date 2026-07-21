@@ -52,7 +52,7 @@ CREATE TABLE customers(
 );
 
 CREATE TABLE allergens(
-    allergens_id SERIAL PRIMARY KEY,
+    allergen_id SERIAL PRIMARY KEY,
     name VARCHAR(50) NOT NULL
 );
 
