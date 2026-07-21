@@ -8,7 +8,7 @@ ALTER TABLE raw_materials ADD CONSTRAINT fk_raw_materials_supplier FOREIGN KEY (
 -- 관계
 ALTER TABLE supplier_certifications ADD CONSTRAINT fk_supplier_certifications_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(supplier_id);
 ALTER TABLE raw_material_allergens ADD CONSTRAINT fk_raw_material_allergens_raw_material FOREIGN KEY (raw_material_id) REFERENCES raw_materials(raw_material_id);
-ALTER TABLE raw_material_allergens ADD CONSTRAINT fk_raw_material_allergens_allergen FOREIGN KEY (allergen_id) REFERENCES allergens(allergens_id);
+ALTER TABLE raw_material_allergens ADD CONSTRAINT fk_raw_material_allergens_allergen FOREIGN KEY (allergen_id) REFERENCES allergens(allergen_id);
 
 -- 구매/입고
 ALTER TABLE purchase_orders ADD CONSTRAINT fk_purchase_orders_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(supplier_id);
