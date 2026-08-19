@@ -49,3 +49,6 @@ pgdata/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ===== Obsidian =====
+.obsidian/

@@ -20,6 +20,7 @@ psql -d mulino_coreano -f database/ddl/01_master_tables.sql
 psql -d mulino_coreano -f database/ddl/02_relation_tables.sql
 psql -d mulino_coreano -f database/ddl/03_transaction_tables.sql
 psql -d mulino_coreano -f database/ddl/04_indexes.sql
+psql -d mulino_coreano -f database/ddl/05_foreign_keys.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```
 
@@ -29,7 +30,7 @@ psql -d mulino_coreano -f database/seed/allergens.sql
 
 | Layer | Directory | Role |
 |---|---|---|
-| L0 | `database/`, `backend/` | PostgreSQL 24 tables + Spring Boot REST API (single entry point for CLI and dashboard) |
+| L0 | `database/`, `backend/` | PostgreSQL 30 tables + Spring Boot REST API (single entry point for CLI and dashboard) |
 | L1 | `governance/` | Intercept action-bearing API calls → approve / block / hold + audit log. **Reads pass through; only writes are gated** |
 | L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Codex is the agent runtime; the orchestrator dispatches role subagents. See `agents/AGENTS.md` |
 | L3 | `dashboard/` | Natural-language query → Intent Parsing → chart generation |

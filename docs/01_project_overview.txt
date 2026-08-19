@@ -50,7 +50,7 @@
 
   ┌────────────────────────────────────────────────────────────────────┐
   │  L0 : ERP 데이터 + 백엔드                                           │
-  │       PostgreSQL (24개 테이블) + Spring Boot REST API               │
+  │       PostgreSQL (30개 테이블) + Spring Boot REST API               │
   │       → ERP의 모든 기능을 REST API로 노출 (CLI·대시보드 공용)       │
   └───────────────────────────────┬────────────────────────────────────┘
                                   │
@@ -78,46 +78,55 @@
 
 
 ────────────────────────────────────────────────────────────────────────────
- 5. ERP 데이터 모델 (L0) — 24개 테이블
+ 5. ERP 데이터 모델 (L0) — 30개 테이블 (+1개 규제 뷰)
 ────────────────────────────────────────────────────────────────────────────
 
   [공급업체/원자재]
     suppliers               원자재 공급업체
-    supplier_certifications 공급업체 인증서 (HACCP/GMP 등, 만료 관리)
-    allergens               알레르겐 마스터 (한국 22종)
-    raw_materials           원자재
-    raw_material_allergens  원자재-알레르겐 매핑
+    supplier_certifications 공급업체 인증서 (HACCP/GMP 등, 유효기간 체크)
+    allergens               알레르겐 마스터 (19개 법정군 - 22종 계층)
+    raw_materials           원자재 (자재유형: 원료/포장재/첨가물)
+    raw_material_allergens  원자재-알레르겐 매핑 (복합 UNIQUE)
 
   [구매/입고]  ← SAP MM
-    purchase_orders         발주 헤더
-    purchase_order_items    발주 상세
-    inbound                 입고 내역 (3-Way Match)
-    inbound_temperature_logs 입고 운송 온도
-    raw_material_lots       원재료 LOT (추적 핵심)
+    purchase_orders         발주 헤더 (국세청 전자세금계산서)
+    purchase_order_items    발주 상세 (수량 양수 CHECK)
+    inbound                 입고 내역 (기본 HOLD 상태, QC 결정 메타데이터)
+    inbound_temperature_logs 입고 운송 온도 로그 (센서 ID, BRIN)
+    raw_material_lots       원재료 LOT (추적 핵심, 잔여량 음수방지)
 
-  [창고]  ← SAP WM
-    warehouses              창고 (상온/냉장/냉동)
-    warehouse_temperature_logs 창고 온도 모니터링
-    stock                   완제품 현재 재고
+  [창고]  ← SAP EWM
+    warehouses              창고/플랜트 (상온/냉장/냉동, 상위구역 계층)
+    warehouse_temperature_logs 창고 온도 모니터링 (BRIN 인덱스)
+    stock                   완제품 현재 재고 (제품-창고 복합 UNIQUE)
 
   [생산]  ← SAP PP
-    production_records      생산가공기록
-    production_ingredients  투입 원재료 추적
-    production_lots         생산 LOT (추적 핵심)
-    products               완제품
+    production_records      생산가공기록 (공정 파라미터 JSONB)
+    production_ingredients  투입 원재료 추적 (소모량 양수 CHECK)
+    production_lots         생산 LOT (완제품/반제품 다단계 BOM)
+    products                제품 마스터 (품목보고번호, 이력등록번호)
 
   [수주/출고]  ← SAP SD
-    customers               거래처
-    orders                  수주 헤더
+    customers               거래처 마스터
+    orders                  수주 헤더 (전자세금계산서)
     order_items             수주 상세
     outbound                출고 내역
-    outbound_lots           출고 LOT 추적
+    outbound_lots           출고 LOT 추적 (출고수량 정합성 불변)
 
-  [품질]  ← SAP QM
-    recalls                 리콜 관리
+  [품질 & 알람]  ← SAP QM
+    recalls                 리콜 관리 (생산LOT 또는 원재료LOT 타겟)
+    alert_rules             품질/온도 임계치 동적 규칙
+    alert_events            품질 이상/온도 이탈 이벤트
 
-  [시스템]
+  [거버넌스 영속화]  ← SAP GRC
+    governance_actions      액션 승인 요청 큐 (다단계/우선순위/페이로드)
+    governance_decisions    승인/반려 의사결정 이력
+    governance_audit_logs   불변 감사 로그 (before/after JSONB)
+
+  [규제 대응 & 시스템]
+    regulatory_submissions  식약처 리콜 즉시보고 및 5일 이력정보 전송 증빙
     users                   사용자 (권한 5종: ADMIN/MANAGER/OPERATOR/QC/VIEWER)
+    v_retention_deadlines   (뷰) 식품이력추적관리법 소비기한+2년 보관 의무
 
 
 ────────────────────────────────────────────────────────────────────────────
@@ -178,7 +187,7 @@
 ────────────────────────────────────────────────────────────────────────────
 
   Phase 0  기획 / 방향 설정              
-  Phase 1  ERD 설계 (24개 테이블)        
+  Phase 1  ERD 설계 (30개 테이블)        
   Phase 2  PostgreSQL DDL 작성         
   Phase 3  Git 레포 + 문서화             
   Phase 4  L0 : Spring Boot REST API       

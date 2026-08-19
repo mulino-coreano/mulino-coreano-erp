@@ -1,3 +1,7 @@
+-- =============================================================================
+-- 01_master_tables.sql: 기본 마스터 테이블 정의
+-- =============================================================================
+
 CREATE TABLE users (
     user_id SERIAL PRIMARY KEY,
     name VARCHAR(50) NOT NULL,
@@ -26,9 +30,11 @@ CREATE TABLE products (
     sku VARCHAR(50) NOT NULL UNIQUE,
     unit VARCHAR(20) NOT NULL,
     expiry_days INT NOT NULL,
-    registration_number VARCHAR(50),
-    trace_code VARCHAR(50),
+    product_type product_type NOT NULL DEFAULT 'FINISHED_GOODS',
+    registration_number VARCHAR(50), -- 식약처 품목제조보고번호
+    trace_code VARCHAR(50),          -- 식약처 식품이력추적관리 등록번호
     country_of_origin VARCHAR(50),
+    attributes JSONB NULL,           -- 비건, Non-GMO, 영양성분 등 확장 메타데이터
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -37,11 +43,13 @@ CREATE TABLE raw_materials (
     raw_material_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     unit VARCHAR(20) NOT NULL,
+    material_type material_type NOT NULL DEFAULT 'INGREDIENT',
     supplier_id INT NOT NULL,
+    attributes JSONB NULL,           -- 규격, 원산지, 보관조건 등 확장 메타데이터
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE customers(
+CREATE TABLE customers (
     customer_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     contact_name VARCHAR(50),
@@ -51,15 +59,20 @@ CREATE TABLE customers(
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE allergens(
+CREATE TABLE allergens (
     allergen_id SERIAL PRIMARY KEY,
-    name VARCHAR(50) NOT NULL
+    name VARCHAR(50) NOT NULL,
+    code VARCHAR(20) NULL,                                  -- 식약처/표준 알레르겐 코드
+    legal_category VARCHAR(50) NOT NULL DEFAULT '기타',      -- 19개 법정 표시의무 군 분류
+    standard VARCHAR(20) NOT NULL DEFAULT 'KR_MFDS'         -- 표준 (KR_MFDS, EU_EFSA 등)
 );
 
-CREATE TABLE warehouses(
+CREATE TABLE warehouses (
     warehouse_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     location VARCHAR(100),
     type warehouse_type NOT NULL,
+    plant_id VARCHAR(50) NULL,                              -- 공장/사업장 식별자 (확장성)
+    parent_warehouse_id INT NULL,                           -- 구역/Zone 계층화 (확장성)
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
