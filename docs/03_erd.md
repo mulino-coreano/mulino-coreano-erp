@@ -123,7 +123,7 @@ erDiagram
         int purchase_order_id FK "NOT NULL"
         int raw_material_id FK "NOT NULL"
         int quantity "NOT NULL"
-        decimal unit_price "NOT NULL"
+        decimal unit_price "NOT NULL / KRW 단가 (15,2)"
         int received_quantity "NOT NULL / DEFAULT 0"
     }
 
@@ -231,7 +231,7 @@ erDiagram
         int order_id FK "NOT NULL"
         int product_id FK "NOT NULL"
         int quantity "NOT NULL"
-        decimal unit_price "NOT NULL"
+        decimal unit_price "NOT NULL / KRW 단가 (15,2)"
     }
 
     outbound {
