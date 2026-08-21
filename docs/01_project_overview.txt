@@ -63,7 +63,7 @@
   └───────────────────────────────┬────────────────────────────────────┘
                                   │
   ┌───────────────────────────────▼────────────────────────────────────┐
-  │  L2 : Codex 에이전트 + 스킬 + Zig CLI                              │
+  │  L2 : Claude Code / Codex 에이전트 + 스킬 + Zig CLI                 │
   │       ├─ Orchestrator  : 메인 세션, 역할 서브에이전트 디스패치      │
   │       ├─ Supply Chain  : 재고/유통기한/LOT 추적                     │
   │       ├─ Procurement   : 발주/납품지연/인증서만료                   │
@@ -177,7 +177,7 @@
   백엔드      : Spring Boot 4.1.x + Java 25 (LTS) + Gradle
   Tool 노출   : Zig CLI `mulino` (백엔드 REST API 클라이언트)
   MCP Server  : 복잡도 관리 필요성 판단 시점까지 도입 보류
-  에이전트    : Codex (Codex/Cowork) + 역할별 스킬
+  에이전트    : Claude Code / Codex (Cowork) + 역할별 스킬
   프론트      : React 19 + Vite (대시보드)
   협업        : GitHub (모노레포)
 

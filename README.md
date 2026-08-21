@@ -16,7 +16,7 @@
 |---|---|---|
 | L0 | PostgreSQL 18(30개 테이블) + Spring Boot + MCP Server | ERP 데이터 및 기능을 Tool로 노출 |
 | L1 | Governance Engine | 액션성 Tool Call 가로채기 → 승인/차단/보류 라우팅 + 불변 감사 로그 |
-| L2 | Multi-Agent (Codex Native) | Orchestrator / Supply Chain / Procurement / QC |
+| L2 | Multi-Agent (Claude Code / Codex) | Orchestrator / Supply Chain / Procurement / QC |
 | L3 | 자연어 대시보드 | Intent Parsing → 결재 큐/품질 알람/추적 차트 자동 생성 |
 
 ---
@@ -56,7 +56,7 @@
 - **DB**: PostgreSQL 18 (30개 테이블, 16종 ENUM, 46개 FK)
 - **Backend**: Spring Boot 4.1.x + Java 25 (LTS) + Gradle
 - **Tool 노출**: Single Zig CLI (`mulino`) + MCP Server
-- **Agent**: Codex Subagent Architecture (Orchestrator / Supply Chain / Procurement / QC)
+- **Agent**: Claude Code / Codex Subagent Architecture (Orchestrator / Supply Chain / Procurement / QC)
 - **Frontend**: React 19 + Vite (자연어 대시보드)
 
 ---

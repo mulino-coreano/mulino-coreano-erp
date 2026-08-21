@@ -1,6 +1,6 @@
 # orchestrator — main-session skill
 
-The orchestrator is the **main Codex session** and the user-facing entry point for L2. It does not own domain duties itself; it analyzes requests and dispatches the right role subagent, then routes results (and cross-role hand-offs) between them.
+The orchestrator is the **main Claude Code or Codex session** and the user-facing entry point for L2. It does not own domain duties itself; it analyzes requests and dispatches the right role subagent, then routes results (and cross-role hand-offs) between them.
 
 Dispatch targets and their triggers (duties SSOT: `docs/02_flow.md` intervention summary):
 
