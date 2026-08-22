@@ -91,7 +91,7 @@ mulino-coreano-erp/
 
 | 작업 | 내용 |
 |---|---|
-| 프로젝트 셋업 | Spring Boot 4.1.x + Java 25 (LTS) + Gradle + PostgreSQL 18 연동 |
+| 프로젝트 셋업 | Spring Boot 4.1.x + Java 21 + Gradle + PostgreSQL 18 연동 |
 | Entity / Repository | 30개 테이블 매핑 |
 | REST API | 도메인별 CRUD + 비즈니스 로직 |
 | MCP Server | ERP 기능을 Tool로 노출 (조회/액션 Tool 구분) |

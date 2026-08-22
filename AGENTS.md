@@ -24,7 +24,7 @@ psql -d mulino_coreano -f database/ddl/05_foreign_keys.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```
 
-**Planned stack** (new code follows this baseline): Backend is Spring Boot 4.1.x + Java 25 (LTS) + Gradle exposing a REST API. Agents are Claude Code or Codex sessions (Cowork) driven by per-role skills; their only backend access is a single Zig CLI (`mulino`) that calls the REST API. Dashboard is React 19 + Vite. There is no A2A protocol — the runtime's native subagent dispatch (Claude Code or Codex) replaces it. An MCP Server is deferred pending a complexity-management decision; until then, the CLI is the sole tool surface.
+**Planned stack** (new code follows this baseline): Backend is Spring Boot 4.1.x + Java 21 + Gradle exposing a REST API. Agents are Claude Code or Codex sessions (Cowork) driven by per-role skills; their only backend access is a single Zig CLI (`mulino`) that calls the REST API. Dashboard is React 19 + Vite. There is no A2A protocol — the runtime's native subagent dispatch (Claude Code or Codex) replaces it. An MCP Server is deferred pending a complexity-management decision; until then, the CLI is the sole tool surface.
 
 ## Architecture (4 layers = directory mapping)
 
