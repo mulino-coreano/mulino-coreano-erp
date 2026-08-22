@@ -54,7 +54,7 @@
 ## 기술 스택
 
 - **DB**: PostgreSQL (30개 테이블, 16종 ENUM, 46개 FK)
-- **Backend**: Spring Boot 3.x + Java 17 + Gradle
+- **Backend**: Spring Boot 4.1.x + Java 21 + Gradle
 - **Tool 노출**: Single Zig CLI (`mulino`) + MCP Server
 - **Agent**: Codex Subagent Architecture (Orchestrator / Supply Chain / Procurement / QC)
 - **Frontend**: React (자연어 대시보드)
