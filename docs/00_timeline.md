@@ -106,6 +106,12 @@ mulino-coreano-erp/
 | 승인 라우팅 | INSERT purchase_orders→MANAGER / inbound상태변경→QC / recalls→ADMIN |
 | 감사 로그 | 전체 액션 이력 JSONB 스냅샷 영구 기록 (audit) |
 
+**거버넌스 정책 레이어 (Graded Autonomy)** — PR #13, 2026-08-23
+- 3등급 자율 분류: `AUTONOMOUS` / `POLICY_APPROVED` / `PRE_APPROVAL` (blast_radius + reversibility + regulatory_hook 기준)
+- 설계 문서: `docs/08_governance_policy_layer.md` (SSOT 재분류표 포함)
+- 결정론적 속성 검사기 PoC: `scripts/validate_governance_policy.py` — P1~P7 불변식, generator 기반 수천 개 사례 검증
+- 참고 리서치: `docs/09_governance_research.md` (agent-guardrails / regulated-LLM / autonomy-literature)
+
 ---
 
 ## Phase 6 — L2: Multi-Agent  
