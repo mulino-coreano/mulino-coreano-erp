@@ -45,7 +45,7 @@
 | 제약조건(UNIQUE/CHECK/FK) 및 법적 보관 뷰(v_retention_deadlines) | 완료 (`database/ddl/05_foreign_keys.sql`) |
 | seed 데이터 (allergens 22종 + 19개 법정분류) | 완료 (`database/seed/allergens.sql`) |
 
-**작업 환경**: PostgreSQL (DB명 mulino_coreano) + pgAdmin / psql
+**작업 환경**: PostgreSQL 18 (DB명 mulino_coreano) + pgAdmin / psql
 
 **파일 분리 전략**
 ```
@@ -91,7 +91,7 @@ mulino-coreano-erp/
 
 | 작업 | 내용 |
 |---|---|
-| 프로젝트 셋업 | Spring Boot 3.x + Java 17 + Gradle + PostgreSQL 연동 |
+| 프로젝트 셋업 | Spring Boot 4.1.x + Java 21 + Gradle + PostgreSQL 18 연동 |
 | Entity / Repository | 30개 테이블 매핑 |
 | REST API | 도메인별 CRUD + 비즈니스 로직 |
 | MCP Server | ERP 기능을 Tool로 노출 (조회/액션 Tool 구분) |
@@ -125,7 +125,7 @@ mulino-coreano-erp/
 |---|---|
 | Intent Parsing | 자연어 질의 → 의도 분석 |
 | Chart Spec 생성 | 데이터 → 시각화 명세 변환 |
-| 렌더링 | React 기반 대시보드 (거버넌스 큐, 품질 알람 모니터, 이력추적 그래프) |
+| 렌더링 | React 19 + Vite 기반 대시보드 (거버넌스 큐, 품질 알람 모니터, 이력추적 그래프) |
 
 ---
 

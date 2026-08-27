@@ -50,7 +50,7 @@
 
   ┌────────────────────────────────────────────────────────────────────┐
   │  L0 : ERP 데이터 + 백엔드                                           │
-  │       PostgreSQL (30개 테이블) + Spring Boot REST API               │
+  │       PostgreSQL 18 (30개 테이블) + Spring Boot REST API            │
   │       → ERP의 모든 기능을 REST API로 노출 (CLI·대시보드 공용)       │
   └───────────────────────────────┬────────────────────────────────────┘
                                   │
@@ -63,7 +63,7 @@
   └───────────────────────────────┬────────────────────────────────────┘
                                   │
   ┌───────────────────────────────▼────────────────────────────────────┐
-  │  L2 : Claude 에이전트 + 스킬 + Zig CLI                              │
+  │  L2 : Claude Code / Codex 에이전트 + 스킬 + Zig CLI                 │
   │       ├─ Orchestrator  : 메인 세션, 역할 서브에이전트 디스패치      │
   │       ├─ Supply Chain  : 재고/유통기한/LOT 추적                     │
   │       ├─ Procurement   : 발주/납품지연/인증서만료                   │
@@ -173,12 +173,12 @@
  8. 기술 스택
 ────────────────────────────────────────────────────────────────────────────
 
-  DB          : PostgreSQL (DB명: mulino_coreano)
-  백엔드      : Spring Boot 3.x + Java 17 + Gradle
+  DB          : PostgreSQL 18 (DB명: mulino_coreano)
+  백엔드      : Spring Boot 4.1.x + Java 21 + Gradle
   Tool 노출   : Zig CLI `mulino` (백엔드 REST API 클라이언트)
   MCP Server  : 복잡도 관리 필요성 판단 시점까지 도입 보류
-  에이전트    : Claude (Claude Code/Cowork) + 역할별 스킬
-  프론트      : React (대시보드)
+  에이전트    : Claude Code / Codex (Cowork) + 역할별 스킬
+  프론트      : React 19 + Vite (대시보드)
   협업        : GitHub (모노레포)
 
 
