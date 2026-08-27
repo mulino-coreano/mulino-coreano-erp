@@ -7,9 +7,9 @@
 -- -----------------------------------------------------------------------------
 
 CREATE TABLE purchase_orders (
-    purchase_order_id SERIAL PRIMARY KEY,
-    supplier_id INT NOT NULL,
-    created_by INT NOT NULL,
+    purchase_order_id BIGSERIAL PRIMARY KEY,
+    supplier_id BIGINT NOT NULL,
+    created_by BIGINT NOT NULL,
     order_date DATE NOT NULL,
     expected_delivery_date DATE NULL,
     status purchase_order_status NOT NULL DEFAULT 'DRAFT',
@@ -19,9 +19,9 @@ CREATE TABLE purchase_orders (
 );
 
 CREATE TABLE purchase_order_items (
-    purchase_order_item_id SERIAL PRIMARY KEY,
-    purchase_order_id INT NOT NULL,
-    raw_material_id INT NOT NULL,
+    purchase_order_item_id BIGSERIAL PRIMARY KEY,
+    purchase_order_id BIGINT NOT NULL,
+    raw_material_id BIGINT NOT NULL,
     quantity INT NOT NULL,
     unit_price DECIMAL(10, 2) NOT NULL,
     received_quantity INT NOT NULL DEFAULT 0,
@@ -31,17 +31,17 @@ CREATE TABLE purchase_order_items (
 );
 
 CREATE TABLE inbound (
-    inbound_id SERIAL PRIMARY KEY,
-    raw_material_id INT NOT NULL,
-    supplier_id INT NOT NULL,
-    warehouse_id INT NOT NULL,
-    purchase_order_item_id INT NOT NULL,
+    inbound_id BIGSERIAL PRIMARY KEY,
+    raw_material_id BIGINT NOT NULL,
+    supplier_id BIGINT NOT NULL,
+    warehouse_id BIGINT NOT NULL,
+    purchase_order_item_id BIGINT NOT NULL,
     quantity INT NOT NULL,
     inbound_date DATE NOT NULL,
     expiry_date DATE NULL,
     status inbound_status NOT NULL DEFAULT 'HOLD',
     status_reason TEXT NULL,
-    status_decided_by INT NULL,
+    status_decided_by BIGINT NULL,
     status_decided_at TIMESTAMP NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT ck_inbound_quantity CHECK (quantity > 0),
@@ -54,8 +54,8 @@ CREATE TABLE inbound (
 );
 
 CREATE TABLE inbound_temperature_logs (
-    inbound_temperature_id SERIAL PRIMARY KEY,
-    inbound_id INT NOT NULL,
+    inbound_temperature_id BIGSERIAL PRIMARY KEY,
+    inbound_id BIGINT NOT NULL,
     temperature DECIMAL(5, 2) NOT NULL,
     sensor_id VARCHAR(100) NULL,
     recorded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -63,9 +63,9 @@ CREATE TABLE inbound_temperature_logs (
 );
 
 CREATE TABLE raw_material_lots (
-    raw_material_lot_id SERIAL PRIMARY KEY,
-    raw_material_id INT NOT NULL,
-    inbound_id INT NOT NULL,
+    raw_material_lot_id BIGSERIAL PRIMARY KEY,
+    raw_material_id BIGINT NOT NULL,
+    inbound_id BIGINT NOT NULL,
     supplier_lot_number VARCHAR(50) NULL,
     lot_number VARCHAR(50) NOT NULL UNIQUE,
     quantity INT NOT NULL,
@@ -78,8 +78,8 @@ CREATE TABLE raw_material_lots (
 );
 
 CREATE TABLE warehouse_temperature_logs (
-    warehouse_temperature_id SERIAL PRIMARY KEY,
-    warehouse_id INT NOT NULL,
+    warehouse_temperature_id BIGSERIAL PRIMARY KEY,
+    warehouse_id BIGINT NOT NULL,
     temperature DECIMAL(5, 2) NOT NULL,
     sensor_id VARCHAR(100) NULL,
     humidity DECIMAL(5, 2) NULL,
@@ -91,8 +91,8 @@ CREATE TABLE warehouse_temperature_logs (
 -- -----------------------------------------------------------------------------
 
 CREATE TABLE production_lots (
-    production_lot_id SERIAL PRIMARY KEY,
-    product_id INT NOT NULL,
+    production_lot_id BIGSERIAL PRIMARY KEY,
+    product_id BIGINT NOT NULL,
     lot_number VARCHAR(50) NOT NULL UNIQUE,
     production_date DATE NOT NULL,
     expiry_date DATE NOT NULL,
@@ -104,10 +104,10 @@ CREATE TABLE production_lots (
 );
 
 CREATE TABLE production_records (
-    production_record_id SERIAL PRIMARY KEY,
-    lot_id INT NOT NULL,
-    warehouse_id INT NOT NULL,
-    operator_id INT NOT NULL,
+    production_record_id BIGSERIAL PRIMARY KEY,
+    lot_id BIGINT NOT NULL,
+    warehouse_id BIGINT NOT NULL,
+    operator_id BIGINT NOT NULL,
     process_type production_record_process_type NOT NULL,
     start_time TIMESTAMP NOT NULL,
     end_time TIMESTAMP NULL,
@@ -118,17 +118,17 @@ CREATE TABLE production_records (
 );
 
 CREATE TABLE production_ingredients (
-    production_ingredient_id SERIAL PRIMARY KEY,
-    production_record_id INT NOT NULL,
-    raw_material_lot_id INT NOT NULL,
+    production_ingredient_id BIGSERIAL PRIMARY KEY,
+    production_record_id BIGINT NOT NULL,
+    raw_material_lot_id BIGINT NOT NULL,
     quantity_used INT NOT NULL,
     CONSTRAINT ck_prod_ingredient_quantity CHECK (quantity_used > 0)
 );
 
 CREATE TABLE stock (
-    stock_id SERIAL PRIMARY KEY,
-    product_id INT NOT NULL,
-    warehouse_id INT NOT NULL,
+    stock_id BIGSERIAL PRIMARY KEY,
+    product_id BIGINT NOT NULL,
+    warehouse_id BIGINT NOT NULL,
     quantity INT NOT NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT ck_stock_quantity CHECK (quantity >= 0),
@@ -140,9 +140,9 @@ CREATE TABLE stock (
 -- -----------------------------------------------------------------------------
 
 CREATE TABLE orders (
-    order_id SERIAL PRIMARY KEY,
-    customer_id INT NOT NULL,
-    created_by INT NOT NULL,
+    order_id BIGSERIAL PRIMARY KEY,
+    customer_id BIGINT NOT NULL,
+    created_by BIGINT NOT NULL,
     order_date DATE NOT NULL,
     expected_delivery_date DATE NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -152,9 +152,9 @@ CREATE TABLE orders (
 );
 
 CREATE TABLE order_items (
-    orders_item_id SERIAL PRIMARY KEY,
-    order_id INT NOT NULL,
-    product_id INT NOT NULL,
+    orders_item_id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL,
+    product_id BIGINT NOT NULL,
     quantity INT NOT NULL,
     unit_price DECIMAL(10, 2) NOT NULL,
     CONSTRAINT ck_order_item_quantity CHECK (quantity > 0),
@@ -162,10 +162,10 @@ CREATE TABLE order_items (
 );
 
 CREATE TABLE outbound (
-    outbound_id SERIAL PRIMARY KEY,
-    product_id INT NOT NULL,
-    warehouse_id INT NOT NULL,
-    order_id INT NOT NULL,
+    outbound_id BIGSERIAL PRIMARY KEY,
+    product_id BIGINT NOT NULL,
+    warehouse_id BIGINT NOT NULL,
+    order_id BIGINT NOT NULL,
     quantity INT NOT NULL,
     outbound_date DATE NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -173,17 +173,17 @@ CREATE TABLE outbound (
 );
 
 CREATE TABLE outbound_lots (
-    outbound_lot_id SERIAL PRIMARY KEY,
-    outbound_id INT NOT NULL,
+    outbound_lot_id BIGSERIAL PRIMARY KEY,
+    outbound_id BIGINT NOT NULL,
     lot_quantity INT NOT NULL,
-    lot_id INT NOT NULL,
+    lot_id BIGINT NOT NULL,
     CONSTRAINT ck_outbound_lot_quantity CHECK (lot_quantity > 0)
 );
 
 CREATE TABLE recalls (
-    recall_id SERIAL PRIMARY KEY,
-    lot_id INT NULL,
-    raw_lot_id INT NULL,
+    recall_id BIGSERIAL PRIMARY KEY,
+    lot_id BIGINT NULL,
+    raw_lot_id BIGINT NULL,
     recall_date DATE NOT NULL,
     reason TEXT NULL,
     status recall_status NOT NULL DEFAULT 'OPEN',
@@ -197,10 +197,10 @@ CREATE TABLE recalls (
 
 CREATE TABLE governance_actions (
     governance_action_id BIGSERIAL PRIMARY KEY,
-    requested_by INT NOT NULL,
+    requested_by BIGINT NOT NULL,
     action_type VARCHAR(100) NOT NULL,
     resource_type VARCHAR(50) NOT NULL,
-    resource_id INT NOT NULL,
+    resource_id BIGINT NOT NULL,
     payload JSONB NOT NULL,
     current_step INT NOT NULL DEFAULT 1,
     total_steps INT NOT NULL DEFAULT 1,
@@ -214,7 +214,7 @@ CREATE TABLE governance_actions (
 CREATE TABLE governance_decisions (
     governance_decision_id BIGSERIAL PRIMARY KEY,
     governance_action_id BIGINT NOT NULL,
-    decided_by INT NOT NULL,
+    decided_by BIGINT NOT NULL,
     decision governance_decision_type NOT NULL,
     reason TEXT NOT NULL,
     decided_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -224,10 +224,10 @@ CREATE TABLE governance_decisions (
 CREATE TABLE governance_audit_logs (
     governance_audit_log_id BIGSERIAL PRIMARY KEY,
     governance_action_id BIGINT NULL,
-    actor_id INT NULL,
+    actor_id BIGINT NULL,
     event_type VARCHAR(100) NOT NULL,
     resource_type VARCHAR(50) NOT NULL,
-    resource_id INT NOT NULL,
+    resource_id BIGINT NOT NULL,
     before_state JSONB NULL,
     after_state JSONB NULL,
     occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -238,7 +238,7 @@ CREATE TABLE governance_audit_logs (
 -- -----------------------------------------------------------------------------
 
 CREATE TABLE alert_rules (
-    alert_rule_id SERIAL PRIMARY KEY,
+    alert_rule_id BIGSERIAL PRIMARY KEY,
     resource_type VARCHAR(50) NOT NULL,
     rule_name VARCHAR(100) NOT NULL,
     severity alert_severity NOT NULL DEFAULT 'WARNING',
@@ -250,9 +250,9 @@ CREATE TABLE alert_rules (
 
 CREATE TABLE alert_events (
     alert_event_id BIGSERIAL PRIMARY KEY,
-    alert_rule_id INT NULL,
-    inbound_id INT NULL,
-    warehouse_id INT NULL,
+    alert_rule_id BIGINT NULL,
+    inbound_id BIGINT NULL,
+    warehouse_id BIGINT NULL,
     sensor_id VARCHAR(100) NULL,
     alert_type VARCHAR(100) NOT NULL,
     severity alert_severity NOT NULL DEFAULT 'WARNING',
@@ -269,7 +269,7 @@ CREATE TABLE alert_events (
 CREATE TABLE regulatory_submissions (
     regulatory_submission_id BIGSERIAL PRIMARY KEY,
     submission_type regulatory_submission_type NOT NULL,
-    recall_id INT NULL,
+    recall_id BIGINT NULL,
     authority VARCHAR(50) NOT NULL DEFAULT 'MFDS',
     submitted_at TIMESTAMP NULL,
     confirmation_number VARCHAR(100) NULL,

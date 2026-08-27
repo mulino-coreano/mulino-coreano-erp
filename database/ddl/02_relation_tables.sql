@@ -3,16 +3,16 @@
 -- =============================================================================
 
 CREATE TABLE raw_material_allergens (
-    raw_material_allergen_id SERIAL PRIMARY KEY,
-    raw_material_id INT NOT NULL,
-    allergen_id INT NOT NULL,
+    raw_material_allergen_id BIGSERIAL PRIMARY KEY,
+    raw_material_id BIGINT NOT NULL,
+    allergen_id BIGINT NOT NULL,
     is_trace BOOLEAN NOT NULL DEFAULT FALSE,
     CONSTRAINT uk_raw_material_allergen UNIQUE (raw_material_id, allergen_id)
 );
 
 CREATE TABLE supplier_certifications (
-    supplier_certification_id SERIAL PRIMARY KEY,
-    supplier_id INT NOT NULL,
+    supplier_certification_id BIGSERIAL PRIMARY KEY,
+    supplier_id BIGINT NOT NULL,
     cert_type supplier_certification_cert_type NOT NULL,
     cert_number VARCHAR(100) NOT NULL,
     issued_by VARCHAR(100) NOT NULL,

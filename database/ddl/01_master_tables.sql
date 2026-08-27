@@ -3,7 +3,7 @@
 -- =============================================================================
 
 CREATE TABLE users (
-    user_id SERIAL PRIMARY KEY,
+    user_id BIGSERIAL PRIMARY KEY,
     name VARCHAR(50) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE users (
 );
 
 CREATE TABLE suppliers (
-    supplier_id SERIAL PRIMARY KEY,
+    supplier_id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     country VARCHAR(50) NOT NULL,
     contact_name VARCHAR(50),
@@ -25,7 +25,7 @@ CREATE TABLE suppliers (
 );
 
 CREATE TABLE products (
-    product_id SERIAL PRIMARY KEY,
+    product_id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     sku VARCHAR(50) NOT NULL UNIQUE,
     unit VARCHAR(20) NOT NULL,
@@ -40,17 +40,17 @@ CREATE TABLE products (
 );
 
 CREATE TABLE raw_materials (
-    raw_material_id SERIAL PRIMARY KEY,
+    raw_material_id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     unit VARCHAR(20) NOT NULL,
     material_type material_type NOT NULL DEFAULT 'INGREDIENT',
-    supplier_id INT NOT NULL,
+    supplier_id BIGINT NOT NULL,
     attributes JSONB NULL,           -- 규격, 원산지, 보관조건 등 확장 메타데이터
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE customers (
-    customer_id SERIAL PRIMARY KEY,
+    customer_id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     contact_name VARCHAR(50),
     contact_email VARCHAR(100),
@@ -60,7 +60,7 @@ CREATE TABLE customers (
 );
 
 CREATE TABLE allergens (
-    allergen_id SERIAL PRIMARY KEY,
+    allergen_id BIGSERIAL PRIMARY KEY,
     name VARCHAR(50) NOT NULL,
     code VARCHAR(20) NULL,                                  -- 식약처/표준 알레르겐 코드
     legal_category VARCHAR(50) NOT NULL DEFAULT '기타',      -- 19개 법정 표시의무 군 분류
@@ -68,11 +68,11 @@ CREATE TABLE allergens (
 );
 
 CREATE TABLE warehouses (
-    warehouse_id SERIAL PRIMARY KEY,
+    warehouse_id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     location VARCHAR(100),
     type warehouse_type NOT NULL,
     plant_id VARCHAR(50) NULL,                              -- 공장/사업장 식별자 (확장성)
-    parent_warehouse_id INT NULL,                           -- 구역/Zone 계층화 (확장성)
+    parent_warehouse_id BIGINT NULL,                           -- 구역/Zone 계층화 (확장성)
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
