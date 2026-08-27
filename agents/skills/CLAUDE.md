@@ -1,6 +1,6 @@
 # agents/skills/ — agent role skills
 
-One directory per agent role, each holding a `SKILL.md` (Claude Code skill format). These are authored here as the SSOT and symlinked into `.claude/skills/` so Claude sessions auto-discover them (symlinks created in Phase 6, when the skills gain content).
+One directory per agent role, each holding a `SKILL.md`. These are authored here as the SSOT and symlinked into `.claude/skills/` (Claude Code) and `.codex/skills/` (Codex) so sessions auto-discover them (symlinks created in Phase 6, when the skills gain content).
 
 ## Required sections in every SKILL.md
 

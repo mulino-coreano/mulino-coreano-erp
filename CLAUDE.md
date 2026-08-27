@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. Codex sessions are also supported — see AGENTS.md.
 
 ## Project Overview
 
@@ -25,15 +25,15 @@ psql -d mulino_coreano -f database/ddl/06_audit_immutability.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```
 
-**Planned stack** (new code follows this baseline): Backend is Spring Boot 4.1.x + Java 21 + Gradle exposing a REST API. Agents are Claude sessions (Claude Code / Cowork) driven by per-role skills; their only backend access is a single Zig CLI (`mulino`) that calls the REST API. Dashboard is React. There is no A2A protocol — Claude's native subagent dispatch replaces it. An MCP Server is deferred pending a complexity-management decision; until then, the CLI is the sole tool surface.
+**Planned stack** (new code follows this baseline): Backend is Spring Boot 4.1.x + Java 21 + Gradle exposing a REST API. Agents are Claude Code or Codex sessions (Cowork) driven by per-role skills; their only backend access is a single Zig CLI (`mulino`) that calls the REST API. Dashboard is React 19 + Vite. There is no A2A protocol — the runtime's native subagent dispatch (Claude Code or Codex) replaces it. An MCP Server is deferred pending a complexity-management decision; until then, the CLI is the sole tool surface.
 
 ## Architecture (4 layers = directory mapping)
 
 | Layer | Directory | Role |
 |---|---|---|
-| L0 | `database/`, `backend/` | PostgreSQL 24 tables + Spring Boot REST API (single entry point for CLI and dashboard) |
+| L0 | `database/`, `backend/` | PostgreSQL 18 (30 tables) + Spring Boot REST API (single entry point for CLI and dashboard) |
 | L1 | `governance/` | Intercept action-bearing API calls → approve / block / hold + audit log. **Reads pass through; only writes are gated** |
-| L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude is the agent runtime; the orchestrator dispatches role subagents. See `agents/CLAUDE.md` |
+| L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude Code and Codex are both supported agent runtimes; the orchestrator dispatches role subagents. See `agents/CLAUDE.md` |
 | L3 | `dashboard/` | Natural-language query → Intent Parsing → chart generation |
 
 ### Governance approval matrix (follow when implementing L1)
