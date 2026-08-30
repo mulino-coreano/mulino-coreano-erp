@@ -23,7 +23,7 @@ CREATE TABLE purchase_order_items (
     purchase_order_id BIGINT NOT NULL,
     raw_material_id BIGINT NOT NULL,
     quantity INT NOT NULL,
-    unit_price DECIMAL(10, 2) NOT NULL,
+    unit_price DECIMAL(15, 2) NOT NULL,                     -- KRW 단가 (rate: 소수 2자리 / 금액 컬럼은 0자리)
     received_quantity INT NOT NULL DEFAULT 0,
     CONSTRAINT ck_po_item_quantity CHECK (quantity > 0),
     CONSTRAINT ck_po_item_unit_price CHECK (unit_price >= 0),
@@ -156,7 +156,7 @@ CREATE TABLE order_items (
     order_id BIGINT NOT NULL,
     product_id BIGINT NOT NULL,
     quantity INT NOT NULL,
-    unit_price DECIMAL(10, 2) NOT NULL,
+    unit_price DECIMAL(15, 2) NOT NULL,                     -- KRW 단가 (rate: 소수 2자리 / 금액 컬럼은 0자리)
     CONSTRAINT ck_order_item_quantity CHECK (quantity > 0),
     CONSTRAINT ck_order_item_unit_price CHECK (unit_price >= 0)
 );
