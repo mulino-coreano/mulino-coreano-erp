@@ -10,4 +10,4 @@ Dispatch targets and their triggers (duties SSOT: `docs/02_flow.md` intervention
 
 Cross-role example replacing the old A2A flow: supply-chain forecasts stock depletion → hands off to orchestrator → orchestrator dispatches procurement → procurement drafts the PO via `mulino po create` → governance pends it for MANAGER approval.
 
-The future `SKILL.md` here must contain the full dispatch table (situation → role → expected result shape).
+The `SKILL.md` in this directory contains the full dispatch table (situation → role → expected result shape) and the hand-off protocol.
