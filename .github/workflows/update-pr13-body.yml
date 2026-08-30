@@ -1,0 +1,61 @@
+name: Update PR #13 Body (one-time)
+on:
+  push:
+    branches:
+      - feat/governance-policy-layer
+env:
+  GH_REPO: mulino-coreano/mulino-coreano-erp
+jobs:
+  update-pr-body:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Update PR #13 body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BODY_FILE=$(mktemp)
+          cat <<'BODY' > "$BODY_FILE"
+          ## 작업 내용
+
+          - 3등급 자율(AUTONOMOUS / POLICY_APPROVED / PRE_APPROVAL)을 blast_radius + reversibility + regulatory_hook 기준으로 분류하는 **거버넌스 정책 레이어 설계 문서** 추가
+          - 2026-08-23 딥리서치 3개 스트림 근거 정리 (docs/09_governance_research.md)
+          - P1~P7 불변식을 검사하는 **결정론적 속성 검사기 PoC** 추가 (scripts/validate_governance_policy.py)
+          - 인터뷰(2026-08-29~30)로 확정된 설계 개정 5종: **맥락 판단의 역할**(§4), 읽기 저널(§6), 등급별 단계 시행(§7), 운영자 데모(§8), work_items 일급 시민화(§4④)
+          - 전체 플랜(docs/00_timeline.md) 인터뷰 결론 반영
+          - 검사기 주장 정상화: "안전성 증거" → "자기일관성 회귀 테스트"
+
+          ### 인터뷰로 확정된 설계 결론
+
+          - **맥락 판단은 자율 실행의 근거가 아니라 제안의 기준** (docs/08 §4①): PRE_APPROVAL에 인용+해석 첨부
+          - **비대칭 승격** (§4②): 에이전트는 PRE_APPROVAL로 올리기만 가능, 강등은 P6 사람 몫
+          - **승격 루프** (§4③): 승격 사건 → 클러스터링 → 정책 편입은 draft PR(P6)로만
+          - **목표(work_items) 일급 시민** (§4④): 구체적 목표가 자율 행위의 구동 원리, 목표-맹목 분류 원칙
+          - **행위자 통합** (§4⑤): 사람·에이전트 같은 쓰기 게이트, 요청자≠승인자 강제
+
+          ## 변경 사항
+
+          | 파일 | 내용 |
+          |---|---|
+          | docs/08_governance_policy_layer.md | **개정** — §4 맥락 판단(첨부/승격/루프/목표/통합), §5 속성, §6 읽기 저널, §7 단계 시행, §8 데모 |
+          | docs/09_governance_research.md | 알람 피로 문헌 활용 계획 추가 |
+          | scripts/validate_governance_policy.py | "5000 사례 PASS" → "자기일관성 회귀 테스트"로 주장 격하. 로직 불변 |
+          | docs/00_timeline.md | Phase 4~8 전면 개정 — Flyway V1, 스키마 V2+, staged rollout, 목표 구동 원리, a→b 데모 |
+
+          스키마 변경 없음.
+          BODY
+          gh pr edit 13 --body-file "$BODY_FILE"
+          echo "PR #13 body updated"
+      - name: Remove this workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm .github/workflows/update-pr13-body.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: remove one-time pr13-body-update workflow"
+          git push
