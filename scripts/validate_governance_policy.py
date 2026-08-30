@@ -5,11 +5,12 @@ validate_governance_policy.py — 거버넌스 정책 레이어의 결정론적 
 
 문서: docs/08_governance_policy_layer.md (Section 4, 7개 속성 P1-P7)
 
-역할:
-  - 에이전트가 제안한 행위(action)를 3등급(AUTONOMOUS / POLICY_APPROVED / PRE_APPROVAL)으로
-    분류하고, 모든 사례에서 7개 불변식이 성립하는지 결정론적으로 검사한다.
-  - "라벨을 비교"하는 게 아니라 "안전·품질 속성이 성립하는지"를 검사 — 수천 개 사례가
-    generator에서 나오고, ground truth는 라벨이 아닌 속성이다 (자기합리화 방지).
+역할 (2026-08-30 개정 — 정직한 지위 명시):
+  - **자기일관성 회귀 테스트**다. classify() 코드가 docs/08 §5의 분류 규칙과 일치하는지,
+    문서-코드 동기화가 깨지는 변경을 잡는다. 안전성 증거가 아니다.
+  - P1/P2/P3/P6/P7의 사례 검사는 classify()가 그 규칙으로 작성되어 있으므로
+    위반이 원리상 나올 수 없다(동어반복). 유일하게 비자명한 집계 검사는 P5다.
+  - 안전성·운영 측정은 L1 Phase 4+ (읽기 저널 기반 P7, P5 삼각측량)에서 온다.
 
 실행:
     python3 scripts/validate_governance_policy.py [--cases N] [--seed S] [--verbose]
@@ -19,11 +20,11 @@ validate_governance_policy.py — 거버넌스 정책 레이어의 결정론적 
     P2  regulatory_hook     ->  등급 == PRE_APPROVAL
     P3  reversibility==IRREVERSIBLE -> 등급 != AUTONOMOUS
     P4  POLICY_APPROVED -> 정책 조건(전염 봉인) 충족
-    P5  AUTONOMOUS 비율 >= AUTONOMY_MIN (승인 피로도 상한)
+    P5  AUTONOMOUS 비율 >= AUTONOMY_MIN (승인 피로도 상한 — 잠정값, docs/08 §5 조사 계획 참조)
     P6  정책 변경(action_class 재분류)은 PRE_APPROVAL (거버넌스의 거버넌스)
     P7  위반은 개별 행위가 아니라 시퀀스 속성 (read-then-external)
 
-종료 코드: 0 = 모든 속성 PASS / 1 = 속성 위반 (설계 결함 보고)
+종료 코드: 0 = 자기일관성 PASS / 1 = 불일치 발견 (문서-코드 동기화 깨짐)
 """
 
 import argparse
@@ -191,7 +192,9 @@ def generate_cases(specs: list[ActionSpec], n: int, rng: random.Random) -> list[
 # 속성(불변식) 정의 — P1~P7
 # ---------------------------------------------------------------------------
 
-AUTONOMY_MIN = 0.40  # P5 하한: 승인 피로도 상한
+AUTONOMY_MIN = 0.40  # P5 하한: 승인 피로도 상한 — 잠정값(근거 미확정).
+                     # docs/08 §5 삼각측량(식약처 통계 + 알람 피로 문헌 + 시나리오 파라미터)으로
+                     # 시나리오의 함수로 대체 예정. 현재값은 docs/08 초안의 "예: 40%" 예시가 상수가 된 것.
 
 
 def property_checks(spec: ActionSpec, cls: ActionClass) -> list[str]:
@@ -218,8 +221,9 @@ def property_checks(spec: ActionSpec, cls: ActionClass) -> list[str]:
     if spec.is_policy_change and cls != ActionClass.PRE_APPROVAL:
         violations.append(f"P6 violated: policy change '{spec.name}' not PRE_APPROVAL")
 
-    # P7: 위반은 시퀀스 속성 — 단일 결정 규칙만으론 전염 경로를 못 볼 행위가 자동화되면 안 됨.
-    #     근사: MEDIUM blast_radius 이면서 policy 조건 미충족은 자동화 금지 (이미 PRE_APPROVAL 보장)
+    # P7: 위반은 시퀀스 속성(read-then-external 등). 현재 구현은 근사가 아니라 동어반복이다 —
+    #     classify()가 MEDIUM을 AUTONOMOUS로 반환할 수 없으므로 이 검사는 절대 실패하지 않는다.
+    #     실구현은 docs/08 §5: 읽기 저널 기반 "승격 인용은 최근 N분 내 실제 읽기" 시간 의존 검사 (L1 Phase 4+).
     if cls == ActionClass.AUTONOMOUS and spec.blast_radius == BlastRadius.MEDIUM:
         violations.append(f"P7 violated: MEDIUM blast_radius '{spec.name}' classified AUTONOMOUS (sequence risk)")
 
@@ -279,7 +283,7 @@ def main() -> int:
         print(f"  {k:16s} {cls_counts.get(k, 0)}")
 
     if not all_violations:
-        print("모든 속성 PASS (P1-P7). 정책 설계는 5000+ 사례에서 안전·자율 요구 충족.")
+        print("자기일관성 PASS (P1-P7): classify()가 docs/08 §5 분류 규칙과 일치. (안전성 증거 아님)")
         return 0
 
     print(f"\n속성 위반 {len(all_violations)}건:")
@@ -287,7 +291,7 @@ def main() -> int:
         print(f"  - {v}")
     if len(all_violations) > 30:
         print(f"  ... (외 {len(all_violations) - 30}건)")
-    print("\n결론: 정책 설계 결함. docs/08 거버넌스 분류를 수정해야 한다.")
+    print("\n결론: 문서-코드 불일치. docs/08 §5 또는 classify()를 수정해야 한다.")
     return 1
 
 
