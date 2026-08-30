@@ -1,6 +1,6 @@
 # agents/skills/ — agent role skills
 
-One directory per agent role, each holding a `SKILL.md`. These are authored here as the SSOT and symlinked into `.claude/skills/` (Claude Code) and `.codex/skills/` (Codex) so sessions auto-discover them (symlinks created in Phase 6, when the skills gain content).
+One directory per agent role, each holding a `SKILL.md`. These are authored here as the SSOT and symlinked into `.claude/skills/` (Claude Code) and `.codex/skills/` (Codex) so sessions auto-discover them. The contracts below are already in effect even though the `mulino` CLI is not built yet — treat `mulino` references as the command surface these roles will be bound to, not as runnable today.
 
 ## Required sections in every SKILL.md
 
