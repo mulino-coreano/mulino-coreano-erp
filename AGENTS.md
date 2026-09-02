@@ -62,6 +62,21 @@ Reverse tracing (root-cause analysis) follows this chain backwards. Core invaria
 
 The full flow and agent intervention points are the single source of truth (SSOT) in `docs/02_flow.md`. For the table list and SAP module mapping, see `docs/01_project_overview.txt`.
 
+### Interface mechanism (docs/08_interface_overview.md)
+
+The system is not "an ERP with a chatbot attached" — it is a persistent business organization whose humans and agents interact through channels (ChatGPT / Slack / Email / Dashboard) over shared **Cases, Work Items, Evidence, and Decisions**. Key rules:
+
+- **ASK / ACT / MONITOR** is the human model. Only `ACT` objectives create Cases; queries must not.
+- **Conversation ≠ Case.** Channels are adapters that all project the same underlying Case state; no channel (Slack/email/chat) owns business state.
+- Case participation is multi-actor, but each Work Item has exactly one assignee (agent XOR user — enforced by CHECK).
+- **Waiting is first-class**: an agent sets a Work Item to `WAITING` plus a `waiting_conditions` row, the execution ends, and a later event satisfies the condition and resumes the Case. No LLM stays alive during the wait.
+- **Logical agents persist; runs are disposable** (`agents` vs `runs` tables).
+- Email is asymmetric: inbound is consumed autonomously; outbound drafts require a **human Send** — approval/send transfers authority, never Case ownership.
+- Interrupt humans only for the 5 `attention_reason_type` values, and ask the smallest useful question with an explicit answer scope (`THIS_ACTION … POLICY`).
+- Surface consequences, not machinery. Runtime diagnostics (run IDs, token counts) belong in an engineering interface, never in user-facing views.
+
+Schema for this layer: `database/ddl/07_case_management.sql` (+ `08` indexes, `09` FKs); concept doc: `docs/08_interface_overview.md`.
+
 ## Git rules
 
 - **No direct commit/push to main** — work on a separate branch, then open a PR to merge (force push is strictly forbidden)

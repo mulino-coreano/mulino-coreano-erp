@@ -1,7 +1,8 @@
 # MULINO COREANO — ERD
 
-> 본 문서는 `database/ddl/`의 PostgreSQL 스키마를 기준으로 작성된 엔터프라이즈 ERD입니다.  
-> 거버넌스(L1) 영속화, 품질 모니터링/알람, 식약처 규제 대응 및 비즈니스 확장성(다단계 BOM, 포장재/자재유형, 멀티플랜트)을 반영한 **30개 테이블, 46개 외래키 관계**를 정의합니다.  
+> 본 문서는 `database/ddl/`의 PostgreSQL 스키마를 기준으로 작성된 엔터프라이즈 ERD입니다.
+> 거버넌스(L1) 영속화, 품질 모니터링/알람, 식약처 규제 대응 및 비즈니스 확장성(다단계 BOM, 포장재/자재유형, 멀티플랜트)을 반영한 **30개 ERP 코어 테이블**에, 인터페이스 메커니즘(Case/Work Item/대기조건/실행/증거) 지원 **13개 테이블**을 추가해 **총 43개 테이블**을 정의합니다.
+> 인터페이스 메커니즘의 개념적 근거는 `docs/08_interface_overview.md`를 따릅니다.
 > 스키마 변경 시 이 문서와 `docs/02_flow.md`를 함께 갱신해야 합니다.
 
 ---
@@ -441,7 +442,7 @@ customers
 
 ---
 
-## 3. ENUM 타입 참조 (16종)
+## 3. ENUM 타입 참조 (28종)
 
 | ENUM 타입 | 값 목록 | 사용 컬럼 |
 |---|---|---|
@@ -461,6 +462,19 @@ customers
 | `regulatory_submission_type` | `RECALL_REPORT`, `TRACEABILITY_TRANSMISSION` | `regulatory_submissions.submission_type` |
 | `regulatory_submission_result` | `PENDING`, `ACCEPTED`, `REJECTED` | `regulatory_submissions.result` |
 | `alert_severity` | `INFO`, `WARNING`, `CRITICAL` | `alert_rules.severity`, `alert_events.severity` |
+| `channel_type` | `CHAT`, `SLACK`, `EMAIL`, `DASHBOARD`, `API` | `channels.channel_type` |
+| `intent_type` | `ASK`, `ACT`, `MONITOR` | `cases.intent_type` |
+| `case_status` | `OPEN`, `IN_PROGRESS`, `WAITING`, `RESOLVED`, `CLOSED` | `cases.status` |
+| `actor_type` | `AGENT`, `USER` | `case_participants.actor_type`, `events.actor_type` |
+| `work_item_status` | `READY`, `IN_PROGRESS`, `WAITING`, `BLOCKED`, `DONE`, `CANCELLED` | `work_items.status` |
+| `waiting_condition_type` | `SUPPLIER_REPLY`, `EMAIL_SENT`, `APPROVAL`, `SCHEDULED_TIME`, `EXTERNAL_DATA`, `DEPENDENCY_DONE` | `waiting_conditions.condition_type` |
+| `waiting_status` | `ACTIVE`, `SATISFIED`, `EXPIRED`, `CANCELLED` | `waiting_conditions.status` |
+| `attention_reason_type` | `AUTHORITY_REQUIRED`, `JUDGMENT_REQUIRED`, `MISSING_HUMAN_CONTEXT`, `EXTERNAL_SEND_REQUIRED`, `MATERIAL_EXCEPTION` | `attention_requests.reason_type` |
+| `decision_scope` | `THIS_ACTION`, `THIS_CASE`, `THIS_CAMPAIGN`, `THIS_CUSTOMER`, `POLICY` | `decisions.scope`, `attention_requests.suggested_scope/answer_scope` |
+| `run_status` | `RUNNING`, `COMPLETED`, `FAILED`, `ABORTED` | `runs.status` |
+| `attention_request_status` | `OPEN`, `ANSWERED`, `EXPIRED`, `CANCELLED` | `attention_requests.status` |
+| `case_priority` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` | `cases.priority`, `work_items.priority` |
+| `claim_status` | `ASSERTED`, `VERIFIED`, `CONFLICTED`, `REFUTED` | `claims.status` |
 
 ---
 
@@ -475,6 +489,88 @@ customers
 | **품질/알람 (2)** | `alert_rules`, `alert_events` | 동적 품질/온도 임계치 규칙 및 IoT 센서 알람 이벤트 | `database/ddl/03_transaction_tables.sql` |
 | **규제/컴플라이언스 (1)** | `regulatory_submissions` | 식약처 리콜 즉시보고 및 5일 이력정보 전송 증빙 관리 | `database/ddl/03_transaction_tables.sql` |
 | **뷰 (1)** | `v_retention_deadlines` | 식품이력추적관리법(소비기한+2년) 의무 보관 만료일 산출 뷰 | `database/ddl/05_foreign_keys.sql` |
+| **인터페이스/조직 (13)** | `channels`, `agents`, `cases`, `case_participants`, `work_items`, `waiting_conditions`, `events`, `runs`, `evidence`, `claims`, `claim_evidence`, `decisions`, `attention_requests` | 인터페이스 메커니즘 지원 — 영속 Case, 다중 배정, 대기조건, 일회용 Run, Claim/Evidence 분리, 인간 주의 요청 | `database/ddl/07_case_management.sql` ~ `09_case_fks.sql` |
+
+---
+
+## 4.5. 인터페이스 메커니즘 보조 스키마 (13개 테이블)
+
+`docs/08_interface_overview.md`의 개념을 영속화하는 스키마입니다. ERP 코어(30개 테이블)를 침범하지 않고 나란히(additive) 추가됩니다.
+
+```mermaid
+erDiagram
+    channels {
+        bigint channel_id PK
+        channel_type channel_type "CHAT/SLACK/EMAIL/DASHBOARD/API"
+        varchar external_ref "채널 측 스레드 식별자"
+    }
+    agents {
+        bigint agent_id PK
+        varchar agent_key UK "ORCHESTRATOR/PROCUREMENT/..."
+    }
+    cases {
+        bigint case_id PK
+        varchar case_ref UK "CASE-1842"
+        text objective
+        case_status status
+        intent_type intent_type
+    }
+    case_participants {
+        bigint case_participant_id PK
+        bigint case_id FK
+        actor_type actor_type "AGENT XOR USER"
+    }
+    work_items {
+        bigint work_item_id PK
+        varchar work_item_ref UK "WI-102"
+        bigint case_id FK
+        work_item_status status "READY/IN_PROGRESS/WAITING/..."
+    }
+    waiting_conditions {
+        bigint waiting_condition_id PK
+        bigint work_item_id FK
+        waiting_condition_type condition_type
+        bigint resolved_by_event_id FK "대기를 깨운 이벤트"
+    }
+    events {
+        bigint event_id PK
+        varchar event_type "EMAIL_SENT/SUPPLIER_EMAIL_RECEIVED/..."
+    }
+    runs {
+        bigint run_id PK
+        varchar run_ref UK "RUN-9182"
+        bigint agent_id FK "논리 에이전트"
+        jsonb context_snapshot "Context Package 색인 스냅샷"
+    }
+    evidence {
+        bigint evidence_id PK
+        varchar evidence_ref UK "EV-122"
+    }
+    claims {
+        bigint claim_id PK
+        claim_status status "ASSERTED/VERIFIED/CONFLICTED/REFUTED"
+    }
+    claim_evidence {
+        bigint claim_id FK
+        bigint evidence_id FK
+        varchar relation "SUPPORTS/REFUTES"
+    }
+    decisions {
+        bigint decision_id PK
+        decision_scope scope "THIS_ACTION...POLICY"
+    }
+    attention_requests {
+        bigint attention_request_id PK
+        attention_reason_type reason_type "5가지 인간 주의 사유"
+    }
+```
+
+핵심 불변식:
+- `case_participants`: `actor_type`에 따라 agent_id / user_id 중 정확히 하나만 NOT NULL (XOR)
+- `work_items`: 에이전트와 사용자에게 동시 배정 금지 (`ck_wi_single_assignee`)
+- `cases` / `work_items`: RESOLVED/DONE 계열 상태 ⇔ `resolved_at` 존재 동기화
+- `waiting_conditions`: ACTIVE ⇔ `resolved_at` NULL. 해소 시 `resolved_by_event_id`가 근거 이벤트를 가리킨다
+- ASK/MONITOR 인텐트는 Case를 생성하지 않는다 — **애플리케이션 규칙**이며 DB CHECK로 강제하지 않는다
 
 ---
 

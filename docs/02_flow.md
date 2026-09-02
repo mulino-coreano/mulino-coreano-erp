@@ -200,6 +200,46 @@ flowchart TD
 
 ---
 
+## 인터페이스 경로 (Channel → Case → Agent)
+
+> 상세 개념: `docs/08_interface_overview.md` | 스키마: `database/ddl/07_case_management.sql` ~ `09_case_fks.sql`
+
+위 추적 흐름은 ERP 내부의 물리적 흐름이다. 그 위에 인간과 에이전트가 접근하는 **인터페이스 경로**가 별도로 존재한다.
+
+```mermaid
+flowchart LR
+    H["HUMAN"] --> ASK & ACT & MON
+    ASK["ASK (질의)"] -->|"답변에 그침 — Case 미생성"| CAP["비즈니스<br/>capabilities"]
+    ACT["ACT (목표 위임)"] --> CASE["CASE<br/>영속 업무 표면"]
+    MON["MONITOR (관찰)"] --> DASH["Dashboard<br/>상시 통제면"]
+    CASE --> WI["Work Items<br/>미해결 의무"]
+    CASE --> EVDB["Evidence / Claims / Decisions"]
+    WI --> DISP["Dispatcher"]
+    EVDB --> DISP
+    DISP --> RUN["Agent Run<br/>Claude / Codex (일회용)"]
+    RUN --> CAP
+    CAP --> ERP["L0 ERP<br/>30 코어 테이블"]
+    ERP --> EVT["Events"]
+    EVT -->|"대기 조건 충족"| WI
+    EVT -->|"주의 요청"| SLACK["Slack Attention"]
+    EVT --> DASH
+    SLACK -->|"승인 (권한 이전, 소유권 아님)"| EVT
+    EMAIL["Email 외부 경계"] -->|"인바운드 자율 소비"| EVT
+    EMAIL -->|"아웃바운드 = 인간 Send"| H
+```
+
+| 단계 | 프로세스 | 중심 테이블 |
+| ---- | -------- | ----------- |
+| I-1 | 인텐트 분기 (ASK/ACT/MONITOR) | — (애플리케이션 규칙) |
+| I-2 | Case 생성/해소, 채널 기록 | `cases`, `channels` |
+| I-3 | 다중 배정 및 의무 분해 | `case_participants`, `work_items` |
+| I-4 | 대기 및 재개 | `waiting_conditions`, `events` |
+| I-5 | 실행 (일회용, 컨텍스트 재구성) | `runs` (context_snapshot) |
+| I-6 | 증거/추론 분리 및 출처 | `evidence`, `claims`, `claim_evidence` |
+| I-7 | 인간 주의 요청 및 결정 범위 | `attention_requests`, `decisions` |
+
+---
+
 ## Governance 승인 매트릭스 & 영속화 매핑
 
 Governance Engine은 모든 액션성 API 호출을 가로채고 불변 감사 로그를 남깁니다. 조회성 Tool Call은 가로채지 않고 즉시 실행합니다.

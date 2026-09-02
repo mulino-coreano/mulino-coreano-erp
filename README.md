@@ -21,6 +21,12 @@
 
 ---
 
+## 인터페이스 메커니즘
+
+이 시스템은 "챗봇이 붙은 ERP"가 아니라, 인간과 AI 에이전트가 **동일한 Case·Work Item·증거·결정 위에서 여러 채널(ChatGPT/Slack/Email/Dashboard)로 상호작용하는 지속성 있는 비즈니스 조직**을 지향합니다. 개념과 규칙은 docs/08_interface_overview.md, 스키마는 07~09 DDL을 참조하세요.
+
+---
+
 ## SAP 모듈 매핑
 
 | 설계 테이블 | 대응 SAP 모듈 | 역할 |
