@@ -20,6 +20,9 @@ CREATE INDEX idx_events_type_time ON events (event_type, occurred_at);
 
 CREATE INDEX idx_runs_agent ON runs (agent_id, started_at);
 CREATE INDEX idx_runs_case ON runs (case_id);
+CREATE UNIQUE INDEX uk_runs_running_work_item
+    ON runs (work_item_id)
+    WHERE work_item_id IS NOT NULL AND status='RUNNING';
 
 CREATE INDEX idx_evidence_case ON evidence (case_id) WHERE case_id IS NOT NULL;
 CREATE INDEX idx_claims_case ON claims (case_id);

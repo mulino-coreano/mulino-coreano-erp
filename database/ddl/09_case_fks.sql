@@ -24,6 +24,7 @@ ALTER TABLE waiting_conditions
 ALTER TABLE events
     ADD CONSTRAINT fk_events_case FOREIGN KEY (case_id) REFERENCES cases(case_id),
     ADD CONSTRAINT fk_events_work_item FOREIGN KEY (work_item_id) REFERENCES work_items(work_item_id),
+    ADD CONSTRAINT fk_events_work_item_case FOREIGN KEY (work_item_id, case_id) REFERENCES work_items(work_item_id, case_id),
     ADD CONSTRAINT fk_events_channel FOREIGN KEY (channel_id) REFERENCES channels(channel_id),
     ADD CONSTRAINT fk_events_agent FOREIGN KEY (agent_id) REFERENCES agents(agent_id),
     ADD CONSTRAINT fk_events_user FOREIGN KEY (user_id) REFERENCES users(user_id);
@@ -36,6 +37,7 @@ ALTER TABLE runs
     ADD CONSTRAINT fk_runs_agent FOREIGN KEY (agent_id) REFERENCES agents(agent_id),
     ADD CONSTRAINT fk_runs_case FOREIGN KEY (case_id) REFERENCES cases(case_id),
     ADD CONSTRAINT fk_runs_work_item FOREIGN KEY (work_item_id) REFERENCES work_items(work_item_id),
+    ADD CONSTRAINT fk_runs_work_item_case FOREIGN KEY (work_item_id, case_id) REFERENCES work_items(work_item_id, case_id),
     ADD CONSTRAINT fk_runs_trigger_event FOREIGN KEY (trigger_event_id) REFERENCES events(event_id);
 
 ALTER TABLE evidence

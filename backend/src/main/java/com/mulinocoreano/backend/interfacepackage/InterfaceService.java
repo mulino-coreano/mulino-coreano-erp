@@ -1,6 +1,5 @@
 package com.mulinocoreano.backend.interfacepackage;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,9 +17,11 @@ import java.util.Map;
 public class InterfaceService {
 
     private final JdbcClient jdbc;
+    private final RunService runService;
 
-    public InterfaceService(JdbcClient jdbc) {
+    public InterfaceService(JdbcClient jdbc, RunService runService) {
         this.jdbc = jdbc;
+        this.runService = runService;
     }
 
     // ------------------------------------------------------------------ ASK
@@ -143,43 +144,7 @@ public class InterfaceService {
 
     // ------------------------------------------------------------------ Runs (일회용 실행)
     public RunDto createRun(CreateRunRequest req) {
-        String runRef = nextRef("runs", "RUN");
-        jdbc.sql("""
-                INSERT INTO runs (run_ref, agent_id, case_id, work_item_id, runtime)
-                VALUES (:ref,
-                        (SELECT agent_id FROM agents WHERE agent_key=:ak),
-                        (SELECT case_id FROM cases WHERE case_ref=:cr),
-                        (SELECT work_item_id FROM work_items WHERE work_item_ref=:wir),
-                        :rt)
-                """)
-                .param("ref", runRef)
-                .param("ak", req.agentKey())
-                .param("cr", req.caseRef())
-                .param("wir", req.workItemRef() == null ? "" : req.workItemRef())
-                .param("rt", req.runtime())
-                .update();
-
-        // 컨텍스트 6계층 스냅샷 (최소 구현 — 참조 인덱스)
-        jdbc.sql("""
-                UPDATE runs SET context_snapshot = (
-                  SELECT jsonb_build_object(
-                    'objective', c.objective,
-                    'obligation', (SELECT jsonb_agg(jsonb_build_object('ref',w.work_item_ref,'status',w.status)) FILTER (WHERE w.work_item_id IS NOT NULL) FROM work_items w WHERE w.case_id=c.case_id),
-                    'organizational', (SELECT jsonb_agg(jsonb_build_object('agent',a.agent_key)) FILTER (WHERE a.agent_id IS NOT NULL) FROM case_participants cp JOIN agents a ON a.agent_id=cp.agent_id WHERE cp.case_id=c.case_id),
-                    'business', '{"erp_link": "pending"}'::jsonb,
-                    'epistemic', (SELECT jsonb_agg(e.evidence_ref) FILTER (WHERE e.evidence_id IS NOT NULL) FROM evidence e WHERE e.case_id=c.case_id),
-                    'control', '{"governance":"see docs/02_flow.md"}'::jsonb
-                  )
-                  FROM cases c WHERE c.case_ref=:cr
-                )
-                WHERE run_ref=:ref
-                """)
-                .param("cr", req.caseRef()).param("ref", runRef).update();
-
-        return jdbc.sql("SELECT run_id, run_ref, 'x', status::text, started_at FROM runs WHERE run_ref=:r")
-                .param("r", runRef)
-                .query((rs, i) -> new RunDto(rs.getLong(1), rs.getString(2), req.agentKey(), rs.getString(4), rs.getTimestamp(5).toInstant()))
-                .single();
+        return runService.createRun(req, null);
     }
 
     // ------------------------------------------------------------------ Attention (인간 주의)

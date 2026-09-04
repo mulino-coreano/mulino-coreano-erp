@@ -1,7 +1,7 @@
 # Mulino Coreano — 인터페이스 메커니즘 (Interface Mechanism)
 
 > 본 문서는 "챗봇이 붙은 ERP"가 아니라, **인간과 AI 에이전트가 동일한 Case·Work Item·증거·결정·ERP 상태 위에서 여러 표면(채널)으로 상호작용하는 지속성 있는 비즈니스 조직**을 정의한다.
-> 스키마 구현: `database/ddl/07_case_management.sql` ~ `09_case_fks.sql` (Flyway V8~V11)
+> 스키마 구현: `database/ddl/07_case_management.sql` ~ `09_case_fks.sql` (Flyway V8~V15)
 > 업무 흐름과의 관계: `docs/02_flow.md` (SSOT), 스키마 상세: `docs/03_erd.md`
 
 ---
@@ -17,6 +17,7 @@
 | **MONITOR** | 물어보기 전에 알아야 할 것 관찰 | "지금 내 주의가 필요한 것" | 대시보드가 담당 |
 
 ACT에서 인간은 **원하는 결과(outcome)** 를 말한다. 어떤 ERP 트랜잭션을 수행할지가 아니다.
+`GET /api/v1/monitor`는 기한이 도래한 `SCHEDULED_TIME` 또는 종료된 `DEPENDENCY_DONE` 대기가 있을 때만 `DISPATCH_SWEEP_TRIGGERED`(`source=MONITOR`) Event를 기록한다. 실행 가능한 대기가 없는 조회는 상태만 반환하며 합성 Event를 만들지 않는다. 관리·테스트용 `POST /api/v1/dispatch`는 호출 자체를 `DISPATCH_REQUESTED`(`source=MANUAL`)로 항상 기록한다.
 
 ---
 
@@ -96,7 +97,7 @@ WI-103 긴급 운송 평가            → Logistics Agent
 Procurement ──→ Claim / Evidence / Work Item ──→ Shared Case ──→ Logistics
 ```
 
-`claim_evidence` 연결 테이블은 추론(Claim)과 결정론적 증거(Evidence)를 분리한다. Claim은 `ASSERTED / VERIFIED / CONFLICTED / REFUTED` 상태를 갖고, 반증률(refutation rate)은 대시보드의 에이전트 시스템 건강 지표가 된다.
+`claim_evidence` 연결 테이블은 추론(Claim)과 결정론적 증거(Evidence)를 분리한다. Event가 이 연결을 전달하면 Dispatcher는 Claim·Evidence·Event가 같은 Case인지 먼저 검증한 뒤 같은 트랜잭션에서 `SUPPORTS` 또는 `REFUTES` 관계를 기록한다. Claim은 `ASSERTED / VERIFIED / CONFLICTED / REFUTED` 상태를 갖고, 반증률(refutation rate)은 대시보드의 에이전트 시스템 건강 지표가 된다.
 
 직접 대화는 유용한 곳에서 허용되지만, 실질적 결과는 반드시 내구 상태로 승격된다. 회의와 대화는 사라져도, **결정과 의무는 살아남아야 한다.**
 
@@ -117,7 +118,7 @@ Procurement Agent (agents 테이블 — 조직 정체성)
 
 ## 7. 컨텍스트 6계층과 참조 방식
 
-실행 전 Context Builder가 Case Context를 재구성해 전달한다. 거대한 대화 리플레이가 아니다.
+실행 전 Context Builder가 Case Context를 재구성해 전달한다. 거대한 대화 리플레이가 아니다. 여섯 계층은 한 PostgreSQL SELECT로 조립되어 서로 다른 시점의 상태가 섞이지 않는다.
 
 | 계층 | 내용 | 주요 소스 |
 |---|---|---|
@@ -146,7 +147,9 @@ WI-102 status = WAITING, WAIT-83 (condition = supplier reply)
 
 이벤트가 모든 인터페이스를 연결한다: `CHANGE_REQUEST_APPROVED`(Slack 승인), `EMAIL_SENT`(인간 Send), `SUPPLIER_EMAIL_RECEIVED`, `THIRD_PARTY_STOCK_REPORT_RECEIVED`(3PL 워크북), `INVENTORY_CHANGED`(ERP 상태 변경). 이벤트는 Case를 갱신하고 대기 조건을 충족시킨다.
 
-그 뒤 디스패처가 실행할 에이전트를 결정한다 — 배정이 연속 실행을 뜻하지 않는다. 공급사 회신이 오면 Procurement WI만 READY가 되고, Logistics/QC WI는 영향받지 않아 **해당 에이전트만 실행된다.**
+Event는 불변 사실이다. 애플리케이션과 무관하게 DB 트리거가 `events` UPDATE/DELETE/TRUNCATE를 거부하며, 정정은 새 Event를 추가하는 방식으로 기록한다. Event와 Run이 Work Item을 가리키면 composite FK가 그 Work Item과 Case의 일치도 강제한다.
+
+그 뒤 디스패처가 실행할 에이전트를 결정한다 — 배정이 연속 실행을 뜻하지 않는다. 공급사 회신이 오면 Procurement WI만 READY가 되고, Logistics/QC WI는 영향받지 않아 **해당 에이전트만 실행된다.** Run 생성 직전에는 잠근 WI가 READY인지, 현재 배정 에이전트가 활성 상태인지, 사용자 배정과 충돌하지 않는지를 다시 검증한다. 컨텍스트 재구성에 실패한 Run은 성공 스케줄로 표시하지 않고 운영자에게 `MATERIAL_EXCEPTION` attention을 연다.
 
 ---
 
@@ -234,9 +237,14 @@ WI-102 status = WAITING, WAIT-83 (condition = supplier reply)
 
 | 표면(채널) | 구현 |
 |---|---|
-| 백엔드 API | `backend/src/main/java/com/mulinocoreano/backend/interfacepackage/` — `/api/v1/ask|cases|runs|attention|monitor` |
+| 백엔드 API | `backend/src/main/java/com/mulinocoreano/backend/interfacepackage/` — `/api/v1/ask|cases|runs|events|dispatch|attention|monitor` |
+| 이벤트 디스패처 | `DispatcherService` — 권위 있는 이벤트 기록·멱등 처리 → 대기조건 충족 → WI READY → Run 스케줄/실패 attention을 단일 트랜잭션으로 수행 |
 | ChatGPT/Claude 커넥터 | `mcp-server/` — MCP 도구 5종 (`ask_inventory`, `create_case`, `list_cases`, `list_attention`, `monitor_status`) |
 | L0 스키마 | `database/ddl/07_case_management.sql` ~ `09_case_fks.sql` |
+
+Event 요청은 알 수 없는 Case/Work Item, 서로 다른 Case의 조합, 해소된 scope와 모순되는 payload identity, 스키마 길이 초과를 `400 Bad Request`로 거부한다. 승인 Event는 완료된 Attention 또는 승인된 Governance Action을 DB에서 다시 해소해 인간 actor를 도출하며, 결정 문자열만으로 대기를 풀 수 없다. Event 멱등 키가 다른 내용에 재사용되거나 동일 Work Item에 활성 Run이 이미 존재하면 `409 Conflict`를 반환한다. Run 요청도 READY 상태·현재 배정·활성 에이전트·Case 소속을 삽입 전에 검증한다.
+
+현재 API는 내부/신뢰 네트워크용 구현 단계다. L1 인증·거버넌스 인터셉터와 읽기 actor 감사는 아직 연결되지 않았으므로 비신뢰 네트워크에 직접 공개하지 않는다. 이 제한은 승인 Event의 DB 재검증과 별개의 배포 경계다.
 
 ### 로컬 실행
 
@@ -244,7 +252,7 @@ WI-102 status = WAITING, WAIT-83 (condition = supplier reply)
 # 1. DB
 createdb mulino_coreano && for f in database/ddl/*.sql; do psql -d mulino_coreano -f "$f"; done
 
-# 2. Backend (Flyway는 V1–V11 수동-적용 후 시작 가정)
+# 2. Backend (Flyway는 V1–V15 적용 후 시작 가정)
 cd backend && ./gradlew bootRun    # http://localhost:8080
 
 # 3. MCP 커넥터 (ChatGPT / Claude Desktop)

@@ -89,6 +89,7 @@ CREATE TABLE work_items (
     resolved_at      TIMESTAMP NULL,
     metadata         JSONB NULL,
     CONSTRAINT uk_work_item_ref UNIQUE (work_item_ref),
+    CONSTRAINT uk_work_item_id_case UNIQUE (work_item_id, case_id),
     CONSTRAINT ck_wi_single_assignee CHECK (NOT (assigned_agent_id IS NOT NULL AND assigned_user_id IS NOT NULL)),
     CONSTRAINT ck_wi_resolved_at CHECK (
         (status IN ('DONE','CANCELLED')) = (resolved_at IS NOT NULL)
@@ -123,6 +124,7 @@ CREATE TABLE waiting_conditions (
 CREATE TABLE events (
     event_id      BIGSERIAL PRIMARY KEY,
     event_type    VARCHAR(100) NOT NULL,        -- CHANGE_REQUEST_APPROVED / EMAIL_SENT / SUPPLIER_EMAIL_RECEIVED / ...
+    external_ref  VARCHAR(255) NULL,            -- 이메일 message-id, 외부 이벤트 idempotency key
     case_id       BIGINT NULL,
     work_item_id  BIGINT NULL,
     channel_id    BIGINT NULL,
@@ -130,8 +132,31 @@ CREATE TABLE events (
     agent_id      BIGINT NULL,
     user_id       BIGINT NULL,
     payload       JSONB NULL,
-    occurred_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    occurred_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_events_type_external UNIQUE (event_type, external_ref),
+    CONSTRAINT ck_events_work_item_requires_case CHECK (work_item_id IS NULL OR case_id IS NOT NULL)
 );
+
+-- Event facts are append-only. Corrections are represented by new Event rows.
+CREATE OR REPLACE FUNCTION prevent_event_modification()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'events is append-only: % is not allowed', TG_OP
+        USING ERRCODE = '23514';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_events_no_update
+    BEFORE UPDATE ON events
+    FOR EACH ROW EXECUTE FUNCTION prevent_event_modification();
+
+CREATE TRIGGER trg_events_no_delete
+    BEFORE DELETE ON events
+    FOR EACH ROW EXECUTE FUNCTION prevent_event_modification();
+
+CREATE TRIGGER trg_events_no_truncate
+    BEFORE TRUNCATE ON events
+    FOR EACH STATEMENT EXECUTE FUNCTION prevent_event_modification();
 
 -- -----------------------------------------------------------------------------
 -- [7. Run] 일회용 LLM 실행. 논리 에이전트의 연속성은 Case/Work Item이 제공

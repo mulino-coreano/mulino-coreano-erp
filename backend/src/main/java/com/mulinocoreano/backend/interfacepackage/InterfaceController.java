@@ -1,5 +1,7 @@
 package com.mulinocoreano.backend.interfacepackage;
 
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -14,9 +16,11 @@ import java.util.Map;
 public class InterfaceController {
 
     private final InterfaceService service;
+    private final DispatcherService dispatcher;
 
-    public InterfaceController(InterfaceService service) {
+    public InterfaceController(InterfaceService service, DispatcherService dispatcher) {
         this.service = service;
+        this.dispatcher = dispatcher;
     }
 
     // ------------------------------------------------------------ ASK
@@ -48,8 +52,26 @@ public class InterfaceController {
 
     // ------------------------------------------------------------ Execution (Run)
     @PostMapping("/runs")
-    public RunDto createRun(@RequestBody CreateRunRequest req) {
+    public RunDto createRun(@Valid @RequestBody CreateRunRequest req) {
         return service.createRun(req);
+    }
+
+    // ------------------------------------------------------------ Events / Dispatcher
+    @PostMapping("/events")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public EventDispatchResponse ingestEvent(@Valid @RequestBody CreateEventRequest req) {
+        return dispatcher.ingest(req);
+    }
+
+    @PostMapping("/dispatch")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public EventDispatchResponse dispatch() {
+        return dispatcher.dispatchScheduled();
+    }
+
+    @GetMapping("/events")
+    public List<EventDto> listEvents(@RequestParam(required = false) String caseRef) {
+        return dispatcher.listEvents(caseRef);
     }
 
     // ------------------------------------------------------------ Attention
@@ -61,6 +83,7 @@ public class InterfaceController {
     // ------------------------------------------------------------ Monitor
     @GetMapping("/monitor")
     public MonitorDto monitor() {
+        dispatcher.dispatchScheduledIfActionable();
         return service.monitor();
     }
 
