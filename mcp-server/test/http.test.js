@@ -126,10 +126,13 @@ test("write scope is enforced before OBO or backend; validated write credentials
   assert.match(response.headers.get("www-authenticate"), /work:write/);
   assert.equal(f.exchanges.length, 0);
   const client = await f.client(await f.token({ scope: "erp:read work:write" }));
-  const result = await client.callTool({ name: "create_case", arguments: { objective: "goal" } });
+  const result = await client.callTool({ name: "create_case", arguments: { objective: "goal", requestKey: "http-case-request-1" } });
   assert.equal(result.isError, undefined);
   assert.equal(f.exchanges[0].scope, "work:write");
   assert.equal(f.backendCalls[0].path, "/api/v1/cases");
+  assert.equal(f.backendCalls[0].idempotencyKey, "http-case-request-1");
+  assert.deepEqual(f.backendCalls[0].body, { objective: "goal", channel: "CHAT" });
+  assert.equal(result.structuredContent.requestKey, "http-case-request-1");
 });
 
 test("failed or substituted OBO output never falls back to the incoming credential or leaks errors", async () => {
@@ -206,7 +209,9 @@ async function fixture() {
       });
       return res.end(JSON.stringify({ access_token: exchanged, token_type: "Bearer", expires_in: 300, issued_token_type: state.exchangeBehavior === "wrong-type" ? "urn:id-token" : ACCESS_TOKEN_TYPE }));
     }
-    state.backendCalls.push({ path: req.url, authorization: req.headers.authorization });
+    let requestBody = ""; for await (const chunk of req) requestBody += chunk;
+    state.backendCalls.push({ path: req.url, authorization: req.headers.authorization,
+      idempotencyKey: req.headers["idempotency-key"], body: requestBody ? JSON.parse(requestBody) : undefined });
     if (state.backendBehavior === "error") { res.statusCode = 500; return res.end("internal-upstream-secret"); }
     if (state.backendBehavior === "redirect") { res.writeHead(307, { Location: "/leak" }); return res.end("{}"); }
     const { payload } = await jwtVerify(req.headers.authorization.slice(7), keys.publicKey, { issuer: ISSUER, audience: API_AUDIENCE });

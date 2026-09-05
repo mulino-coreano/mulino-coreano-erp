@@ -566,7 +566,7 @@ erDiagram
 - Work Item 담당은 에이전트와 사용자 중 최대 한 명이다. Case 참여자는 같은 actor를 중복 등록하지 않는다.
 - Event, Run, Decision, Attention의 Work Item 참조는 해당 Case 소속이어야 한다. 복합 FK가 `(work_item_id, case_id)`를 검증한다.
 - Event는 UPDATE/DELETE/TRUNCATE 불가이며 `(event_type, external_ref)`가 중복 입력을 차단한다. 정정은 새 Event로 기록한다.
-- Work Item별 `RUNNING` Run은 최대 하나다. `trigger_event_id`와 `resolved_by_event_id`가 실행·대기 해소의 근거를 연결한다.
+- Work Item별 `QUEUED`/`RUNNING` 활성 Run은 합쳐 최대 하나다. worker별 RUNNING lease도 최대 하나다. `trigger_event_id`와 `resolved_by_event_id`가 실행·대기 해소의 근거를 연결한다.
 - Claim의 상태와 지지/반증 링크, 인간 결정의 범위를 실행 컨텍스트에 보존한다. 증거 참조가 있다는 사실만으로 주장을 검증 완료로 취급하지 않는다.
 - 기존 발주·입고·리콜 승인 매트릭스와 양방향 LOT 추적 경로는 그대로 유지한다.
 
@@ -630,3 +630,21 @@ erDiagram
 `production_lots.warehouse_id`는 기존 생산 기록의 창고가 단일하게 확인될 때만 보정한다. 자료가 없거나 여러 창고로 해석되는 LOT은 NULL을 유지하고 계획 계산 시 해당 양수 LOT을 예외로 처리한다. 재고 위치를 추측해 보정하지 않는다.
 
 단위·BOM·공급 조건은 이후 계획 계산의 근거다. 이 데이터 추가는 실제 생산 투입 차감이나 발주 승인·적용 API의 완성을 의미하지 않는다. 상세 대사와 계산 규칙은 [계산 구현 안내](12_replenishment_calculation.md)를 따른다.
+
+## 9. 실행 임대와 계획 시도 상태
+
+Flyway V20~V22와 독립 DDL12~14가 실행·멱등·완료 근거를 확장한다. 새 테이블은 `request_idempotency` 하나이며 나머지는 기존 Run·Work Item·계획 관계의 확장이다.
+
+```mermaid
+erDiagram
+    runs o|--o| runs : retry_of_run_id
+    work_items o|--o{ replenishment_plans : "created_by_work_item_id + case_id"
+    replenishment_plans o|--o| work_items : "latest_planning_plan_id + case_id + work_item_id"
+```
+
+- `runs`: QUEUED와 RUNNING을 구분하고 lease 소유자·만료·토큰 hash·시도 횟수·재시도 원본·결과·실행 당시 context를 저장한다. 원래 `context_snapshot`은 보존한다. 모델 capability 원문과 실행기 lease token 원문은 저장하지 않는다.
+- `request_idempotency`: `(scope, request_key)`별 요청 hash와 응답을 저장한다. 업무 변경과 같은 트랜잭션에서 기록하며 다른 입력으로 키를 재사용하면 거부한다. token을 발급하는 claim 응답은 저장하지 않는다.
+- `replenishment_plans.created_by_work_item_id`: 계획을 만든 실제 업무와 같은 Case임을 복합 FK로 확인한다.
+- `work_items.planning_attempt_sequence`, `latest_planning_outcome`, `latest_planning_plan_id`: 최신 계산 시도의 서버 소유 상태다. DATA_ERROR는 계획 ID가 없고 READY/NEEDS_ATTENTION은 같은 Case·원본 업무의 계획을 참조해야 한다. 과거 응답 재생은 이 값을 되돌리지 않는다.
+
+마이그레이션은 기존 RUNNING 예약을 ABORTED로 정리하되 기록된 context와 기존 대기/종결 의무를 보존한다. 원본 업무가 없는 과거 계획을 임의의 업무 완료 근거로 승격하지 않는다. 자세한 API와 대기·복구 계약은 [실행 연결 안내](13_execution_and_plan_api.md)를 따른다.

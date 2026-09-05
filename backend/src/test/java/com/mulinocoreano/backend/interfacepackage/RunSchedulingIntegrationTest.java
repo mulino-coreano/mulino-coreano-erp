@@ -54,9 +54,9 @@ class RunSchedulingIntegrationTest {
         RunDto first = runService.createRun(request, firstEventId);
         Optional<RunDto> duplicate = runService.tryCreateRun(request, secondEventId);
 
-        assertThat(first.status()).isEqualTo("RUNNING");
+        assertThat(first.status()).isEqualTo("QUEUED");
         assertThat(duplicate).isEmpty();
-        assertThat(jdbc.sql("SELECT count(*) FROM runs WHERE work_item_id=:workItemId AND status='RUNNING'")
+        assertThat(jdbc.sql("SELECT count(*) FROM runs WHERE work_item_id=:workItemId AND status='QUEUED'")
                 .param("workItemId", fixture.workItemId()).query(Long.class).single())
                 .isEqualTo(1);
     }
@@ -71,8 +71,8 @@ class RunSchedulingIntegrationTest {
 
         assertThatThrownBy(() -> runService.createRun(request, null))
                 .isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("active RUNNING Run already exists");
-        assertThat(jdbc.sql("SELECT count(*) FROM runs WHERE work_item_id=:workItemId AND status='RUNNING'")
+                .hasMessageContaining("active QUEUED/RUNNING Run already exists");
+        assertThat(jdbc.sql("SELECT count(*) FROM runs WHERE work_item_id=:workItemId AND status='QUEUED'")
                 .param("workItemId", fixture.workItemId()).query(Long.class).single())
                 .isEqualTo(1);
     }

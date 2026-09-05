@@ -52,7 +52,7 @@ class InterfaceIntakeIntegrationTest {
     void createCaseAssignsActiveOrchestratorAndDefaultChatOrigin() throws Exception {
         String objective = "Intake objective " + shortId();
 
-        mockMvc.perform(post("/api/v1/cases")
+        mockMvc.perform(post("/api/v1/cases").header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"objective":"%s"}
@@ -127,7 +127,7 @@ class InterfaceIntakeIntegrationTest {
         ensureActiveOrchestratorAndDefaultChat();
         long before = jdbc.sql("SELECT count(*) FROM cases").query(Long.class).single();
 
-        mockMvc.perform(post("/api/v1/cases")
+        mockMvc.perform(post("/api/v1/cases").header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"objective":"This is only a query","intentType":"ASK"}
@@ -142,12 +142,12 @@ class InterfaceIntakeIntegrationTest {
     void createCaseRejectsBlankObjectiveAndUnknownChannelAsBadRequests() throws Exception {
         ensureActiveOrchestratorAndDefaultChat();
 
-        mockMvc.perform(post("/api/v1/cases")
+        mockMvc.perform(post("/api/v1/cases").header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"objective\":\"   \"}"))
                 .andExpect(status().isBadRequest());
 
-        mockMvc.perform(post("/api/v1/cases")
+        mockMvc.perform(post("/api/v1/cases").header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"objective\":\"Valid objective\",\"channel\":\"TEAMS\"}"))
                 .andExpect(status().isBadRequest());
@@ -159,7 +159,7 @@ class InterfaceIntakeIntegrationTest {
         jdbc.sql("UPDATE agents SET is_active=false WHERE agent_key='ORCHESTRATOR'").update();
         long before = jdbc.sql("SELECT count(*) FROM cases").query(Long.class).single();
 
-        mockMvc.perform(post("/api/v1/cases")
+        mockMvc.perform(post("/api/v1/cases").header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"objective\":\"Must have an active owner\"}"))
                 .andExpect(status().isServiceUnavailable());

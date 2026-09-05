@@ -1,5 +1,9 @@
 package com.mulinocoreano.backend.security;
 
+import com.mulinocoreano.backend.execution.DatabaseRunCapabilityAccess;
+import org.springframework.core.annotation.Order;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -21,8 +25,25 @@ public class SecurityConfiguration {
         return ErpJwtDecoder.create(properties.issuer(), properties.audience(), properties.jwksUri());
     }
 
-    @Bean
-    SecurityFilterChain apiSecurity(HttpSecurity http, ActorJwtConverter actors) throws Exception {
+    @Bean @Order(1)
+    SecurityFilterChain agentSecurity(HttpSecurity http, DatabaseRunCapabilityAccess capabilities) throws Exception {
+        return http.securityMatcher("/api/v1/agent/**", "/api/v1/cases/*/plans")
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .requestCache(cache -> cache.disable())
+                .addFilterBefore(new RunCapabilityFilter(capabilities), AnonymousAuthenticationFilter.class)
+                .authorizeHttpRequests(requests -> requests
+                        .requestMatchers(HttpMethod.POST, "/api/v1/cases/*/plans").hasAuthority("agent:SUPPLY_CHAIN")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/agent/work-items").hasAuthority("agent:ORCHESTRATOR")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/agent/work-items/*/transition").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/agent/cases/*", "/api/v1/agent/plans/*").authenticated()
+                        .anyRequest().denyAll())
+                .exceptionHandling(errors -> errors.authenticationEntryPoint((request,response,error) -> response.sendError(401)))
+                .build();
+    }
+
+    @Bean @Order(2)
+    SecurityFilterChain apiSecurity(HttpSecurity http, ActorJwtConverter actors, AuthProperties properties) throws Exception {
         var bearerEntryPoint = new BearerTokenAuthenticationEntryPoint();
         return http.csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -31,6 +52,11 @@ public class SecurityConfiguration {
                         // 컨테이너의 오류 응답 전달만 허용한다. 직접 /error 요청은 아래 기본 거부를 유지한다.
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/cases").hasAuthority("work:write")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/internal/runs/**")
+                            .access((authentication, context) -> new AuthorizationDecision(
+                                authentication.get().getPrincipal() instanceof ServiceActor service
+                                && service.clientId().equals(properties.workerClientId())
+                                && service.capabilities().contains("worker:dispatch")))
                         .requestMatchers(HttpMethod.POST, "/api/v1/events", "/api/v1/runs", "/api/v1/dispatch")
                             .hasAuthority("worker:dispatch")
                         .requestMatchers(HttpMethod.GET, "/api/v1/**").hasAuthority("erp:read")

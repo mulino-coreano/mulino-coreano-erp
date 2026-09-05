@@ -5,6 +5,17 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import com.mulinocoreano.backend.idempotency.RequestIdempotency;
+import com.mulinocoreano.backend.planning.CanonicalJson;
+import com.mulinocoreano.backend.security.HumanActor;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.security.core.context.SecurityContextHolder;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.Locale;
 
 import java.util.List;
 import java.util.Map;
@@ -27,10 +38,16 @@ public class InterfaceService {
 
     private final JdbcClient jdbc;
     private final RunService runService;
+    private final RequestIdempotency idempotency;
+    private final CanonicalJson json;
+    private final ObjectMapper mapper;
+    private final Clock clock;
 
-    public InterfaceService(JdbcClient jdbc, RunService runService) {
+    public InterfaceService(JdbcClient jdbc, RunService runService, RequestIdempotency idempotency,
+                            CanonicalJson json, ObjectMapper mapper, @Qualifier("planningClock") Clock clock) {
         this.jdbc = jdbc;
         this.runService = runService;
+        this.idempotency=idempotency;this.json=json;this.mapper=mapper;this.clock=clock;
     }
 
     // ------------------------------------------------------------------ ASK
@@ -79,7 +96,41 @@ public class InterfaceService {
     // ------------------------------------------------------------------ ACT
     @Transactional
     public CaseDto createCase(CreateCaseRequest req) {
+        return createCase(req, UUID.randomUUID().toString());
+    }
+
+    @Transactional
+    public CaseDto createCase(CreateCaseRequest req, String key) {
         ValidatedCaseRequest request = validateCaseRequest(req);
+        var authentication=SecurityContextHolder.getContext().getAuthentication();
+        if(authentication==null || !(authentication.getPrincipal() instanceof HumanActor actor)
+                || !actor.capabilities().contains("work:write")) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"A human work delegation is required");
+        boolean active=jdbc.sql("SELECT role::text FROM users WHERE user_id=:id AND is_active AND role IN ('OPERATOR','MANAGER') FOR SHARE")
+                .param("id",actor.userId()).query(String.class).optional().isPresent();
+        if(!active) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"The delegating user is inactive or not permitted");
+        JsonNode receipt=idempotency.execute("case.create:"+actor.userId(),key,request,()->insertCase(request,actor.userId()));
+        return mapper.treeToValue(receipt,CaseDto.class);
+    }
+
+    private CaseDto insertCase(ValidatedCaseRequest request,long userId) {
+        Map<String,Object> target=resolveReplenishment(request.replenishment());
+        if(target!=null) {
+            long warehouse=(Long)target.get("warehouseId");
+            idempotency.coordinate("planning.warehouse",String.valueOf(warehouse));
+            jdbc.sql("SELECT warehouse_id FROM warehouses WHERE warehouse_id=:id FOR UPDATE").param("id",warehouse).query(Long.class).single();
+            var existing=jdbc.sql("SELECT c.case_ref FROM planning_cases p JOIN cases c USING(case_id) WHERE p.warehouse_id=:id AND p.status='ACTIVE'")
+                    .param("id",warehouse).query(String.class).optional();
+            if(existing.isPresent()) {
+                CaseDto prior=getCase(existing.get());
+                JsonNode previous=prior.metadata()==null ? null : prior.metadata().get("replenishment");
+                if(!Set.of("OPEN","IN_PROGRESS","WAITING").contains(prior.status()) || !prior.objective().equals(request.objective())
+                        || !sameRequestedScope(previous,target)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,"Review the existing planning Case: "+prior.caseRef());
+                }
+                addHumanParticipant(prior.caseId(),userId);
+                return prior.reusedReceipt();
+            }
+        }
         String caseRef = newPublicRef("CASE");
         String title = truncate(request.objective(), 60);
 
@@ -106,16 +157,20 @@ public class InterfaceService {
                         "No default channel is configured for " + request.channel()));
 
         jdbc.sql("""
-                INSERT INTO cases (case_ref, title, objective, intent_type, origin_channel_id)
-                VALUES (:ref, :title, :obj, 'ACT', :channelId)
+                INSERT INTO cases (case_ref, title, objective, intent_type, origin_channel_id,opened_by_user_id,metadata)
+                VALUES (:ref, :title, :obj, 'ACT', :channelId,:userId,CAST(:metadata AS jsonb))
                 """)
                 .param("ref", caseRef).param("title", title)
                 .param("obj", request.objective())
                 .param("channelId", channelId)
+                .param("userId",userId).param("metadata",json.write(target==null?Map.of():Map.of("replenishment",target)))
                 .update();
 
         Long caseId = jdbc.sql("SELECT case_id FROM cases WHERE case_ref=:r")
                 .param("r", caseRef).query(Long.class).single();
+        addHumanParticipant(caseId,userId);
+        if(target!=null) jdbc.sql("INSERT INTO planning_cases(case_id,warehouse_id) VALUES(:caseId,:warehouse)")
+                .param("caseId",caseId).param("warehouse",target.get("warehouseId")).update();
 
         jdbc.sql("""
                 INSERT INTO case_participants (case_id, actor_type, agent_id)
@@ -131,31 +186,66 @@ public class InterfaceService {
                 """)
                 .param("ref", wiRef).param("cid", caseId).param("aid", agentId).update();
 
+        RunDto queued=runService.createRun(new CreateRunRequest("ORCHESTRATOR",caseRef,wiRef,"CODEX"),null);
+        if(!"QUEUED".equals(queued.status())) throw unavailable("Initial execution context could not be queued");
+
         return getCase(caseRef);
+    }
+
+    private void addHumanParticipant(long caseId,long userId) {
+        jdbc.sql("INSERT INTO case_participants(case_id,actor_type,user_id,role) VALUES(:caseId,'USER',:userId,'요청자') ON CONFLICT DO NOTHING")
+                .param("caseId",caseId).param("userId",userId).update();
+    }
+
+    private boolean sameRequestedScope(JsonNode previous,Map<String,Object> target) {
+        if(previous==null || !previous.isObject()) return false;
+        for(String field:List.of("warehouseId","productIds","targetDate")) {
+            if(!previous.hasNonNull(field) || !json.write(previous.get(field)).equals(json.write(target.get(field)))) return false;
+        }
+        return true;
+    }
+
+    private Map<String,Object> resolveReplenishment(CreateCaseRequest.Replenishment target) {
+        if(target==null) return null;
+        var policies=jdbc.sql("SELECT warehouse_id,horizon_days FROM planning_policies "
+                        +(target.warehouseId()==null?"ORDER BY warehouse_id LIMIT 2":"WHERE warehouse_id=:id"))
+                .params(target.warehouseId()==null?Map.of():Map.of("id",target.warehouseId()))
+                .query((rs,row)->new PlanningPolicy(rs.getLong(1),rs.getInt(2))).list();
+        if(policies.size()!=1) throw new InvalidInterfaceRequestException("Select one warehouse with a planning policy");
+        var policy=policies.getFirst();
+        var products=jdbc.sql("SELECT product_id,sku FROM products WHERE upper(sku) IN (:skus) AND is_active AND product_type='FINISHED_GOODS' ORDER BY product_id")
+                .param("skus",target.productSkus()).query((rs,row)->new ProductTarget(rs.getLong(1),rs.getString(2))).list();
+        if(products.size()!=target.productSkus().size()) throw new InvalidInterfaceRequestException("Every SKU must identify one active finished product");
+        LocalDate today=LocalDate.now(clock);
+        LocalDate end=target.targetDate()==null?today.plusDays(policy.horizon()-1L):target.targetDate();
+        long horizon=ChronoUnit.DAYS.between(today,end)+1;
+        if(horizon<1 || horizon>90) throw new InvalidInterfaceRequestException("Target date must be within the next 1..90 days");
+        return Map.of("warehouseId",policy.warehouseId(),"productIds",products.stream().map(ProductTarget::id).toList(),
+                "productSkus",products.stream().map(ProductTarget::sku).toList(),"targetDate",end.toString());
     }
 
     public CaseDto getCase(String caseRef) {
         return jdbc.sql("""
-                SELECT case_id, case_ref, title, objective, status::text, intent_type::text, opened_at
+                SELECT case_id, case_ref, title, objective, status::text, intent_type::text, opened_at,metadata::text
                 FROM cases WHERE case_ref=:r
                 """)
                 .param("r", caseRef)
                 .query((rs, i) -> new CaseDto(
                         rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                        rs.getString(5), rs.getString(6), rs.getTimestamp(7).toInstant()))
-                .single();
+                        rs.getString(5), rs.getString(6), rs.getTimestamp(7).toInstant(),json.readTree(rs.getString(8)==null?"{}":rs.getString(8)),false))
+                .optional().orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"Case not found"));
     }
 
     public List<CaseDto> listCases(String statusFilter) {
         String sql = """
-                SELECT case_id, case_ref, title, objective, status::text, intent_type::text, opened_at
+                SELECT case_id, case_ref, title, objective, status::text, intent_type::text, opened_at,metadata::text
                 FROM cases
                 """ + (statusFilter == null ? "ORDER BY opened_at DESC" : "WHERE status=:st::case_status ORDER BY opened_at DESC");
         var spec = jdbc.sql(sql);
         if (statusFilter != null) spec = spec.param("st", statusFilter);
         return spec.query((rs, i) -> new CaseDto(
                 rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                rs.getString(5), rs.getString(6), rs.getTimestamp(7).toInstant())).list();
+                rs.getString(5), rs.getString(6), rs.getTimestamp(7).toInstant(),json.readTree(rs.getString(8)==null?"{}":rs.getString(8)),false)).list();
     }
 
     // ------------------------------------------------------------------ Work Items
@@ -256,7 +346,14 @@ public class InterfaceService {
         if (!SUPPORTED_CHANNELS.contains(channel)) {
             throw new InvalidInterfaceRequestException("channel is invalid");
         }
-        return new ValidatedCaseRequest(request.objective().trim(), channel);
+        CreateCaseRequest.Replenishment target=request.replenishment();
+        if(target!=null) {
+            if(target.productSkus()==null || target.productSkus().isEmpty() || target.productSkus().size()>100
+                    || target.productSkus().stream().anyMatch(s->s==null || s.isBlank() || s.length()>50)
+                    || (target.warehouseId()!=null && target.warehouseId()<=0)) throw new InvalidInterfaceRequestException("Invalid replenishment scope");
+            target=new CreateCaseRequest.Replenishment(target.productSkus().stream().map(s->s.trim().toUpperCase(Locale.ROOT)).distinct().sorted().toList(),target.warehouseId(),target.targetDate());
+        }
+        return new ValidatedCaseRequest(request.objective().trim(), channel,target);
     }
 
     private String normalizeSearchTerm(String query) {
@@ -280,6 +377,8 @@ public class InterfaceService {
     private record InventorySearchRow(InventoryDto inventory, long totalLocations) {
     }
 
-    private record ValidatedCaseRequest(String objective, String channel) {
+    private record ValidatedCaseRequest(String objective, String channel,CreateCaseRequest.Replenishment replenishment) {
     }
+    private record PlanningPolicy(long warehouseId,int horizon) {}
+    private record ProductTarget(long id,String sku) {}
 }

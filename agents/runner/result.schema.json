@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "summary", "waitingConditions", "resultRef"],
+  "properties": {
+    "outcome": { "type": "string", "enum": ["DONE", "WAITING", "FAILED", "ABORTED"] },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "resultRef": { "type": ["string", "null"], "maxLength": 256 },
+    "waitingConditions": {
+      "type": "array", "maxItems": 16,
+      "items": {
+        "anyOf": [
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["type", "payload", "reason"],
+            "properties": {
+              "type": { "const": "DEPENDENCY_DONE" },
+              "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+              "payload": {
+                "type": "object", "additionalProperties": false, "required": ["dependentWiRef"],
+                "properties": { "dependentWiRef": { "type": "string", "minLength": 1, "maxLength": 256 } }
+              }
+            }
+          },
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["type", "payload", "reason"],
+            "properties": {
+              "type": { "const": "SCHEDULED_TIME" },
+              "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+              "payload": {
+                "type": "object", "additionalProperties": false, "required": ["dueAt"],
+                "properties": { "dueAt": { "type": "string", "format": "date-time",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}[Tt]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?([Zz]|[+-]\\d{2}:\\d{2})$" } }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

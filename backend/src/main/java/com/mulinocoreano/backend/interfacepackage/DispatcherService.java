@@ -240,7 +240,7 @@ public class DispatcherService {
             runService.tryCreateRun(new CreateRunRequest(
                             workItem.agentKey(), workItem.caseRef(), workItem.workItemRef(), "CODEX"),
                     eventId).ifPresent(run -> {
-                        if ("RUNNING".equals(run.status())) {
+                        if ("QUEUED".equals(run.status())) {
                             scheduledRuns.add(run.runRef());
                         } else {
                             failedRuns.add(run.runRef());

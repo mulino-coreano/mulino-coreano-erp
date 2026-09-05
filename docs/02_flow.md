@@ -261,7 +261,7 @@ flowchart TD
 - `waiting_conditions.resolved_by_event_id`와 `runs.trigger_event_id`가 재개 원인을 보존한다. 증거와 Claim의 지지/반증 관계는 검증된 동일 Case 안에 기록한다.
 - `decisions`와 `attention_requests`가 Work Item을 참조하면 같은 Case여야 한다. 인간 답변의 `answer_scope`/결정의 `scope`는 컨텍스트에 보존하며 자동으로 전사 정책으로 확대하지 않는다.
 - Work Item의 `metadata.businessRef`는 ERP 행을 가리키는 인덱스다. 운영 Case의 생성이나 승인 Event 수신이 발주·입고·리콜 등 ERP 쓰기 권한을 대신하지 않는다. 해당 변경은 위 거버넌스 승인 매트릭스를 그대로 따른다.
-- 실제 LLM executor, 인간 답변/승인 채널, ERP 변경 capability는 후속 구현이다. 현재 디스패처는 실행 예약까지 기록한다.
+- Run의 QUEUED/lease·완료·대기·실패 API와 Node 실행기 기반을 구현했다. 실제 Codex용 CLI/이미지·실연결, 인간 답변/승인 채널과 ERP 변경 capability는 후속이다.
 
 ### 외부 신원과 조회 경계
 
@@ -275,4 +275,6 @@ Auth0의 `(issuer, subject)`는 `external_identities`를 통해 사전 등록된
 
 반제품 실제 사용 이력은 `production_product_inputs`에서 생산 기록과 원본 생산 LOT을 연결한다. 원재료의 기존 `production_ingredients` 경로는 유지한다. 출고 LOT 합계·제품 잔량·입고별 원재료 LOT 합계·생산 투입 후 잔량이 일치하지 않으면 계획 계산을 거부한다.
 
-`planning_cases`·`replenishment_plans`는 거점별 업무와 불변 계획 버전을 저장할 구조다. 현재 서버 내부 계산은 읽기 전용이며 발주·생산·입고·재고를 변경하지 않는다. 모델 호출·계획 저장·MANAGER 승인·발주 적용의 연결은 후속이다. [ERD §8](03_erd.md)과 [계산 구현 안내](12_replenishment_calculation.md)를 함께 따른다.
+`planning_cases`·`replenishment_plans`에 거점별 업무와 불변 계획 버전을 저장한다. 실행 중인 SUPPLY_CHAIN 권한과 사람이 정한 범위를 검증한 뒤 저장하며, 계산 자체는 발주·생산·입고·재고를 변경하지 않는다. 목표 접수는 실제 인간과 초기 QUEUED Run을 기록한다. Work Item의 서버 소유 최신 계산 결과가 READY일 때만 계산 완료를 인정하며, 이전 정상 계획 뒤의 실패를 숨기지 않는다.
+
+대기 저장과 Run 종료·후속 이벤트를 원자적으로 처리한다. 임대가 만료되거나 권한이 바뀐 실행은 뒤늦은 변경을 할 수 없다. 실제 모델 호출·MANAGER 승인·발주 적용은 후속이며, [ERD §8~9](03_erd.md), [계산 구현 안내](12_replenishment_calculation.md), [실행 연결 안내](13_execution_and_plan_api.md)를 함께 따른다.

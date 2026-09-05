@@ -783,7 +783,7 @@ class DispatcherIntegrationTest {
                 INSERT INTO runs
                     (run_ref, agent_id, case_id, work_item_id, runtime, status)
                 VALUES
-                    (:runRef, :agentId, :caseId, :workItemId, 'CODEX', 'RUNNING')
+                    (:runRef, :agentId, :caseId, :workItemId, 'CODEX', 'QUEUED')
                 """)
                 .param("runRef", unique("RUN"))
                 .param("agentId", fixture.agentId())

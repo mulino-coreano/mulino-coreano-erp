@@ -17,7 +17,7 @@ public class PlanningSnapshotRepository {
 
     public PlanningSnapshotRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
 
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ, noRollbackFor = IllegalArgumentException.class)
     public Snapshot load(long warehouseId, List<Long> productIds, LocalDate asOf, int horizonDays) throws IllegalArgumentException {
         require(warehouseId > 0 && productIds != null && !productIds.isEmpty() && asOf != null
                 && horizonDays >= 1 && horizonDays <= 90, "INVALID_SNAPSHOT_REQUEST");

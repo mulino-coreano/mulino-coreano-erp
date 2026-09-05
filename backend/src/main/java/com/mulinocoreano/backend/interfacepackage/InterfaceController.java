@@ -32,8 +32,8 @@ public class InterfaceController {
 
     // ------------------------------------------------------------ ACT
     @PostMapping("/cases")
-    public CaseDto createCase(@Valid @RequestBody CreateCaseRequest req) {
-        return service.createCase(req);
+    public CaseDto createCase(@Valid @RequestBody CreateCaseRequest req, @RequestHeader("Idempotency-Key") String key) {
+        return service.createCase(req, key);
     }
 
     @GetMapping("/cases")

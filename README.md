@@ -14,7 +14,7 @@
 
 | 레이어 | 구성 | 역할 |
 |---|---|---|
-| L0 | PostgreSQL 18(ERP 30 + 인터페이스 13 + 인증 1 + 계획 9) + Spring Boot + MCP Server | ERP 데이터 및 기능을 Tool로 노출 |
+| L0 | PostgreSQL 18(ERP 30 + 인터페이스 13 + 인증 1 + 계획 9 + 멱등 1) + Spring Boot + MCP Server | ERP 데이터 및 기능을 Tool로 노출 |
 | L1 | Governance Engine | 액션성 Tool Call 가로채기 → 승인/차단/보류 라우팅 + 불변 감사 로그 |
 | L2 | Multi-Agent (Claude Code / Codex) | Orchestrator / Supply Chain / Procurement / QC |
 | L3 | 자연어 대시보드 | Intent Parsing → 결재 큐/품질 알람/추적 차트 자동 생성 |
@@ -53,7 +53,7 @@
 
 ## 기술 스택
 
-- **DB**: PostgreSQL 18 (ERP 30 + 인터페이스 13 + 인증 1 + 계획 9개 테이블)
+- **DB**: PostgreSQL 18 (ERP 30 + 인터페이스 13 + 인증 1 + 계획 9 + 멱등 1개 테이블)
 - **Backend**: Spring Boot 4.1.x + Java 21 + Gradle
 - **Tool 노출**: Single Zig CLI (`mulino`) + MCP Server
 - **Agent**: Claude Code / Codex Subagent Architecture (Orchestrator / Supply Chain / Procurement / QC)
@@ -65,7 +65,7 @@
 
 Backend는 DB 설정과 Auth0 issuer/audience가 필요하며, stdio MCP는 ERP access token을 요구합니다. 인증을 생략하는 개발용 변경 API는 제공하지 않습니다. 준비 순서는 [Auth0 연결 안내](docs/11_auth0_setup.md), 세부 구현 순서는 [재보충 데모 계획](docs/superpowers/plans/2026-09-05-replenishment-demo.md)을 따릅니다.
 
-주문 이력·다단계 BOM·공유 재고·복수 공급처를 연결하는 서버 내부 계산과 재현 가능한 fixture도 구현했습니다. [계산 구현 안내](docs/12_replenishment_calculation.md)에 산식·데이터 대사·기대 결과를 정리했습니다. 업무 계획 저장과 agent 호출·승인·발주 적용은 후속 연결 단계입니다.
+주문 이력·다단계 BOM·공유 재고·복수 공급처를 연결하는 서버 내부 계산과 재현 가능한 fixture도 구현했습니다. [계산 구현 안내](docs/12_replenishment_calculation.md)에 산식·데이터 대사·기대 결과를 정리했습니다. 불변 계획 저장과 scoped Run API·Node 실행기까지 연결했습니다. [실행 연결 안내](docs/13_execution_and_plan_api.md)에 계약과 검증 범위를 정리했습니다. 실제 Codex용 CLI/이미지·실연결 및 승인·발주 적용은 후속입니다.
 
 ---
 

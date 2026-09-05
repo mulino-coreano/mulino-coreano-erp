@@ -85,7 +85,7 @@ class JwtSecurityIntegrationTest {
         mvc.perform(get("/api/v1/me").header("Authorization", token))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.role").value("VIEWER"))
                 .andExpect(jsonPath("$.capabilities", not(hasItem("work:write"))));
-        mvc.perform(post("/api/v1/cases").header("Authorization", token)
+        mvc.perform(post("/api/v1/cases").header("Idempotency-Key", UUID.randomUUID().toString()).header("Authorization", token)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"objective\":\"Denied\"}"))
                 .andExpect(status().isForbidden());
         jdbc.sql("UPDATE users SET is_active=false WHERE user_id=:id").param("id", userId).update();
@@ -105,7 +105,7 @@ class JwtSecurityIntegrationTest {
     void onlyOperatorsAndManagersMayCreateCases(String role) throws Exception {
         jdbc.sql("UPDATE users SET role=:role::user_role WHERE user_id=:id").param("role", role).param("id", userId).update();
         long count = jdbc.sql("SELECT count(*) FROM cases").query(Long.class).single();
-        mvc.perform(post("/api/v1/cases").header("Authorization", bearer(claims -> {}))
+        mvc.perform(post("/api/v1/cases").header("Idempotency-Key", UUID.randomUUID().toString()).header("Authorization", bearer(claims -> {}))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"objective\":\"Denied\"}"))
                 .andExpect(status().isForbidden());
         assertThat(jdbc.sql("SELECT count(*) FROM cases").query(Long.class).single()).isEqualTo(count);
@@ -115,7 +115,7 @@ class JwtSecurityIntegrationTest {
     @ValueSource(strings = {"MANAGER", "OPERATOR"})
     void authorisedHumansCanCreateCases(String role) throws Exception {
         jdbc.sql("UPDATE users SET role=:role::user_role WHERE user_id=:id").param("role", role).param("id", userId).update();
-        mvc.perform(post("/api/v1/cases").header("Authorization", bearer(claims -> {}))
+        mvc.perform(post("/api/v1/cases").header("Idempotency-Key", UUID.randomUUID().toString()).header("Authorization", bearer(claims -> {}))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"objective\":\"인증된 목표 접수\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.intentType").value("ACT"));
     }
@@ -124,7 +124,7 @@ class JwtSecurityIntegrationTest {
     void scopesAreRequiredEvenForAManager() throws Exception {
         mvc.perform(get("/api/v1/cases").header("Authorization", bearer(claims -> claims.claim("scope", "work:write"))))
                 .andExpect(status().isForbidden());
-        mvc.perform(post("/api/v1/cases").header("Authorization", bearer(claims -> claims.claim("scope", "erp:read")))
+        mvc.perform(post("/api/v1/cases").header("Idempotency-Key", UUID.randomUUID().toString()).header("Authorization", bearer(claims -> claims.claim("scope", "erp:read")))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"objective\":\"Denied\"}"))
                 .andExpect(status().isForbidden());
     }
@@ -149,7 +149,7 @@ class JwtSecurityIntegrationTest {
                 .andExpect(jsonPath("$.clientId").value("test-worker"))
                 .andExpect(jsonPath("$.role").doesNotExist()).andExpect(jsonPath("$.userId").doesNotExist())
                 .andExpect(jsonPath("$.capabilities", not(hasItem("work:write"))));
-        mvc.perform(post("/api/v1/cases").header("Authorization", token)
+        mvc.perform(post("/api/v1/cases").header("Idempotency-Key", UUID.randomUUID().toString()).header("Authorization", token)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"objective\":\"Denied\"}"))
                 .andExpect(status().isForbidden());
     }

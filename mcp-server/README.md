@@ -60,12 +60,32 @@ npm start
 |---|---|---|---|
 | `whoami` | 인증된 사용자·ERP 역할·capability 확인 (`GET /me`) | `erp:read` | 예 |
 | `ask_inventory` | ASK — 제품명/SKU 완제품 재고 검색, 명시적 전체 조회 | `erp:read` | 예 |
-| `create_case` | ACT — 명시적인 비즈니스 목표로 영속 Case 생성 | `work:write` | 아니오 |
+| `create_case` | ACT — 목표 접수·재보충 범위 전달, 활성 범위와 겹치면 기존 Case 연결 | `work:write` | 아니오 |
 | `list_cases` | 상태별 Case 조회 | `erp:read` | 예 |
 | `list_attention` | 인간의 권한·판단이 필요한 항목 조회 | `erp:read` | 예 |
 | `monitor_status` | 저장된 운영 현황의 읽기 전용 snapshot | `erp:read` | 예 |
 
 기존 5개 도구의 입력과 업무 응답 필드를 유지합니다. 질문은 자동으로 Case를 만들지 않습니다. 구매 승인·발주 도구 및 실행기 API는 이번 단계의 MCP 도구에 추가하지 않습니다. `monitor_status`는 backend의 재판정·Run dispatch를 실행하지 않습니다.
+
+### 목표 접수와 재보충 범위
+
+`create_case`는 필수 `objective`와 선택 `channel`, `requestKey`, `replenishment`를 받습니다. 새 Case를 접수하면 Orchestrator 업무 실행을 예약하며, 실제 LLM이 이미 실행 중이라고 안내하지 않습니다. 백엔드 응답의 `reused=true`이면 “기존 Case에 연결됨”, 새 접수이면 “Case 접수됨”으로 표시합니다. 기존 응답과 `metadata`, `reused`는 구조화 결과에 그대로 보존합니다.
+
+```json
+{
+  "objective": "10월 이전 AMR-200 품절 방지",
+  "requestKey": "amr-replenishment-20260905-1",
+  "replenishment": {
+    "productSkus": ["AMR-200"],
+    "warehouseId": 1,
+    "targetDate": "2026-10-01"
+  }
+}
+```
+
+`replenishment`를 전달할 때 `productSkus`는 1~100개이며 각 SKU는 비어 있지 않은 50자 이하 문자열이어야 합니다. 대화에 명시된 SKU만 추출하고 제품명에서 SKU를 만들어내지 않습니다. `warehouseId`와 `targetDate`는 선택 사항으로, 생략하면 백엔드가 계획 정책을 확인합니다. 창고 ID는 양의 정수이며 큰 ID는 정확한 숫자 문자열로 전달합니다. `targetDate`는 실제 달력 날짜인 `YYYY-MM-DD`만 허용합니다. 인간 신원과 ERP 역할은 인증에서 결정하므로 사용자 ID·역할 입력은 제공하지 않습니다.
+
+`requestKey`는 해당 요청의 `Idempotency-Key` 헤더로 전달하며 본문에는 넣지 않습니다. 호출자가 지정한 1~200자의 ASCII 키를 그대로 보존하고, 생략하면 호출당 UUID를 한 번 생성합니다. 성공·API 오류의 `structuredContent.requestKey`에서 실제 사용한 키를 확인할 수 있습니다. 호출자가 같은 요청을 다시 보내기로 결정했을 때 **같은 키와 같은 입력**을 재사용합니다. 입력을 바꿔 같은 키를 쓰면 백엔드가 409로 거부합니다. 새 요청은 새 키를 사용합니다.
 
 수량·가격의 `NUMERIC(18,6)` 정밀도를 보존하기 위해 ERP JSON의 소수/지수 표기 숫자와 JavaScript 안전 범위를 벗어나는 정수는 MCP 응답에서 원래 숫자 문자열로 반환합니다. 예를 들어 `999999999999.999999`를 `1000000000000`으로 반올림하지 않습니다. 작은 정수 건수와 boolean은 기존 타입을 유지합니다.
 
@@ -73,6 +93,6 @@ npm start
 
 Auth0/ERP 응답 본문·토큰·시크릿·내부 오류는 도구 오류에 노출하지 않습니다. OBO 실패는 인증/API 연결 실패로 보고되며 Auth0 OBO 활성화·client grant·사용자 scope·backend 사용자 연결을 확인해야 합니다. 백엔드의 401/403 등 상태 번호는 반환하되 응답 본문은 공개하지 않습니다. Redirect는 따라가지 않습니다.
 
-API 제한 시간이 지나면 호출을 자동 재시도하지 않습니다. 변경 요청은 서버에서 이미 반영되었을 가능성을 안내하며 상태를 먼저 확인해야 합니다.
+API 제한 시간이 지나면 호출을 자동 재시도하지 않습니다. 변경 요청은 서버에서 이미 반영되었을 가능성을 안내하며 상태를 먼저 확인해야 합니다. 이후 호출자가 `create_case` 재시도를 결정하면 오류 결과의 `requestKey`와 원래 입력을 그대로 사용합니다.
 
-`npm test`는 실제 SDK stdio/HTTP 클라이언트, 서명된 JWT, 로컬 JWKS 및 token/ERP endpoint로 다음을 검증합니다: 메타데이터와 challenge, 누락·서명·issuer·audience·만료·scope 오류, M2M 거부, 사용자별 문맥 분리와 토큰 교체, 정확한 OBO 요청, 바뀐 subject/audience 및 잘못된 OBO 결과 거부, backend credential 전달, 오류 비밀 제거, redirect 및 Host/Origin 거부, 기존 도구 호환성과 변경 요청 timeout.
+`npm test`는 실제 SDK stdio/HTTP 클라이언트, 서명된 JWT, 로컬 JWKS 및 token/ERP endpoint로 다음을 검증합니다: 메타데이터와 challenge, 누락·서명·issuer·audience·만료·scope 오류, M2M 거부, 사용자별 문맥 분리와 토큰 교체, 정확한 OBO 요청, 바뀐 subject/audience 및 잘못된 OBO 결과 거부, backend credential 전달, 오류 비밀 제거, redirect 및 Host/Origin 거부, 기존 도구 호환성과 변경 요청 timeout. 목표 접수는 요청 키의 생성·유지·오류 반환, 정확한 재보충 본문, 신규/기존 Case 문구, 잘못된 입력 거부, 큰 ID 정밀도와 자동 재시도 없음을 추가로 검증합니다.

@@ -89,8 +89,10 @@ test("list_cases rejects a status outside its declared contract", async () => {
 
 test("case creation body timeout reports an uncertain mutation outcome without retrying", async () => {
   let requests = 0;
+  let requestKey;
   const apiServer = http.createServer((req, res) => {
     requests++;
+    requestKey = req.headers["idempotency-key"];
     req.resume();
     res.writeHead(200, { "Content-Type": "application/json" });
     res.flushHeaders();
@@ -117,6 +119,107 @@ test("case creation body timeout reports an uncertain mutation outcome without r
   assert.match(result.content[0].text, /반영되었을 수/);
   assert.match(result.content[0].text, /자동 재시도하지/);
   assert.equal(requests, 1);
+  assert.match(requestKey ?? "", /^[0-9a-f-]{36}$/);
+  assert.equal(result.structuredContent?.requestKey, requestKey);
+});
+
+test("create_case forwards explicit replenishment and preserves caller retry key and exact IDs", async () => {
+  const calls = [];
+  const apiServer = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    calls.push({ key: req.headers["idempotency-key"], body: JSON.parse(body), method: req.method, path: req.url });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end('{"caseRef":"CASE-1","title":"보충 목표","status":"OPEN","reused":'
+      + (calls.length > 1 ? 'true' : 'false') + ',"metadata":{"replenishment":{"warehouseId":9007199254740993}}}');
+  });
+  const apiBase = await listen(apiServer);
+  resources.push(() => closeServer(apiServer));
+  const client = await connectClient({ MULINO_API_BASE: `${apiBase}/api/v1` });
+  const arguments_ = { objective: "AMR-200 보충", channel: "CHAT", requestKey: "replenishment-request-1",
+    replenishment: { productSkus: ["AMR-200"], warehouseId: "9007199254740993", targetDate: "2026-10-01" } };
+
+  const first = await client.callTool({ name: "create_case", arguments: arguments_ });
+  const replay = await client.callTool({ name: "create_case", arguments: arguments_ });
+
+  assert.equal(first.isError, undefined);
+  assert.match(first.content[0].text, /^Case 접수됨:/);
+  assert.match(replay.content[0].text, /^기존 Case에 연결됨:/);
+  assert.equal(first.structuredContent.metadata.replenishment.warehouseId, "9007199254740993");
+  assert.equal(first.structuredContent.requestKey, "replenishment-request-1");
+  assert.deepEqual(calls, [1, 2].map(() => ({ key: "replenishment-request-1", method: "POST", path: "/api/v1/cases",
+    body: { objective: "AMR-200 보충", channel: "CHAT", replenishment: arguments_.replenishment } })));
+});
+
+test("create_case generates a key once per invocation and omits unsupplied replenishment", async () => {
+  const calls = [];
+  const apiServer = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    calls.push({ key: req.headers["idempotency-key"], body: JSON.parse(body) });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ caseRef: "CASE-1", title: "goal", status: "OPEN", reused: false, metadata: {} }));
+  });
+  const apiBase = await listen(apiServer);
+  resources.push(() => closeServer(apiServer));
+  const client = await connectClient({ MULINO_API_BASE: `${apiBase}/api/v1` });
+
+  const first = await client.callTool({ name: "create_case", arguments: { objective: "goal" } });
+  const second = await client.callTool({ name: "create_case", arguments: { objective: "goal" } });
+
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].key ?? "", /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.notEqual(calls[0].key, calls[1].key);
+  assert.deepEqual(calls[0].body, { objective: "goal", channel: "CHAT" });
+  assert.equal(first.structuredContent.requestKey, calls[0].key);
+  assert.equal(second.structuredContent.requestKey, calls[1].key);
+});
+
+test("create_case rejects malformed inputs and authority fields before contacting backend", async () => {
+  let requests = 0;
+  const apiServer = http.createServer((req, res) => { requests++; res.end("{}"); });
+  const apiBase = await listen(apiServer);
+  resources.push(() => closeServer(apiServer));
+  const client = await connectClient({ MULINO_API_BASE: `${apiBase}/api/v1` });
+  const badArguments = [
+    { requestKey: "" }, { requestKey: 123 }, { requestKey: "k".repeat(201) }, { requestKey: "   " },
+    { requestKey: "unsafe\r\nheader" }, { objective: " " }, { objective: 7 }, { channel: "INVALID" },
+    { userId: 1 }, { role: "MANAGER" },
+    { replenishment: null }, { replenishment: {} }, { replenishment: { productSkus: [] } },
+    { replenishment: { productSkus: Array(101).fill("SKU") } },
+    { replenishment: { productSkus: ["s".repeat(51)] } },
+    { replenishment: { productSkus: [" "] } }, { replenishment: { productSkus: [1] } },
+    { replenishment: { productSkus: ["SKU"], warehouseId: 0 } },
+    { replenishment: { productSkus: ["SKU"], warehouseId: 1.1 } },
+    { replenishment: { productSkus: ["SKU"], warehouseId: 9007199254740992 } },
+    { replenishment: { productSkus: ["SKU"], warehouseId: "-1" } },
+    { replenishment: { productSkus: ["SKU"], warehouseId: "9223372036854775808" } },
+    { replenishment: { productSkus: ["SKU"], targetDate: "2026-02-30" } },
+    { replenishment: { productSkus: ["SKU"], targetDate: "tomorrow" } },
+    { replenishment: { productSkus: ["SKU"], targetDate: "2026-09-05T00:00:00Z" } },
+    { replenishment: { productSkus: ["SKU"], requestedBy: 1 } },
+  ];
+  for (const invalid of badArguments) {
+    const result = await client.callTool({ name: "create_case", arguments: { objective: "goal", ...invalid } });
+    assert.equal(result.isError, true, JSON.stringify(invalid));
+  }
+  assert.equal(requests, 0);
+});
+
+test("tool discovery describes explicit SKU extraction and only declares supported case inputs", async () => {
+  const client = await connectClient({ MULINO_API_BASE: "http://127.0.0.1:1/api/v1" });
+  const listing = await client.listTools();
+  const tool = listing.tools.find(value => value.name === "create_case");
+  assert.ok(tool.inputSchema.properties.requestKey);
+  const schema = tool.inputSchema.properties.replenishment;
+  assert.deepEqual(schema?.required, ["productSkus"]);
+  assert.equal(schema.properties.productSkus.minItems, 1);
+  assert.equal(schema.properties.productSkus.maxItems, 100);
+  assert.equal(schema.properties.productSkus.items.maxLength, 50);
+  assert.equal(tool.inputSchema.additionalProperties, false);
+  assert.equal(schema.additionalProperties, false);
+  assert.match(tool.description, /explicit|명시/);
+  assert.equal(tool.annotations.readOnlyHint, false);
 });
 
 test("stdio refuses startup without an ERP credential", async () => {

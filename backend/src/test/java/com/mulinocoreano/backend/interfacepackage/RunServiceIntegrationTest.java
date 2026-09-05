@@ -44,7 +44,7 @@ class RunServiceIntegrationTest {
         RunDto run = runService.createRun(request(fixture), eventId);
 
         JsonNode snapshot = snapshot(run.runId());
-        assertThat(run.status()).isEqualTo("RUNNING");
+        assertThat(run.status()).isEqualTo("QUEUED");
         assertThat(triggerEventId(run.runId())).isEqualTo(eventId);
         assertThat(snapshot.path("objective").asString())
                 .isEqualTo("Investigate delayed purchase order");
@@ -280,7 +280,7 @@ class RunServiceIntegrationTest {
                 .doesNotThrowAnyException();
 
         assertThat(attempts).hasValue(2);
-        assertThat(result.get().status()).isEqualTo("RUNNING");
+        assertThat(result.get().status()).isEqualTo("QUEUED");
         assertThat(snapshot(result.get().runId()).path("objective").asString())
                 .isEqualTo("Uncommitted dispatcher-visible objective");
         assertThat(snapshot(result.get().runId()).path("stale").asBoolean()).isFalse();
@@ -309,7 +309,7 @@ class RunServiceIntegrationTest {
 
         RunDto run = interfaceService.createRun(request(fixture));
 
-        assertThat(run.status()).isEqualTo("RUNNING");
+        assertThat(run.status()).isEqualTo("QUEUED");
         assertThat(triggerEventIsNull(run.runId())).isTrue();
         assertThat(snapshot(run.runId()).path("objective").asString())
                 .isEqualTo("Interface delegation");

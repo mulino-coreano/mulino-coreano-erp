@@ -1,7 +1,7 @@
 # 국내 생산 재보충 데모 구현 계획
 
-> 상태: 2단계 데이터 구현 완료, 3단계 계산 코어 구현 · 실제 인증 연결/후속 업무 API 미완료 · 2026-09-05
-> 구현 담당자는 `superpowers:executing-plans`를 사용하여 아래 검증 단위별로 진행한다. 이 문서는 기능 구현 완료를 의미하지 않는다.
+> 상태: 2·3단계 구현 완료, 4단계 로컬 서버·Node 실행기 구현 완료 · 실제 Auth0/두 클라이언트 로그인·Codex CLI/이미지/모델 실행 인수와 구매 승인·적용은 미완료 · 2026-09-05
+> 구현 담당자는 `superpowers:executing-plans`를 사용하여 아래 검증 단위별로 진행한다. 전체 데모의 완료와 로컬 구현 완료를 구분하며, 최신 검증 결과는 [실행·계획 API 안내](../../13_execution_and_plan_api.md)를 따른다.
 
 **목표:** ChatGPT 또는 Codex에서 맡긴 완제품 보충 목표를 주문 이력·다단계 BOM·공급 조건으로 분석하고, Auth0로 로그인한 MANAGER가 대화에서 승인하면 원재료 발주를 한 번 반영하고 결과를 검증한다.
 
@@ -51,41 +51,43 @@ Auth0의 Authorization Code + PKCE(S256), MCP protected-resource metadata, CIMD 
 
 OAuth는 개별 발주에 대한 사람의 확인을 증명하지 않는다. 인간 대화 클라이언트는 승인 의사를 전달하는 신뢰 경계이며, 양쪽 클라이언트에서 결정 도구를 매번 확인하도록 설정하고 실제 UX를 시험한다. 서버는 인간 신원·결정 대상·버전·사유를 기록하며 클라이언트가 제공하지 않는 확인 증거를 있다고 주장하지 않는다.
 
-### 추가할 인터페이스
+### 인터페이스 계약과 현재 상태
 
-기존 `/api/v1` 조회 및 Case 응답 필드는 유지하고 필요한 필드를 추가한다. 모든 쓰기는 `Idempotency-Key`를 받으며 같은 키·내용은 기존 결과를 반환하고 다른 내용은 409다.
+기존 `/api/v1` 조회 및 Case 응답 필드는 유지하고 필요한 필드를 추가한다. 아래 경로에는 공통 `/api/v1` 접두사가 붙는다. Case·계획·agent 업무 쓰기는 `Idempotency-Key`를 받으며 같은 키·내용은 기존 결과를 반환하고 다른 내용은 409다. Event 인입은 `externalRef`를 사용한다. claim은 비밀값 발급 예외로 원래 토큰을 저장·재생하지 않으며 worker별 활성 lease 제한과 응답 유실 후 60초 대기로 처리한다. heartbeat/finish의 terminal receipt 보존이나 매 호출 사실을 남기는 수동 dispatch를 공통 업무 멱등 저장과 혼동하지 않는다.
 
-| 인터페이스 | 입력/출력 및 책임 |
-|---|---|
-| `GET /me` | 인간 사용자 신원·ERP 역할·허용 capability 반환 |
-| `POST /cases` 확장 | 기존 objective/channel 유지. optional replenishment={productSkus, warehouseId, targetDate}. 목표 누락 정보는 Attention으로 확인. 초기 업무와 QUEUED Run을 함께 생성 |
-| `GET /cases` 확장 | q/productSku/status 검색. 같은 업무를 새 대화에서 찾을 수 있도록 요약과 다음 조치 반환 |
-| `GET /cases/{ref}/overview` | 목표·범위·담당 actor·모든 활성 대기·계획·근거·결정·주요 이력·남은 의무 반환 |
-| `POST /cases/{ref}/plans` | 서버가 forecast/BOM/재고/공급 조건을 계산하여 불변 계획 버전·근거·부족·구매 후보 생성. 공급망 agent만 실행 |
-| `GET /plans/{ref}` | 기준 시각·입력 버전·수요·생산·자재·제안 및 제외 사유 조회 |
-| `POST /plans/{ref}/purchase-proposal` | procurement agent가 검증된 계획에 대해 승인 요청 생성. ERP 발주 행은 만들지 않음 |
-| `GET /approvals/{id}` | 정확한 공급처별 발주 내용·총액·근거·요청 이유·version/hash 조회 |
-| `POST /approvals/{id}/decision` | decision=APPROVE/BLOCK, expectedVersion, proposalHash, reason. MANAGER만 호출. 승인과 발주 반영을 하나의 DB 트랜잭션으로 실행 |
-| `POST /attention/{id}/answer` | answer·expectedVersion·scope=THIS_ACTION/THIS_CASE. 승인 요청은 이 일반 답변 API로 처리할 수 없음 |
-| `GET /purchase-orders/{id}` | 발주·상세·원 승인·계획·감사 연결 조회 |
-| `/internal/runs/claim`, `/heartbeat`, `/finish`, `/retry` | 실행기 전용 lease 획득·갱신·종료·통제된 재시도. 공개 MCP에 노출하지 않음 |
-| `/agent/work-items`, `/agent/work-items/{ref}/transition` | scoped agent 전용 업무 생성·상태 전이·대기 저장. 일반 내부 상태 PATCH는 제공하지 않음 |
+| 인터페이스 | 입력/출력 및 책임 | 현재 상태 |
+|---|---|---|
+| `GET /me` | 인간 사용자 신원·ERP 역할·허용 capability 반환 | 구현 |
+| `POST /cases` | optional replenishment={productSkus, warehouseId, targetDate} 해소, 인간 요청자·초기 업무·QUEUED Run 원자적 저장. 같은 목표·범위의 활성 Case만 재사용 | 구현; 잘못되거나 모호한 구조화 범위는 접수 전에 거부 |
+| `GET /cases` 확장 | q/productSku/status 검색 및 요약·다음 조치 | 목록·status 필터 구현; 확장 검색·요약 후속 |
+| `GET /cases/{ref}/overview` | 목표·범위·담당·모든 활성 대기·계획·근거·결정·이력·남은 의무 | 후속 |
+| `POST /cases/{ref}/plans` | SUPPLY_CHAIN capability로 계산. 인간의 창고·품목·목표일을 지켜 불변 계획·실제 snapshot·버전·hash 저장 | 구현 |
+| `GET /plans/{ref}` | ERP 조회 권한으로 저장된 계획·근거·제외 사유 확인 | 구현 |
+| `GET /agent/cases/{ref}`, `/agent/plans/{ref}` | 유효한 capability의 같은 Case 맥락·계획 조회 | 구현 |
+| `POST /plans/{ref}/purchase-proposal` | procurement가 검증된 계획의 승인 요청 생성. ERP 발주 행은 만들지 않음 | 후속 |
+| `GET /approvals/{id}` | 공급처별 발주 내용·총액·근거·요청 이유·version/hash | 후속 |
+| `POST /approvals/{id}/decision` | MANAGER의 APPROVE/BLOCK, 대상 version/hash·사유. 승인과 발주 반영 원자적 실행 | 후속 |
+| `POST /attention/{id}/answer` | answer·expectedVersion·THIS_ACTION/THIS_CASE. 구매 승인을 대신할 수 없음 | 후속 |
+| `GET /purchase-orders/{id}` | 발주·상세·원 승인·계획·감사 연결 | 후속 |
+| `/internal/runs/claim`, `/heartbeat`, `/finish`, `/retry` | 지정 worker M2M의 lease 제어. 공개 MCP에는 노출하지 않음 | 로컬 구현·검증 |
+| `/agent/work-items`, `/agent/work-items/{ref}/transition` | scoped 업무 생성·상태 전이·대기 저장. 임의 내부 상태 PATCH 없음 | 구현 |
 
-MCP는 기존 5개 도구를 유지하고 `whoami`, `get_case`, `get_plan`, `get_approval`, `decide_purchase`, `answer_attention`, `get_purchase_order`를 추가한다. `list_cases`에 검색 입력을 추가한다. 사람에게 계산 API나 Run 조작을 직접 요구하지 않는다.
+MCP는 기존 5개 도구에 `whoami`를 추가한 상태다. `create_case`는 구조화된 범위와 재사용 가능한 요청 키를 전달한다. `get_case`, `get_plan`, `get_approval`, `decide_purchase`, `answer_attention`, `get_purchase_order`와 `list_cases` 확장 검색은 후속이다. 사람에게 계산 API나 Run 조작을 직접 요구하지 않는다.
 
 `decide_purchase`는 readOnlyHint=false로 표시하고 명시적 결정·대상 버전·hash를 입력으로 받는다. 도구 결과는 업무 요약과 참조를 제공하고 토큰·lease·모델 로그는 노출하지 않는다. `monitor_status`는 순수 조회로 변경하고 readOnlyHint=true를 사용한다. 재판정은 허용된 worker의 dispatch API로 분리한다. 이는 인증 구현 과정에서 확정한 접근 경계다.
 
 ### 데이터와 호환성
 
 - V1–V17은 수정하지 않고 이후 Flyway migration을 추가한다. 독립 DDL과 ERD도 같은 최종 구조로 갱신한다.
-- 추가 모델: external_identities, bom_versions/bom_components, supplier_material_terms, planning_policies, replenishment_plans, purchase_applications, request_idempotency. 계산 상세는 불변 plan JSONB와 evidence/claims에 저장하고 ERP 엔터티를 복제하지 않는다.
+- 추가 모델: external_identities, bom_versions/bom_components, supplier_material_terms, planning_policies, replenishment_plans, request_idempotency는 구현했다. purchase_applications와 구매 승인 연결은 6단계에서 추가한다. 계산 상세는 불변 plan JSONB로 보존하며 ERP 엔터티를 복제하지 않는다.
 - BOM component는 하위 product 또는 raw material 중 정확히 하나를 참조한다. 제품별 활성 버전·배치 산출량·생산 리드타임과 성분별 소요량을 저장한다. 순환과 겹치는 유효 버전을 거부한다.
 - 공급 조건은 원재료별 여러 supplier, 구매단위·기본단위 환산율, 가격·KRW, MOQ·주문 배수, 납기 일수, 유효기간, 필요한 인증 유형을 저장한다. 기존 raw_materials.supplier_id는 기본 공급처로 유지하되 구매 가능 공급처를 제한하는 단일 기준으로 사용하지 않는다.
 - 분수 단위 처리를 위해 계산과 DTO는 BigDecimal을 사용하고 관련 구매·입고·LOT·생산 투입·재고·수주·출고 수량은 NUMERIC(18,6)으로 일관되게 확장한다. 기존 양수·잔여량 범위 제약과 FK는 유지한다. 가격 정밀도도 NUMERIC(18,6), 최종 KRW 약정금액은 원 단위 HALF_UP으로 정한다.
 - production_lots에 거점 창고 참조를 추가한다. 기존 생산 기록의 창고가 하나일 때만 backfill하고 여러 창고로 해석되는 LOT은 준비 검사에서 보고한다. 추측으로 위치를 선택하지 않는다.
-- governance_actions에 Case·Work Item·제안 버전·제안 agent 연결을 추가한다. requested_by는 목표를 맡긴 실제 인간으로 유지하고 제안 agent를 별도 기록한다. 생성 전 resource는 REPLENISHMENT_PLAN을 참조하며 가짜 purchase_order_id를 사용하지 않는다.
-- purchase_applications의 governance_action_id를 UNIQUE로 두어 한 승인에 의한 공급처별 발주 묶음을 한 번만 생성한다.
-- Run에 QUEUED 상태·claimed_at·lease owner/hash·lease expiry·attempt를 추가한다. 활성 Run 유일성은 QUEUED/RUNNING 전체에 적용한다. 기존 RUNNING은 구 실행 기록으로 ABORTED 처리하고 연결 업무를 READY로 복구한 이력을 남긴다. 새 실행을 묵시적으로 과거 실행으로 간주하지 않는다.
+- 6단계에서 governance_actions에 Case·Work Item·제안 버전·제안 agent 연결을 추가한다. requested_by는 목표를 맡긴 실제 인간으로 유지하고 제안 agent를 별도 기록한다. 생성 전 resource는 REPLENISHMENT_PLAN을 참조하며 가짜 purchase_order_id를 사용하지 않는다.
+- 6단계에서 purchase_applications의 governance_action_id를 UNIQUE로 두어 한 승인에 의한 공급처별 발주 묶음을 한 번만 생성한다.
+- V20~V21에 QUEUED·claimed_at·lease owner/hash·lease expiry·attempt와 멱등 응답 저장을 추가했다. 활성 Run 유일성은 QUEUED/RUNNING 전체에 적용하며 worker별 활성 lease도 하나로 제한한다. 과거 RUNNING 예약은 ABORTED로 보존하고 이미 종료되었거나 대기 중인 의무를 강제로 깨우지 않는다.
+- V22는 서버 소유 planning_attempt_sequence·latest_planning_outcome·latest_planning_plan_id로 최신 계산 결과를 기록한다. 같은 Case·원본 Work Item의 최신 READY 계획만 완료 근거가 되며, Attention-only 실패나 과거 응답 재생이 이전 성공을 최신 결과로 오인시키지 않는다.
 
 ## 3. 계산과 업무 수명주기
 
@@ -164,24 +166,26 @@ ACT 접수 → Orchestrator 실행 예약
 
 ### 3단계 — 결정론적 수요·BOM·구매 계산
 
-**책임 영역:** `backend/.../planning/`의 ForecastService, BomPlanner, SupplyNettingService, SupplierSelectionService.
+**책임 영역:** `backend/.../planning/`의 ForecastService, BomPlanner, SupplierSelectionService, ReplenishmentCalculator, PlanningSnapshotRepository, PlanPersistenceService.
 
-- [ ] §3 계산을 구현하고 입력 snapshot·plan version·source references·제외 사유를 반환한다.
-- [ ] `POST /cases/{ref}/plans`, `GET /plans/{ref}`를 구현한다. 거점의 활성 계획 제약과 같은 Case의 버전 교체를 트랜잭션으로 보장한다.
+- [x] §3 계산과 실제 ERP snapshot·plan version·source references·제외 사유 저장을 구현한다.
+- [x] `POST /cases/{ref}/plans`, `GET /plans/{ref}`를 구현한다. 인간의 창고·품목·목표일, 현재 SUPPLY_CHAIN capability, 거점 활성 Case와 불변 버전 추가를 트랜잭션으로 보장한다.
 - [x] 수요 0, 이력 부족, 확정 주문 중복, 공유 반제품, 순환 BOM, 배치/단위 올림, 만료/보류, 미입고 납기 초과, MOQ, 공급처 동률·없음과 데이터 불일치를 테스트한다.
+- [x] 멱등 재생·동시 버전 생성·접수/계획 경합·lease 만료 롤백과 최신 계산 실패 뒤 과거 READY 재생을 검증한다.
 
-**산출 계약:** immutable ReplenishmentPlan={ref,version,asOf,horizon,sources,forecast,productionRequirements,materialRequirements,purchaseCandidates,exceptions,hash}. 계산 실행 자체는 ERP 수량을 변경하지 않는다.
+**산출 계약:** 불변 계획은 ref·caseRef·version·asOf·horizonDays·targetDate·sourceSnapshot·result·sourceHash·hash를 반환하며 result에 예측·생산/자재 필요량·구매 후보·예외를 담는다. 계산 실행은 ERP 수량을 변경하지 않는다. 유효한 snapshot의 계산 자료 부족은 NEEDS_ATTENTION 계획, snapshot 구성 자체의 자료 오류는 계획 없는 Attention·멱등 오류 응답으로 남긴다.
 
 ### 4단계 — Case와 Run의 실제 실행 수명주기
 
 **책임 영역:** `backend/.../execution/`, 기존 intake/dispatcher/context 서비스, `agents/runner/`.
 
-- [ ] QUEUED/lease migration, 초기 Run 예약, claim/heartbeat/finish/retry, 업무 전이·대기·예외 API를 구현한다. `SELECT ... FOR UPDATE SKIP LOCKED`와 active-run unique index를 사용한다.
-- [ ] 기존 businessRef 수집을 유지하면서 허용된 product/material/LOT/PO/plan을 실제 조회한 business facts를 추가한다. snapshot 생성과 claim 시 신선도를 확인하고 과거 감사 snapshot을 덮어쓰지 않는다.
-- [ ] Node 기반 실행기는 프로세스 시작·종료·heartbeat만 맡긴다. DB 접근이나 업무 계산은 넣지 않는다. Codex structured result는 서버가 검증한 capability 결과 참조와 함께 상태 전이에 반영한다.
-- [ ] 다중 claim, 프로세스 종료, lease 만료, 재시작, 늦은 결과, schema 오류, 대기 중 프로세스 종료와 승인 후 재실행을 시험한다.
+- [x] QUEUED/lease migration, 인간 접수의 초기 Run 예약, claim/heartbeat/finish/retry, scoped 업무 전이·대기·예외 API를 구현한다. `FOR UPDATE SKIP LOCKED`와 WI/worker 유일성을 사용한다.
+- [x] 예약 businessRef 인덱스를 보존하고 claim에서 현재 Case 맥락과 최신 계획 범위의 제품·자재·LOT·발주·공급 조건을 다시 읽는다. 예약/실행/과거 계획 snapshot을 구분한다. 범용 ERP 리소스 capability 확장은 후속이다.
+- [x] Node 실행기에 프로세스 시작·종료·heartbeat·취소·출력 제한·비밀 가림을 구현한다. DB 접근이나 업무 계산은 넣지 않으며 완료·실패·대기는 서버가 검증한다.
+- [x] 로컬 PostgreSQL·실제 Node 자식 프로세스·모의 HTTP로 다중 claim, lease 만료·복구, 늦은 결과, 잘못된 모델 결과, 대기 종료/재개, 원래 terminal receipt 보존을 시험한다.
+- [ ] 실제 Auth0와 전용 Codex CLI·이미지·모델의 실행 및 native 역할 hand-off를 인수한다. 실제 구매 승인 후 재개는 6단계 승인 경로와 함께 검증한다.
 
-**산출 계약:** 실제 실행과 예약이 구분되고 worker의 중복 실행·오래된 상태 쓰기가 통제된다.
+**산출 계약:** 로컬 서버·runner는 예약과 claim된 실행을 구분하고 중복 실행·오래된 상태 쓰기를 통제한다. 실제 Codex 모델 실행 인수는 아직 완료하지 않았다.
 
 ### 5단계 — 역할 스킬과 최소 Zig CLI 연결
 
@@ -253,11 +257,20 @@ ACT 접수 → Orchestrator 실행 예약
 
 ## 6. 구현 진행 기록
 
+### 과거 검증 기준점 — 인증 및 V19 계산 코어
+
 - 브랜치: `feat/replenishment-demo-auth0`. 요구사항과 계획 기준점은 `6395e23`에 보존했다.
-- 1단계 코드: JWT·ERP 역할 검증, external identity V18/DDL10, `/me`, 인증된 stdio·HTTP MCP, OBO 교환, Auth0 준비·설정 도구를 구현한다.
+- 1단계 코드: JWT·ERP 역할 검증, external identity V18/DDL10, `/me`, 인증된 stdio·HTTP MCP, OBO 교환, Auth0 준비·설정 도구를 구현했다.
 - 접근 경계 변경: 인간 모니터는 읽기 전용이며 이벤트·Run 예약·dispatch는 허용된 worker 서비스만 호출한다.
 - 검증은 실제 PostgreSQL 18 통합 테스트와 서명 JWT/JWKS·token 교환 fixture를 사용한다. 실제 Auth0·ChatGPT·Codex 로그인/갱신은 별도로 기록한다.
 - 로컬 검증 결과: Backend `clean test bootJar` 208개, MCP `npm ci` 후 `npm test` 14개, Auth0 설정 스크립트 테스트 18개 통과. 독립 DDL 00~10과 seed 적용·V18/DDL10 일치도 확인했다. 실패·skip은 없으며 실제 tenant 호출은 포함하지 않는다.
 - 아직 실제 tenant issuer·OBO 자격증명·고정 공개 주소가 설정되지 않아 1단계 전체 완료로 표시하지 않는다.
 - 2단계 V19/DDL11·fixture 구현과 3단계 서버 내부 계산 코어·ERP 스냅샷을 추가했다. 실제 fixture 통합 시험에서 생산 50/30 CASE·반죽 15 KG·구매 후보 16,500원이 확인됐고 ERP 거래는 변경되지 않았다.
-- 최신 검증: Backend `clean test bootJar` 328개, MCP 15개 통과. 숫자 정밀도·날짜별 BOM·입고/LOT 수량 조작 회귀를 포함한다. 계산 버전 저장·agent API와 4~8단계는 이어서 구현한다. 상세는 [계산 구현 안내](../../12_replenishment_calculation.md)를 따른다.
+- V19 계산 코어 당시 검증: Backend `clean test bootJar` 328개, MCP 15개 통과. 숫자 정밀도·날짜별 BOM·입고/LOT 수량 조작 회귀를 포함했다. 이 수치는 현재 최종 검사 수가 아니다.
+
+### 현재 구현 기준점 — 3단계 및 4단계 로컬 연결
+
+- 3단계 계획 API·불변 버전·실제 source snapshot·정밀 hash와 V22 최신 계산 결과를 구현했다. 인간의 구조화된 범위를 강제하고 자료 부족·정합성 오류를 구분한다.
+- 4단계의 인증된 멱등 접수·초기 QUEUED 예약·활성 창고 Case 재사용, 역할별 업무 API, lease·복구·대기·완료 검증과 Node 실행기를 구현했다. claim credential은 저장·재생하지 않으며 일반 업무 쓰기의 멱등성과 구분한다.
+- 최신 Backend 전체·Node runner·MCP 검증 수와 실행 범위는 [실행·계획 API 안내](../../13_execution_and_plan_api.md)를 따른다. 이력에 남긴 과거 검사 수를 최신 값으로 재사용하지 않는다.
+- 실제 Auth0/ChatGPT/Codex 로그인, 실제 Codex용 CLI·이미지·모델 실행 인수, 구매 제안·MANAGER 결정·ERP 발주 적용과 전체 시연은 남아 있다. 5단계 이후의 예정 작업을 이 기준점의 완료로 표시하지 않는다.

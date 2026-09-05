@@ -59,9 +59,9 @@ public class RunService {
                      :agentId,
                      :caseId,
                      :workItemId,
-                     :runtime, :triggerEventId, 'RUNNING')
+                     :runtime, :triggerEventId, 'QUEUED')
                 ON CONFLICT (work_item_id)
-                    WHERE work_item_id IS NOT NULL AND status='RUNNING'
+                    WHERE work_item_id IS NOT NULL AND status IN ('QUEUED','RUNNING')
                 DO NOTHING
                 RETURNING run_id, case_id, work_item_id
                 """)
@@ -202,7 +202,7 @@ public class RunService {
                 SELECT EXISTS (
                     SELECT 1
                     FROM runs
-                    WHERE work_item_id=:workItemId AND status='RUNNING'
+                    WHERE work_item_id=:workItemId AND status IN ('QUEUED','RUNNING')
                 )
                 """)
                 .param("workItemId", workItemId)
