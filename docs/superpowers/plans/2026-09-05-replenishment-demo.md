@@ -1,0 +1,252 @@
+# 국내 생산 재보충 데모 구현 계획
+
+> 상태: 구현 전 계획 · 2026-09-05
+> 구현 담당자는 `superpowers:executing-plans`를 사용하여 아래 검증 단위별로 진행한다. 이 문서는 기능 구현 완료를 의미하지 않는다.
+
+**목표:** ChatGPT 또는 Codex에서 맡긴 완제품 보충 목표를 주문 이력·다단계 BOM·공급 조건으로 분석하고, Auth0로 로그인한 MANAGER가 대화에서 승인하면 원재료 발주를 한 번 반영하고 결과를 검증한다.
+
+**구조:** Spring Boot가 데이터·계산·권한·상태 전이·승인·발주 반영을 소유한다. 원격 MCP는 인간의 대화 인터페이스이며, 별도 로컬 실행기가 Codex 실행을 소비한다. 역할별 에이전트는 Zig `mulino` CLI로 허용된 API만 사용한다.
+
+**기술:** Java 21, Spring Boot 4.1.x, PostgreSQL 18, 기존 Node MCP SDK, Auth0, Codex CLI, Zig 0.16.0. SDK·CLI 버전은 구현 시작 시 확인한 버전을 잠그고 두 클라이언트 연결 시험 결과에 기록한다.
+
+**요구사항:** [요구사항 정의서](../../10_requirements.md), [업무 흐름](../../02_flow.md), [디스패처 계약](../../09_dispatcher_spec.md).
+
+## 1. 확정 범위와 기본값
+
+### 사용자와 합의한 선택
+
+- 전체 ERP 완성이 아닌 첫 완결 데모를 구현한다.
+- 국내 생산·판매 모델이며 완제품 직접 구매는 구현하지 않는다.
+- 주문 이력 기반 수요 추정, 다단계 BOM, 복수 공급처 비교를 포함한다.
+- 실제 실행은 Codex 우선이다. Claude 실행 어댑터는 제외한다.
+- 사람은 ChatGPT와 Codex 양쪽에서 같은 업무를 조회하고 승인한다.
+- 외부 인증 제공자는 Auth0다. 승인 웹 화면과 전체 대시보드는 만들지 않는다.
+
+### 이번 계획의 구현 기본값
+
+- 단일 기업·단일 생산 거점 데모다. 한 거점에서 하나의 활성 재보충 계획 Case를 운영하고 여러 완제품을 그 계획 안에서 합산한다. 요청이 겹치면 기존 Case의 범위 검토·새 계획 버전으로 연결한다. 자원을 공유하는 복수 계획의 동시 최적화는 제외한다.
+- 목표 기간은 미지정 시 오늘부터 30일, 안전재고는 평균 수요 7일분이다. 계산 기준 시간대는 Asia/Seoul이며 과거 이력과 미래 목표 기간을 분리한다. 지원 범위는 최대 90일, 사용자가 명시한 기간은 그대로 사용한다.
+- 생산은 필요량·착수일·원재료 소요량 산정까지만 수행한다. 실제 생산 실적, 원재료 투입 차감, 완제품 입고, 출고 변경, 품질 판정, 세금계산서 발행과 외부 발주 전송은 제외한다.
+- 로컬 PostgreSQL·백엔드·실행기를 사용하고 MCP만 ngrok의 고정 Dev Domain을 통해 HTTPS로 연결한다. 공개 주소는 `MULINO_PUBLIC_ORIGIN` 설정값으로 주입한다. 터널과 실행기가 중지되면 데모가 중지되며 상시 운영 SLA는 주장하지 않는다.
+- 미지원 목표와 자료 누락은 구체적 Attention으로 남긴다. 가정으로 값을 만들어 승인 가능한 발주안을 생성하지 않는다.
+
+### 완료의 의미
+
+계산 근거, MANAGER 결정, 생성된 발주·상세, 감사 기록을 연결하여 조회할 수 있고 승인 전후·중복·실패·재시작 시험이 통과해야 한다. 발주 업무는 DONE으로 끝내되, 생산·입고가 남은 품절 방지 Case는 WAITING으로 유지한다.
+
+## 2. 공통 계약
+
+### 인증과 권한
+
+Auth0의 Authorization Code + PKCE(S256), MCP protected-resource metadata, CIMD 클라이언트 등록을 사용한다. Resource Parameter Compatibility Profile과 authorization response issuer를 활성화한다. 초기 연결 시험에서 Auth0 tenant의 CIMD·OBO 지원을 확인하고 미지원이면 인증을 생략하거나 토큰을 우회 전달하지 않고 설정 오류로 보고한다.
+
+- 공개 MCP audience: `${MULINO_PUBLIC_ORIGIN}/mcp`.
+- 내부 ERP API audience: `urn:mulino:erp-api`.
+- MCP는 사용자 토큰을 검증한 뒤 Auth0 OBO token exchange로 ERP audience 토큰을 얻는다. 백엔드도 서명·issuer·audience·만료·scope를 검증한다. ID token을 API access token으로 사용하지 않는다.
+- 인간 신원은 `(issuer, subject)`를 ERP 사용자에 사전 연결한다. 이메일 자동 매칭·자동 권한 부여는 없다. 역할과 활성 여부의 기준은 ERP `users`다. 외부 로그인 사용자에게 로컬 비밀번호를 요구하지 않도록 외부 신원 관계와 비밀번호 제약을 조정한다.
+- scope는 `erp:read`, `work:write`, `procurement:decide`, `worker:dispatch`로 나눈다. scope가 있어도 ERP 역할 검증을 통과해야 한다.
+- VIEWER는 조회만, OPERATOR와 MANAGER는 목표 접수·일반 업무 답변을 허용한다. 발주 결정은 MANAGER만 허용한다. ADMIN·QC에는 이번 데모의 MANAGER 권한을 암묵적으로 부여하지 않는다.
+- 실행기 M2M 자격증명은 사용자 자격증명과 분리한다. 모델에는 M2M 시크릿·DB 자격증명·사용자 토큰을 전달하지 않는다. 실행기가 발급받은 Case·Work Item·역할·lease에 묶인 단기 capability만 `mulino`에 제공한다. 모든 agent 쓰기는 현재 lease와 허용 action을 서버가 재검증한다.
+- 미인증 요청은 401, scope/역할 부족은 403, 오래된 버전·멱등 키 충돌은 409로 반환한다. 개발 편의용 무인증 변경 경로는 두지 않는다.
+
+OAuth는 개별 발주에 대한 사람의 확인을 증명하지 않는다. 인간 대화 클라이언트는 승인 의사를 전달하는 신뢰 경계이며, 양쪽 클라이언트에서 결정 도구를 매번 확인하도록 설정하고 실제 UX를 시험한다. 서버는 인간 신원·결정 대상·버전·사유를 기록하며 클라이언트가 제공하지 않는 확인 증거를 있다고 주장하지 않는다.
+
+### 추가할 인터페이스
+
+기존 `/api/v1` 조회 및 Case 응답 필드는 유지하고 필요한 필드를 추가한다. 모든 쓰기는 `Idempotency-Key`를 받으며 같은 키·내용은 기존 결과를 반환하고 다른 내용은 409다.
+
+| 인터페이스 | 입력/출력 및 책임 |
+|---|---|
+| `GET /me` | 인간 사용자 신원·ERP 역할·허용 capability 반환 |
+| `POST /cases` 확장 | 기존 objective/channel 유지. optional replenishment={productSkus, warehouseId, targetDate}. 목표 누락 정보는 Attention으로 확인. 초기 업무와 QUEUED Run을 함께 생성 |
+| `GET /cases` 확장 | q/productSku/status 검색. 같은 업무를 새 대화에서 찾을 수 있도록 요약과 다음 조치 반환 |
+| `GET /cases/{ref}/overview` | 목표·범위·담당 actor·모든 활성 대기·계획·근거·결정·주요 이력·남은 의무 반환 |
+| `POST /cases/{ref}/plans` | 서버가 forecast/BOM/재고/공급 조건을 계산하여 불변 계획 버전·근거·부족·구매 후보 생성. 공급망 agent만 실행 |
+| `GET /plans/{ref}` | 기준 시각·입력 버전·수요·생산·자재·제안 및 제외 사유 조회 |
+| `POST /plans/{ref}/purchase-proposal` | procurement agent가 검증된 계획에 대해 승인 요청 생성. ERP 발주 행은 만들지 않음 |
+| `GET /approvals/{id}` | 정확한 공급처별 발주 내용·총액·근거·요청 이유·version/hash 조회 |
+| `POST /approvals/{id}/decision` | decision=APPROVE/BLOCK, expectedVersion, proposalHash, reason. MANAGER만 호출. 승인과 발주 반영을 하나의 DB 트랜잭션으로 실행 |
+| `POST /attention/{id}/answer` | answer·expectedVersion·scope=THIS_ACTION/THIS_CASE. 승인 요청은 이 일반 답변 API로 처리할 수 없음 |
+| `GET /purchase-orders/{id}` | 발주·상세·원 승인·계획·감사 연결 조회 |
+| `/internal/runs/claim`, `/heartbeat`, `/finish`, `/retry` | 실행기 전용 lease 획득·갱신·종료·통제된 재시도. 공개 MCP에 노출하지 않음 |
+| `/agent/work-items`, `/agent/work-items/{ref}/transition` | scoped agent 전용 업무 생성·상태 전이·대기 저장. 일반 내부 상태 PATCH는 제공하지 않음 |
+
+MCP는 기존 5개 도구를 유지하고 `whoami`, `get_case`, `get_plan`, `get_approval`, `decide_purchase`, `answer_attention`, `get_purchase_order`를 추가한다. `list_cases`에 검색 입력을 추가한다. 사람에게 계산 API나 Run 조작을 직접 요구하지 않는다.
+
+`decide_purchase`는 readOnlyHint=false로 표시하고 명시적 결정·대상 버전·hash를 입력으로 받는다. 도구 결과는 업무 요약과 참조를 제공하고 토큰·lease·모델 로그는 노출하지 않는다. `monitor_status`는 내부 재판정을 유발하므로 read-only 도구로 잘못 표시하지 않는다.
+
+### 데이터와 호환성
+
+- V1–V17은 수정하지 않고 이후 Flyway migration을 추가한다. 독립 DDL과 ERD도 같은 최종 구조로 갱신한다.
+- 추가 모델: external_identities, bom_versions/bom_components, supplier_material_terms, planning_policies, replenishment_plans, purchase_applications, request_idempotency. 계산 상세는 불변 plan JSONB와 evidence/claims에 저장하고 ERP 엔터티를 복제하지 않는다.
+- BOM component는 하위 product 또는 raw material 중 정확히 하나를 참조한다. 제품별 활성 버전·배치 산출량·생산 리드타임과 성분별 소요량을 저장한다. 순환과 겹치는 유효 버전을 거부한다.
+- 공급 조건은 원재료별 여러 supplier, 구매단위·기본단위 환산율, 가격·KRW, MOQ·주문 배수, 납기 일수, 유효기간, 필요한 인증 유형을 저장한다. 기존 raw_materials.supplier_id는 기본 공급처로 유지하되 구매 가능 공급처를 제한하는 단일 기준으로 사용하지 않는다.
+- 분수 단위 처리를 위해 계산과 DTO는 BigDecimal을 사용하고 관련 구매·입고·LOT·생산 투입·재고·수주·출고 수량은 NUMERIC(18,6)으로 일관되게 확장한다. 기존 양수·잔여량 범위 제약과 FK는 유지한다. 가격 정밀도도 NUMERIC(18,6), 최종 KRW 약정금액은 원 단위 HALF_UP으로 정한다.
+- production_lots에 거점 창고 참조를 추가한다. 기존 생산 기록의 창고가 하나일 때만 backfill하고 여러 창고로 해석되는 LOT은 준비 검사에서 보고한다. 추측으로 위치를 선택하지 않는다.
+- governance_actions에 Case·Work Item·제안 버전·제안 agent 연결을 추가한다. requested_by는 목표를 맡긴 실제 인간으로 유지하고 제안 agent를 별도 기록한다. 생성 전 resource는 REPLENISHMENT_PLAN을 참조하며 가짜 purchase_order_id를 사용하지 않는다.
+- purchase_applications의 governance_action_id를 UNIQUE로 두어 한 승인에 의한 공급처별 발주 묶음을 한 번만 생성한다.
+- Run에 QUEUED 상태·claimed_at·lease owner/hash·lease expiry·attempt를 추가한다. 활성 Run 유일성은 QUEUED/RUNNING 전체에 적용한다. 기존 RUNNING은 구 실행 기록으로 ABORTED 처리하고 연결 업무를 READY로 복구한 이력을 남긴다. 새 실행을 묵시적으로 과거 실행으로 간주하지 않는다.
+
+## 3. 계산과 업무 수명주기
+
+### 수요와 BOM 산정
+
+```text
+history = 기준일 이전 56일의 CONFIRMED/SHIPPED 주문 수량(order_date 기준)
+weekday_forecast[d] = 해당 요일의 일별 주문량 평균
+open_orders[d] = 필요일별 확정 주문 수량 - 해당 주문/제품의 출고 수량
+demand[d] = max(weekday_forecast[d], open_orders[d])
+safety_stock = 일평균 예측 수요 × 7일
+finished_need = 기간별 수요 + 종료 시점 안전재고 - 사용 가능한 공급
+material_need = 다단계 BOM을 전개한 순소요량 - 사용 가능한 자재 공급
+purchase_qty = 주문 배수에 맞춰 올림(max(material_need, MOQ))
+```
+
+- 계산 기준일·시간과 이력 데이터 수집 시작일을 저장한다. 이력이 28일 미만이면 자료 부족 Attention을 생성한다. 이력 범위 안의 주문 없는 날만 0으로 포함한다. PENDING/CANCELLED 주문은 제외한다.
+- 미출고 확정 주문은 expected_delivery_date로 배치하고 기한 초과는 오늘 수요에 포함한다. 납기 미지정 주문은 임의 날짜를 넣지 않고 Attention을 생성한다. 예측과 확정 주문은 일별 max로 소비 관계를 표현한다.
+- 날짜별 순소요량을 계산하고 목표 기간 말에 안전재고를 둔다. 반제품은 DAG 위상 순서에서 모든 상위 수요를 먼저 합산한 뒤 재고를 한 번만 차감한다. BOM 배치 단위로 생산 수량을 올림하고 생산 리드타임을 역산하여 하위 자재 필요일을 정한다.
+- 같은 plan 안에서 LOT/예정 입고를 중복 배정하지 않는다. 완제품·반제품은 ACTIVE이며 소비 예정일까지 유효한 LOT의 잔량을 사용한다. 잔량은 생산량에서 출고 LOT 및 하위 생산 사용량을 차감한다. 반제품 사용 이력을 표현하는 production_product_inputs 관계를 추가하되 이번 데모에서는 기존 실적 seed·조회에만 사용한다.
+- 제품 LOT 총 잔량과 stock이 일치해야 계산을 진행한다. QUARANTINE/RECALLED, 만료 LOT, RELEASED가 아닌 원재료 입고는 사용 가능 수량에서 제외한다. 출고 LOT 합계나 원재료 잔량이 맞지 않으면 계획을 중단하고 데이터 정합성 Attention을 생성한다.
+- 구매 예정량은 ORDERED/PARTIAL의 미입고 수량 중 필요일까지 도착하는 분량만 고려한다. 과거 납기 초과 미입고는 공급으로 간주하지 않는다. 예상 입고를 현재 가용 재고로 표시하지 않는다.
+- 공급처는 활성·필요 인증 유효·필요일 도착 조건을 충족한 후보에서 MOQ/배수 반영 총액, 납기, supplier_id 순으로 결정한다. 인증 30일 이내 만료는 검토 정보에 표시한다. 적격 후보가 없으면 JUDGMENT_REQUIRED 또는 MATERIAL_EXCEPTION으로 남긴다. 한 자재를 여러 공급처에 분할하는 최적화는 제외한다.
+- 생산 능력은 데모의 고정 리드타임 가정으로 설명한다. 유한 생산능력 최적화나 예측 정확도 보장은 범위 밖이다.
+
+### 실행·승인·종료
+
+```text
+ACT 접수 → Orchestrator 실행 예약
+→ 목표 해석/필요 맥락 확인
+→ Supply Chain: 수요·BOM 계산 및 근거 기록
+→ Orchestrator가 Procurement에 구매안 준비 배정
+→ 구매안·Attention·APPROVAL 대기 저장, 현재 모델 실행 종료
+→ MANAGER의 명시적인 결정
+→ 승인: 조건 재검증 + 공급처별 발주 + 감사 + 승인 이벤트 원자적 기록
+→ 새 Codex 실행: 생성 결과 설명, 결정론적 결과 검증 요청
+→ 발주 업무 DONE, 생산·입고 후속 업무 WAITING
+```
+
+- Orchestrator의 역할 분담에는 Codex의 native subagent dispatch를 사용한다. A2A나 별도 다중 에이전트 프레임워크는 도입하지 않는다. 역할 결과와 hand-off는 반드시 Case/Work Item/근거에 저장한다. 공급망 역할에는 소요량 산정 capability만 추가하고 실제 생산 실행 권한은 주지 않는다.
+- lease는 60초, heartbeat는 15초, poll은 5초, Codex 실행 제한은 10분이다. 실행기 기본 동시 처리 수는 1이다. DB 잠금·unique index로 여러 실행기가 같은 업무를 claim하지 못하게 한다.
+- Node 실행기는 호스트에서 동작하고 각 Codex 실행은 전용 Docker 컨테이너로 격리한다. 이미지에 고정 버전 Codex CLI·Linux용 mulino·역할 스킬을 포함하고 읽기 전용 root filesystem, 임시 작업 디렉터리, 일반 사용자, 제거된 Linux capabilities를 사용한다. 컨테이너에는 전용 Codex 로그인 볼륨과 해당 Run capability만 제공하며 저장소·사용자 홈·Docker socket·Auth0 M2M 시크릿을 mount하지 않는다. native subagent는 같은 제한 안에서 실행한다. 전용 Codex 로그인은 초기 운영 준비 단계에서 한 번 완료한다.
+- Codex는 명시적 설정으로 시작하고 `--json`, `--output-schema`로 결과를 반환한다. 인간 MCP 설정을 상속하지 않는다. 컨테이너에서 접근 가능한 내부 API도 모든 agent capability를 검증하며 DB는 worker 네트워크에 공개하지 않는다. 단순 프롬프트 지시를 비밀 격리로 간주하지 않는다.
+- lease 만료는 ABORTED로 기록하고 동일 업무를 최대 한 번 자동 재예약한다. 두 번째 실패, 모델 결과 schema 오류, 10분 초과는 Attention으로 전환한다. 네트워크 실패 후 업무 변경 결과가 불명확하면 멱등 키로 기존 결과를 확인한 다음 재개한다.
+- APPROVAL WAITING 동안 모델 프로세스를 유지하지 않는다. 승인 전에 읽기·계산·제안의 입력 사실을 다시 조회한다. 수량·가격·공급처·기한·가용 공급·BOM·정책이 바뀌면 409로 원 제안을 EXPIRED 처리하고 새 버전을 준비한다. 자동으로 변경된 내용에 승인 효력을 옮기지 않는다.
+- 승인과 발주 묶음 적용은 한 트랜잭션이다. 중간 오류는 전체 rollback, 응답 유실 후 반복 호출은 기존 발주 묶음을 반환한다. 승인 Event나 Attention 답변만 위조해서 ERP 쓰기를 실행할 수 없어야 한다.
+- 반려는 BLOCK 결정과 사유를 기록하고 해당 구매 업무를 종결한다. 같은 제안을 자동 재요청하지 않는다. 상위 목표에는 다음 방침이 필요한 Attention을 남긴다. 사람이 재계획을 요청한 경우에만 새 버전을 만든다.
+- 결과 검증은 실제 PO·상세·수량·가격·승인·감사 연결을 결정론적으로 비교한다. LLM의 완료 선언만으로 DONE을 만들지 않는다.
+- 생산·입고 후속 업무에는 담당과 가장 이른 납기일의 SCHEDULED_TIME 대기를 남긴다. 기한 도래 시 기존 입고 상태를 재조회하고 미입고이면 인간 주의 요청을 한 번 생성한다. 발주 등록만으로 Case를 RESOLVED/CLOSED로 전환하지 않는다.
+
+## 4. 구현 순서와 검증 단위
+
+각 단계는 테스트 추가 → 구현 → 지정 검사 → 리뷰 가능한 커밋 순서로 진행한다. main에 직접 커밋·푸시하지 않는다. 기존 미커밋 문서 변경을 보존하며, 구현 전 문서 기준점을 작업 브랜치에 함께 정리한다.
+
+### 1단계 — Auth0와 두 클라이언트의 최소 인증 연결
+
+**책임 영역:** `backend/.../security/`, `mcp-server/src/auth/`, 원격 transport와 설정 문서.
+
+- [ ] Auth0 두 resource와 MCP OBO client, worker M2M client, CIMD/PKCE/resource/issuer 설정을 구성하는 재실행 가능한 설정 스크립트와 비밀 없는 예제를 작성한다.
+- [ ] external_identities migration, JWT 검증, 인간/서비스 신원 분리, `/me`, 401 metadata challenge를 구현한다. discovery와 JWKS는 표준 라이브러리를 사용한다.
+- [ ] stdio와 Streamable HTTP에서 같은 tool registry를 사용하게 분리한다. 기존 stdio도 자격증명 검증을 생략하지 않는다.
+- [ ] 고정 HTTPS MCP에서 ChatGPT와 Codex로 같은 사전 등록 MANAGER 로그인·`whoami` 호출·토큰 갱신을 실제 검증한다. 계정 미등록, issuer/audience 오류, 만료, 역할 변경, 서비스의 승인 접근 거부를 테스트한다.
+
+**산출 계약:** 검증된 HumanActor/ServiceActor와 공통 authorization 계층. 실제 연결 성공 후 다음 단계의 쓰기를 공개한다.
+
+### 2단계 — 계획 데이터와 재현 가능한 업무 fixture
+
+**책임 영역:** Flyway/DDL, `backend/.../planning/` 모델, `database/seed/`.
+
+- [ ] 공통 계약의 BOM·공급조건·정책·plan·수량·거점·반제품 사용 관계 migration을 추가한다. 순환 BOM, 단위 차원 불일치, 중복 활성 버전을 검증한다.
+- [ ] 56일 주문, 2개 완제품, 공유 반제품, 2단계 이상 BOM, 복수 공급처, 일부 HOLD/만료 LOT, 미입고 PO가 있는 fixture를 만든다. 모든 LOT·stock·출고 수량을 대조한다.
+- [ ] 시간은 주입 가능한 Clock과 데모 기준일로 고정한다. 공급처·가격·BOM 등은 seed로 제공하고 마스터 CRUD 화면은 만들지 않는다.
+- [ ] 빈 DB Flyway 적용과 V17 DB 업그레이드, 독립 DDL 적용을 서로 다른 disposable DB에서 검증한다. 기존 FK·CHECK·감사 불변성이 유지되는지 검사한다.
+
+**산출 계약:** 동일 입력에서 동일 수요/BOM 테스트를 실행할 수 있는 데이터와 버전 참조.
+
+### 3단계 — 결정론적 수요·BOM·구매 계산
+
+**책임 영역:** `backend/.../planning/`의 ForecastService, BomPlanner, SupplyNettingService, SupplierSelectionService.
+
+- [ ] §3 계산을 구현하고 입력 snapshot·plan version·source references·제외 사유를 반환한다.
+- [ ] `POST /cases/{ref}/plans`, `GET /plans/{ref}`를 구현한다. 거점의 활성 계획 제약과 같은 Case의 버전 교체를 트랜잭션으로 보장한다.
+- [ ] 수요 0, 이력 부족, 확정 주문 중복, 공유 반제품, 순환 BOM, 배치/단위 올림, 만료/보류, 미입고 납기 초과, MOQ, 공급처 동률·없음과 데이터 불일치를 테스트한다.
+
+**산출 계약:** immutable ReplenishmentPlan={ref,version,asOf,horizon,sources,forecast,productionRequirements,materialRequirements,purchaseCandidates,exceptions,hash}. 계산 실행 자체는 ERP 수량을 변경하지 않는다.
+
+### 4단계 — Case와 Run의 실제 실행 수명주기
+
+**책임 영역:** `backend/.../execution/`, 기존 intake/dispatcher/context 서비스, `agents/runner/`.
+
+- [ ] QUEUED/lease migration, 초기 Run 예약, claim/heartbeat/finish/retry, 업무 전이·대기·예외 API를 구현한다. `SELECT ... FOR UPDATE SKIP LOCKED`와 active-run unique index를 사용한다.
+- [ ] 기존 businessRef 수집을 유지하면서 허용된 product/material/LOT/PO/plan을 실제 조회한 business facts를 추가한다. snapshot 생성과 claim 시 신선도를 확인하고 과거 감사 snapshot을 덮어쓰지 않는다.
+- [ ] Node 기반 실행기는 프로세스 시작·종료·heartbeat만 맡긴다. DB 접근이나 업무 계산은 넣지 않는다. Codex structured result는 서버가 검증한 capability 결과 참조와 함께 상태 전이에 반영한다.
+- [ ] 다중 claim, 프로세스 종료, lease 만료, 재시작, 늦은 결과, schema 오류, 대기 중 프로세스 종료와 승인 후 재실행을 시험한다.
+
+**산출 계약:** 실제 실행과 예약이 구분되고 worker의 중복 실행·오래된 상태 쓰기가 통제된다.
+
+### 5단계 — 역할 스킬과 최소 Zig CLI 연결
+
+**책임 영역:** `agents/cli/`, `agents/skills/`, 실행기와 backend agent capability.
+
+- [ ] Zig 0.16.0 stdlib로 필요한 명령만 구현한다: `case show`, `work create/transition`, `plan calculate/show`, `material show`, `po propose/show`. 각 명령은 해당 API로만 전달하며 JSON stdout/error stderr와 기존 exit code 계약을 유지한다.
+- [ ] 토큰은 환경변수로 받되 실행 결과·로그에 포함하지 않는다. CLI는 자동 재시도하지 않고 호출자의 멱등 키를 전달한다. 인간 승인 명령은 agent CLI에 넣지 않는다.
+- [ ] Orchestrator → Supply Chain → Procurement의 역할별 업무·hand-off·승인 대기를 연결한다. 대기 중 역할 실행의 종료와 상위 Case 책임의 지속을 스킬에 구분한다. 역할 변경을 업무 흐름에도 반영한다.
+- [ ] 모의 런타임 계약 테스트와 실제 Codex native subagent 실행 시험을 분리한다. 실제 시험은 계산 결과 참조와 승인 요청이 저장되는 것을 확인한다.
+
+**산출 계약:** 모델이 DB나 임의 발주 SQL 없이 원재료 구매 승인안을 준비한다.
+
+### 6단계 — MANAGER 결정과 원자적 발주 반영
+
+**책임 영역:** `backend/.../procurement/`, `backend/.../governance/`.
+
+- [ ] 불변 발주 묶음 제안, governance action, AUTHORITY_REQUIRED Attention, APPROVAL 대기를 한 트랜잭션으로 만든다. 같은 plan version의 제안 중복을 방지한다.
+- [ ] 승인 대상은 공급처별 PO 전체를 포함한 정확한 plan 구매 묶음이다. 잠금 순서는 plan → governance action → 정렬된 관련 공급/재고 행으로 통일한다. 조건 재검증 후 PO·상세·decision·audit·purchase_application·Event를 원자적으로 저장한다.
+- [ ] `created_by`는 승인 인간으로 기록하고 요청자·제안 agent는 연결 이력에 남긴다. 전자세금계산서 번호·일자는 실제 발행 전 NULL로 두고 가짜 값을 생성하지 않는다.
+- [ ] 반려·만료·변경안 재승인, 승인과 반려 경쟁, 응답 유실 후 재호출, 중간 INSERT 실패, 다른 사람이 전달한 actor ID, worker/OPERATOR의 승인 접근을 테스트한다.
+- [ ] 원래 payload의 hash만 비교하지 않고 현재 DB 입력도 다시 검증한다. 구매 검증 서비스만 해당 업무를 DONE으로 전환할 수 있게 한다.
+
+**산출 계약:** MANAGER 승인 한 번에 정확한 원재료 PO 묶음이 한 번 생성되고 근거·감사로 추적된다.
+
+### 7단계 — 두 대화 클라이언트의 업무 UX
+
+**책임 영역:** Case overview query, MCP tool registry/한국어 응답, 클라이언트 연결 설정.
+
+- [ ] overview와 검색을 구현한다. 인간 담당과 에이전트 담당을 모두 표시하고 모든 활성 대기 사유·근거·판단 범위·타임라인을 반환한다.
+- [ ] MCP 추가 도구를 연결하고 읽기/쓰기 annotation, Auth0 security metadata, 오류·재인증 응답을 맞춘다. 직원에게 WI/Run 명령을 요구하지 않는다.
+- [ ] 발주안에는 필요한 인간 권한, 추천 내용, 계산 근거, 미조치 영향과 남은 불확실성을 표시한다. 설명에서 재고 현재값과 예정 공급을 구분한다.
+- [ ] ChatGPT에서 접수 → Codex의 새 대화에서 찾기·검토·승인 → ChatGPT에서 결과 확인을 시연한다. 반대 방향도 시험한다. 결정 도구의 확인을 기억하거나 자동 승인하도록 설정하지 않는다.
+- [ ] 일반 Attention 답변은 THIS_ACTION/THIS_CASE 범위만 지원하고, 승인 도구 우회가 불가능한지 검사한다. 발주 완료 후 남은 생산·입고 책임과 기한을 보여준다.
+
+**산출 계약:** 사용자 관점에서 목표·근거·결정·현재 상태가 대화 경계를 넘어 이어진다.
+
+### 8단계 — 전체 검증과 인수 문서
+
+- [ ] disposable PostgreSQL 18에서 `./gradlew clean test bootJar --no-daemon`, MCP·runner의 `npm test`, CLI의 `zig build test`와 모의 HTTP smoke test를 실행한다.
+- [ ] 통합 테스트는 예측된 정확한 수량·금액·PO 개수를 fixture의 기대값과 비교한다. 모의 모델 테스트와 실제 모델 시험 결과를 별도 표기한다.
+- [ ] 승인 전 PO 0건, 승인 후 정확한 묶음, 반복 요청 후 동일 결과, 반려 후 PO 0건, 변경안 재승인, 재시작 후 재개, 오류 시 성공 미표시를 실제 DB로 검증한다.
+- [ ] 발주 업무 DONE·상위 Case WAITING·후속 담당/대기 존재를 검사한다. 이미 끝난 업무 재실행과 반려안의 자동 재요청을 막는다.
+- [ ] Auth0·터널·DB·backend·runner·CLI·MCP 준비 검사와 실행/종료 가이드를 작성한다. 비밀은 gitignored 환경 설정으로만 제공하고 문서에는 변수명과 발급 절차만 남긴다.
+- [ ] 요구사항의 구매 예시를 원재료 기준으로 수정하고 구현 현황·흐름도·ERD·디스패처·MCP/CLI 문서를 갱신한다. 기능/UX별 실제 시험 근거를 연결한다.
+- [ ] 각 검증 단위별 PR은 저장소의 한국어 PR 템플릿 4개 섹션과 3개 체크 항목을 사용한다. 계획 밖 품질·생산·출고 기능을 함께 구현하지 않는다.
+
+## 5. 완료 판정과 준비 항목
+
+| 검증 묶음 | 요구사항 연결 | 완료 증거 |
+|---|---|---|
+| 목표 접수·검색·상세 | FR-01~03, FR-10, UX-01~04 | 질문으로 Case 미생성, 목표로 접수, 새 대화의 동일 Case 해소 |
+| 수요·소요량·발주안 | FR-04~05, FR-11, UX-07~08 | 날짜·단위·BOM·공급처까지 설명 가능한 동일 계산 결과 |
+| 인증·승인·반영 | FR-06~07, NFR-02·04 | 올바른 MANAGER만 결정, 정확한 버전과 단 한 번의 원자적 반영 |
+| 실행·대기·복구·검증 | FR-08~09·12, NFR-01·03·05 | 모델 실행 종료/재개, lease 복구, 결정론적 업무 완료 |
+| 대화 UX | UX-05~06·12 및 제한된 FR-17 | 근거 있는 판단 요청, 승인 후 진행 명령 불필요, 장기 목표 상태의 정직한 표시 |
+
+필요한 외부 값은 Auth0 tenant issuer·MCP OBO client 설정·worker M2M 설정, 사전 연결할 사용자 subject, ngrok 계정의 고정 HTTPS origin, 로컬 Codex 인증과 실행 모델 설정이다. 값 자체는 구현자가 정하는 설계 선택이 아니며 환경별로 주입한다. 연결 기능이 실제 tenant에서 사용 가능한지 1단계에서 확인한다. 이 계획 작성 시 계정 생성·과금·배포·로그인 설정 변경은 수행하지 않았다.
+
+배포 순서는 실행기 중지 → DB migration → backend/MCP 배포 → 인증·읽기 smoke → 실행기 시작 → 새 Case 하나로 승인/반려 시험이다. 오류 시 실행기와 쓰기 진입점을 중지한다. 이미 생성한 발주나 감사 이력을 삭제해 되돌리지 않고 실패·중단 상태로 보존한다.
+
+### 공개 참고자료
+
+- [OpenAI MCP 인증](https://developers.openai.com/plugins/build/auth): OAuth 발견, PKCE, 클라이언트 등록과 token 검증.
+- [Auth0 MCP OBO](https://auth0.com/ai/docs/mcp/get-started/call-your-apis-on-users-behalf): MCP audience에서 내부 API audience로 사용자 권한을 유지하는 token exchange.
+- [Auth0 resource 호환 설정](https://auth0.com/ai/docs/mcp/guides/resource-param-compatibility-profile): MCP resource 파라미터 처리.
+- [Spring Security Resource Server](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html): 백엔드 JWT 검증.
+- [Codex MCP 설정](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [ChatGPT Developer mode](https://developers.openai.com/api/docs/guides/developer-mode): OAuth 연결과 도구 확인 설정.
+- [ngrok 고정 Dev Domain](https://ngrok.com/docs/gateway/domains): 로컬 MCP의 고정 HTTPS 주소.
