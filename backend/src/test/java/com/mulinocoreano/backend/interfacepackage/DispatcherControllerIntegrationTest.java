@@ -1,5 +1,6 @@
 package com.mulinocoreano.backend.interfacepackage;
 
+import com.mulinocoreano.backend.security.WithTestActor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,6 +21,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+@WithTestActor(service = true, capabilities = {"erp:read", "worker:dispatch"})
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -333,7 +335,7 @@ class DispatcherControllerIntegrationTest {
     }
 
     @Test
-    void getMonitorSweepsDueScheduledWaitsBeforeReturningMonitorDto() throws Exception {
+    void getMonitorDoesNotDispatchEvenWhenAScheduledWaitIsDue() throws Exception {
         Fixture fixture = fixture("SCHEDULED_TIME",
                 "{\"due_at\":\"" + Instant.now().minus(5, ChronoUnit.MINUTES) + "\"}");
 
@@ -342,12 +344,9 @@ class DispatcherControllerIntegrationTest {
                 .andExpect(jsonPath("$.workItemsReady").isNumber())
                 .andExpect(jsonPath("$.workItemsWaiting").isNumber());
 
-        assertThat(waitingStatus(fixture.waitingId())).isEqualTo("SATISFIED");
-        assertThat(workItemStatus(fixture.workItemRef())).isEqualTo("READY");
-        long eventId = waitingResolvedBy(fixture.waitingId());
-        assertThat(eventType(eventId)).isEqualTo("DISPATCH_SWEEP_TRIGGERED");
-        assertThat(eventPayloadValue(eventId, "source")).isEqualTo("MONITOR");
-        assertThat(runCountForEventAndWorkItem(eventId, fixture.workItemRef())).isEqualTo(1);
+        assertThat(waitingStatus(fixture.waitingId())).isEqualTo("ACTIVE");
+        assertThat(workItemStatus(fixture.workItemRef())).isEqualTo("WAITING");
+        assertThat(runCountForWorkItem(fixture.workItemRef())).isZero();
     }
 
     @Test

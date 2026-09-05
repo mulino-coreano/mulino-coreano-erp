@@ -35,8 +35,8 @@ Dispatcher는 다음 두 경로에서 실행된다.
 
 ### 1-B. 명시적 재실행 (pull)
 
-- `POST /api/v1/dispatch` — 관리·테스트용 수동 트리거. 호출 사실을 `DISPATCH_REQUESTED`(`source=MANUAL`)로 항상 기록한다.
-- `monitor()`에서 실행 가능한 대기가 발견되면 `DISPATCH_SWEEP_TRIGGERED`(`source=MONITOR`)를 기록하고 재판정한다. 실행 가능한 대기가 없으면 Event를 만들지 않으며, 사전 조회는 행 잠금을 잡지 않는다.
+- `POST /api/v1/dispatch` — 허용된 실행기 서비스의 `worker:dispatch` 권한으로 호출하는 관리·테스트용 트리거. 호출 사실을 `DISPATCH_REQUESTED`(`source=MANUAL`)로 항상 기록한다.
+- `GET /api/v1/monitor`는 인증된 조회이며 이벤트·대기·Run을 변경하지 않는다. 기존 `dispatchScheduledIfActionable()` 서비스 메서드의 조건부 sweep 동작은 내부 계약으로 남지만 인간 조회 경로에서는 호출하지 않는다. 주기 실행기는 후속 구현이다.
 
 ---
 
@@ -243,7 +243,7 @@ Dispatcher 판정은 **결정론적**이어야 하며, 같은 이벤트를 두 �
 | T8 | `businessRef` 인덱스 구성 | `context_snapshot.business.references`에 Case의 실제 Work Item 참조가 존재 |
 | T9 | Dispatcher 경유 Run에 `trigger_event_id` 기록 | 감사 경로(event→run) 추적 가능 |
 | T10 | 권위 ID 없는 승인 문자열 또는 존재하지 않는 의존 WI | Event INSERT/대기 해소 없이 4xx 거절 |
-| T11 | 수동/모니터 재판정 | 각각 `DISPATCH_REQUESTED`/`DISPATCH_SWEEP_TRIGGERED`와 정확한 source 기록 |
+| T11 | 실행기 수동 재판정 / 인간 모니터 조회 | 수동 dispatch는 `DISPATCH_REQUESTED`·MANUAL을 기록하고 모니터 조회는 업무·이벤트·Run을 변경하지 않음. 내부 조건부 sweep은 별도 서비스 테스트로 검증 |
 | T12 | Claim과 Evidence가 다른 Case | Event 및 `claim_evidence` 모두 기록하지 않고 거절 |
 | T13 | 컨텍스트 재구성 최종 실패 | `scheduledRuns` 제외, `failedRuns` 포함, `MATERIAL_EXCEPTION` attention 생성 |
 | T14 | Event 직접 SQL 변조/교차 Case scope | DB 제약으로 UPDATE/DELETE/TRUNCATE 및 불일치 INSERT 거절 |

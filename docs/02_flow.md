@@ -242,7 +242,7 @@ flowchart TD
     Case --> Participants[case_participants / agents / users]
     Case --> Work[work_items: 명시적 담당]
     Work --> Waiting[waiting_conditions: WAITING]
-    Input[이벤트 API / 수동·모니터 재판정] --> Event[events: 불변 사실]
+    Input[인증된 실행기 이벤트 API / 수동 재판정] --> Event[events: 불변 사실]
     Event --> Match[Dispatcher 조건 판정]
     Waiting --> Match
     Match --> Ready[모든 ACTIVE 조건 해소: READY]
@@ -262,3 +262,9 @@ flowchart TD
 - `decisions`와 `attention_requests`가 Work Item을 참조하면 같은 Case여야 한다. 인간 답변의 `answer_scope`/결정의 `scope`는 컨텍스트에 보존하며 자동으로 전사 정책으로 확대하지 않는다.
 - Work Item의 `metadata.businessRef`는 ERP 행을 가리키는 인덱스다. 운영 Case의 생성이나 승인 Event 수신이 발주·입고·리콜 등 ERP 쓰기 권한을 대신하지 않는다. 해당 변경은 위 거버넌스 승인 매트릭스를 그대로 따른다.
 - 실제 LLM executor, 인간 답변/승인 채널, ERP 변경 capability는 후속 구현이다. 현재 디스패처는 실행 예약까지 기록한다.
+
+### 외부 신원과 조회 경계
+
+Auth0의 `(issuer, subject)`는 `external_identities`를 통해 사전 등록된 `users`에 연결한다. 이메일 자동 매칭은 하지 않으며, 조회와 Case 접수 시 현재 사용자 역할과 활성 여부를 확인한다. 외부 로그인 사용자에게 로컬 비밀번호를 요구하지 않는다. 이 관계는 ERP LOT 추적 체인을 변경하지 않는다.
+
+`GET /api/v1/monitor`는 조회만 수행한다. 기한·의존 업무의 재판정과 이벤트 인입은 허용된 실행기 서비스 신원의 `POST /api/v1/dispatch`, `POST /api/v1/events`로 제한한다. OAuth 접근 허용과 발주·입고·리콜에 대한 인간 승인은 별개의 단계다. 설정은 [Auth0 연결 안내](11_auth0_setup.md)를 따른다.

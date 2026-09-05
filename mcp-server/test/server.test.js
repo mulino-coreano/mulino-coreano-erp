@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { afterEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -18,8 +19,10 @@ afterEach(async () => {
 
 test("ask_inventory sends only the explicit product or SKU search term", async () => {
   let requestedUrl;
+  let authorization;
   const apiServer = http.createServer((req, res) => {
     requestedUrl = req.url;
+    authorization = req.headers.authorization;
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
       answer: "1 inventory location",
@@ -43,6 +46,7 @@ test("ask_inventory sends only the explicit product or SKU search term", async (
 
   assert.equal(result.isError, undefined);
   assert.equal(requestedUrl, "/api/v1/ask?q=AMR-200");
+  assert.equal(authorization, "Bearer test-backend-credential");
 });
 
 test("list_cases accepts the valid argument-free MCP call", async () => {
@@ -115,12 +119,24 @@ test("case creation body timeout reports an uncertain mutation outcome without r
   assert.equal(requests, 1);
 });
 
+test("stdio refuses startup without an ERP credential", async () => {
+  const child = spawn(process.execPath, ["src/index.js"], {
+    cwd: PROJECT_DIR, env: { PATH: process.env.PATH }, stdio: ["pipe", "pipe", "pipe"],
+  });
+  resources.push(async () => child.kill());
+  let stderr = "";
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const code = await within(new Promise((resolve) => child.once("exit", resolve)), 1000, "credential-less stdio remained available");
+  assert.equal(code, 1);
+  assert.match(stderr, /MULINO_API_TOKEN/);
+});
+
 async function connectClient(extraEnv) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["src/index.js"],
     cwd: PROJECT_DIR,
-    env: extraEnv,
+    env: { MULINO_API_TOKEN: "test-backend-credential", ...extraEnv },
     stderr: "pipe",
   });
   const client = new Client({ name: "mulino-mcp-test", version: "1.0.0" });

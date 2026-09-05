@@ -9,7 +9,8 @@ import java.util.Map;
 
 /**
  * 인터페이스 메커니즘 REST API — CLI와 대시보드(ChatGPT 커넥터)의 단일 진입점.
- * 모든 쓰기 호출은 추후 L1 거버넌스 인터셉터를 통과한다 (현재는 READ/Case 생성만 개방).
+ * 인간 조회·Case 접수와 내부 서비스의 Run/디스패처 쓰기는 공통 보안 계층에서 분리한다.
+ * 실제 ERP 변경 및 승인 adapter는 후속 L1 구현 범위다.
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -83,7 +84,6 @@ public class InterfaceController {
     // ------------------------------------------------------------ Monitor
     @GetMapping("/monitor")
     public MonitorDto monitor() {
-        dispatcher.dispatchScheduledIfActionable();
         return service.monitor();
     }
 

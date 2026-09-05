@@ -17,7 +17,7 @@
 | **MONITOR** | 물어보기 전에 알아야 할 것 관찰 | "지금 내 주의가 필요한 것" | 대시보드가 담당 |
 
 ACT에서 인간은 **원하는 결과(outcome)** 를 말한다. 어떤 ERP 트랜잭션을 수행할지가 아니다.
-`GET /api/v1/monitor`는 기한이 도래한 `SCHEDULED_TIME` 또는 종료된 `DEPENDENCY_DONE` 대기가 있을 때만 `DISPATCH_SWEEP_TRIGGERED`(`source=MONITOR`) Event를 기록한다. 실행 가능한 대기가 없는 조회는 상태만 반환하며 합성 Event를 만들지 않는다. 관리·테스트용 `POST /api/v1/dispatch`는 호출 자체를 `DISPATCH_REQUESTED`(`source=MANUAL`)로 항상 기록한다.
+`GET /api/v1/monitor`는 인증된 사용자에게 상태만 반환하며 Event·대기·Run을 변경하지 않는다. 관리·테스트용 `POST /api/v1/dispatch`는 허용된 실행기 서비스 신원으로 호출하며, 호출 자체를 `DISPATCH_REQUESTED`(`source=MANUAL`)로 기록한다. 조건부 sweep 메서드는 내부 서비스에 남아 있지만 인간 조회에서는 호출하지 않는다.
 
 `casesAtRisk`는 종료되지 않은 Case 중 미완료 Work Item의 기한이 지났거나 열린 `MATERIAL_EXCEPTION`이 있는 Case 수다. 두 신호가 있어도 Case당 한 번만 집계한다. 기한 내 정상적인 공급사 대기는 위험으로 세지 않으며, 대기 업무 수는 `workItemsWaiting`으로 별도 제공한다.
 
@@ -239,14 +239,14 @@ Event는 불변 사실이다. 애플리케이션과 무관하게 DB 트리거가
 
 | 표면(채널) | 구현 |
 |---|---|
-| 백엔드 API | `backend/src/main/java/com/mulinocoreano/backend/interfacepackage/` — `/api/v1/ask|cases|runs|events|dispatch|attention|monitor` |
+| 백엔드 API | `interfacepackage/`의 업무 API와 `security/`의 `/api/v1/me`·JWT 신원/권한 검증 |
 | 이벤트 디스패처 | `DispatcherService` — 권위 있는 이벤트 기록·멱등 처리 → 대기조건 충족 → WI READY → Run 스케줄/실패 attention을 단일 트랜잭션으로 수행 |
-| ChatGPT/Claude 커넥터 | `mcp-server/` — MCP 도구 5종 (`ask_inventory`, `create_case`, `list_cases`, `list_attention`, `monitor_status`) |
-| L0 스키마 | `database/ddl/07_case_management.sql` ~ `09_case_fks.sql` |
+| 대화 커넥터 | `mcp-server/` — 기존 도구 5종과 `whoami`, 인증된 stdio 및 Streamable HTTP, Auth0 OBO token exchange |
+| L0 스키마 | 인터페이스 DDL 07~09와 인증 신원 DDL 10 (`external_identities`, Flyway V18) |
 
 Event 요청은 알 수 없는 Case/Work Item, 서로 다른 Case의 조합, 해소된 scope와 모순되는 payload identity, 스키마 길이 초과를 `400 Bad Request`로 거부한다. 승인 Event는 완료된 Attention 또는 승인된 Governance Action을 DB에서 다시 해소해 인간 actor를 도출하며, 결정 문자열만으로 대기를 풀 수 없다. Event 멱등 키가 다른 내용에 재사용되거나 동일 Work Item에 활성 Run이 이미 존재하면 `409 Conflict`를 반환한다. Run 요청도 READY 상태·현재 배정·활성 에이전트·Case 소속을 삽입 전에 검증한다.
 
-현재 API는 내부/신뢰 네트워크용 구현 단계다. L1 인증·거버넌스 인터셉터와 읽기 actor 감사는 아직 연결되지 않았으므로 비신뢰 네트워크에 직접 공개하지 않는다. 이 제한은 승인 Event의 DB 재검증과 별개의 배포 경계다.
+JWT 인증과 현재 ERP 역할 검증을 추가했다. 업무 조회는 `erp:read`, Case 생성은 OPERATOR/MANAGER 및 `work:write`, 이벤트·Run 예약·dispatch는 허용된 worker 서비스 및 `worker:dispatch`로 제한한다. 발주 승인·변경 적용과 읽기 actor 감사는 후속이다. 백엔드는 내부에 두고 MCP만 고정 HTTPS로 연결한다. 실제 tenant 및 두 대화 클라이언트의 로그인 검증은 로컬 자동 테스트와 구분한다.
 
 ### 목표 아키텍처와 현재 구현의 경계
 
@@ -256,10 +256,10 @@ Event 요청은 알 수 없는 Case/Work Item, 서로 다른 Case의 조합, 해
 | ACT로 목표와 책임 생성 | Case·초기 Work Item·활성 Orchestrator 참여 기록 | LLM을 통한 목표 분해, Work Item 쓰기 및 완료·재대기 API |
 | 이벤트로 대기 업무 재개 | 6종 조건 판정, 감사 Event, READY 전이, Run 스케줄 기록 | 실제 Claude/Codex executor, Run 완료/중단·복구 소비자 |
 | 실행마다 6계층 컨텍스트 재구성 | Case의 책임·배정·대기·증거·Claim·결정 참조를 단일 DB 스냅샷으로 조립 | ERP capability 확장과 데이터 기반 정책 인덱스 |
-| 채널 간 동일 Case 공유 | REST와 로컬 stdio MCP 조회·목표 생성 | Slack·이메일 인입/Send/승인 어댑터, 원격 MCP 전송 |
+| 채널 간 동일 Case 공유 | 인증된 REST·stdio·HTTP MCP의 목록 조회·목표 생성 | 실제 Auth0/클라이언트 연결 검증, 상세 조회, Slack·이메일 어댑터 |
 | 인간 판단과 범위 있는 답변 | Attention 조회, 이미 완료된 DB 결정의 승인 이벤트 검증 | Attention 답변·Decision 생성 API 및 승인 UI |
-| 검증된 업무 종결과 거버넌스 | 저장 테이블과 기존 승인 결과 검증 | 결정론적/반론 기반 검증기, Change Request 적용, L1 인증·거버넌스 인터셉터 |
-| MONITOR 운영 통제면 | 상태 집계·열린 Attention·기한/의존 대기 재판정 | 실제 대시보드, 능동 감시·알림 정책 |
+| 검증된 업무 종결과 거버넌스 | 저장 테이블·기존 승인 결과 검증·JWT/ERP 권한 통제 | 결정론적/반론 기반 검증기, 인간 결정과 Change Request 적용 |
+| MONITOR 운영 통제면 | 읽기 전용 상태 집계·열린 Attention | 실제 대시보드, 실행기 주기 재판정·능동 감시·알림 정책 |
 
 `RUNNING`은 실행 예약 레코드다. 이 PR만으로 LLM이 호출되거나 업무가 자율 종결되지는 않는다. 외부 executor가 Run을 소비하고 종료할 때까지 동일 Work Item의 추가 Run은 차단된다. Attention 목록을 읽는 행위도 인간의 답변이나 승인을 기록하지 않는다.
 
@@ -269,7 +269,8 @@ Event 요청은 알 수 없는 Case/Work Item, 서로 다른 Case의 조합, 해
 # 1. PostgreSQL 18에 빈 DB를 만든다. Flyway가 스키마와 기본 인터페이스 등록을 적용한다.
 createdb mulino_coreano
 
-# 2. DB_URL / DB_USERNAME / DB_PASSWORD를 로컬 환경에 설정한다.
+# 2. DB 설정과 Auth0 issuer/audience를 로컬 환경에 설정한다.
+# backend/.env.example 및 docs/11_auth0_setup.md를 참고한다.
 # DB 계정은 초기 마이그레이션을 수행할 권한이 있어야 한다.
 cd backend
 ./gradlew bootRun    # http://localhost:8080
@@ -280,4 +281,4 @@ npm ci
 npm start
 ```
 
-독립 DDL 검증에는 `database/ddl/00~09`를 번호 순서로 적용하고 `database/seed/interface.sql`을 적용한다. 이 경로로 만든 DB에 Flyway를 그대로 실행하면 비어 있지 않은 미관리 스키마 오류가 발생한다. 백엔드 실행용 빈 DB는 Flyway 경로 하나로 초기화한다. stdio 서버를 직접 실행하는 로컬 MCP 클라이언트는 지원하지만, 원격 ChatGPT 커넥터에 필요한 HTTP 전송은 아직 제공하지 않는다.
+독립 DDL 검증에는 `database/ddl/00~10`을 번호 순서로 적용하고 `database/seed/interface.sql`을 적용한다. 이 경로로 만든 DB에 Flyway를 그대로 실행하면 비어 있지 않은 미관리 스키마 오류가 발생한다. 백엔드 실행용 빈 DB는 Flyway 경로 하나로 초기화한다. stdio는 ERP access token이 필요하고, HTTP 전송은 Auth0 OBO client 설정이 필요하다. [Auth0 연결 안내](11_auth0_setup.md)와 [MCP 실행 안내](../mcp-server/README.md)를 따른다.

@@ -2,6 +2,7 @@ package com.mulinocoreano.backend.interfacepackage;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
+import com.mulinocoreano.backend.security.WithTestActor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+@WithTestActor(service = true, capabilities = "worker:dispatch")
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional

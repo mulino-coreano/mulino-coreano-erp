@@ -571,3 +571,24 @@ erDiagram
 - 기존 발주·입고·리콜 승인 매트릭스와 양방향 LOT 추적 경로는 그대로 유지한다.
 
 추가 ENUM 13종은 `channel_type`, `actor_type`, `intent_type`, `case_status`, `case_priority`, `work_item_status`, `waiting_condition_type`, `waiting_status`, `run_status`, `claim_status`, `attention_reason_type`, `decision_scope`, `attention_request_status`이다. 전체 타입 정의는 `database/ddl/00_types.sql`을 따른다.
+
+## 7. 외부 로그인 신원
+
+`database/ddl/10_external_identities.sql`과 Flyway V18은 인증 신원 테이블 1개를 추가한다. ERP 30개·인터페이스 13개 테이블의 거래 및 추적 관계는 유지한다.
+
+```mermaid
+erDiagram
+    users ||--o{ external_identities : "user_id"
+    external_identities {
+        bigint external_identity_id PK
+        text issuer UK
+        text subject UK
+        bigint user_id FK
+        timestamptz created_at
+    }
+```
+
+- `(issuer, subject)` 조합은 유일하며 한 외부 신원을 여러 ERP 사용자로 중복 연결할 수 없다. 위 UK는 두 컬럼의 복합 제약이다.
+- `user_id`는 실제 사용자를 참조하고 연결된 사용자 삭제를 제한한다. 로그인 시 `users.is_active`와 현재 역할을 확인한다.
+- `users.password`는 외부 로그인 계정에 대해 NULL을 허용한다. 이 변경은 로컬 비밀번호 로그인 기능을 추가하지 않는다.
+- 이메일 자동 연결, 첫 로그인 자동 사용자 생성, 토큰의 임의 role 문자열에 의한 승격은 지원하지 않는다.

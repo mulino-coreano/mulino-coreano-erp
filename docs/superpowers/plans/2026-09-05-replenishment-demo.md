@@ -1,6 +1,6 @@
 # 국내 생산 재보충 데모 구현 계획
 
-> 상태: 구현 전 계획 · 2026-09-05
+> 상태: 1단계 인증 기반 구현 중 · 2026-09-05
 > 구현 담당자는 `superpowers:executing-plans`를 사용하여 아래 검증 단위별로 진행한다. 이 문서는 기능 구현 완료를 의미하지 않는다.
 
 **목표:** ChatGPT 또는 Codex에서 맡긴 완제품 보충 목표를 주문 이력·다단계 BOM·공급 조건으로 분석하고, Auth0로 로그인한 MANAGER가 대화에서 승인하면 원재료 발주를 한 번 반영하고 결과를 검증한다.
@@ -73,7 +73,7 @@ OAuth는 개별 발주에 대한 사람의 확인을 증명하지 않는다. 인
 
 MCP는 기존 5개 도구를 유지하고 `whoami`, `get_case`, `get_plan`, `get_approval`, `decide_purchase`, `answer_attention`, `get_purchase_order`를 추가한다. `list_cases`에 검색 입력을 추가한다. 사람에게 계산 API나 Run 조작을 직접 요구하지 않는다.
 
-`decide_purchase`는 readOnlyHint=false로 표시하고 명시적 결정·대상 버전·hash를 입력으로 받는다. 도구 결과는 업무 요약과 참조를 제공하고 토큰·lease·모델 로그는 노출하지 않는다. `monitor_status`는 내부 재판정을 유발하므로 read-only 도구로 잘못 표시하지 않는다.
+`decide_purchase`는 readOnlyHint=false로 표시하고 명시적 결정·대상 버전·hash를 입력으로 받는다. 도구 결과는 업무 요약과 참조를 제공하고 토큰·lease·모델 로그는 노출하지 않는다. `monitor_status`는 순수 조회로 변경하고 readOnlyHint=true를 사용한다. 재판정은 허용된 worker의 dispatch API로 분리한다. 이는 인증 구현 과정에서 확정한 접근 경계다.
 
 ### 데이터와 호환성
 
@@ -144,9 +144,9 @@ ACT 접수 → Orchestrator 실행 예약
 
 **책임 영역:** `backend/.../security/`, `mcp-server/src/auth/`, 원격 transport와 설정 문서.
 
-- [ ] Auth0 두 resource와 MCP OBO client, worker M2M client, CIMD/PKCE/resource/issuer 설정을 구성하는 재실행 가능한 설정 스크립트와 비밀 없는 예제를 작성한다.
-- [ ] external_identities migration, JWT 검증, 인간/서비스 신원 분리, `/me`, 401 metadata challenge를 구현한다. discovery와 JWKS는 표준 라이브러리를 사용한다.
-- [ ] stdio와 Streamable HTTP에서 같은 tool registry를 사용하게 분리한다. 기존 stdio도 자격증명 검증을 생략하지 않는다.
+- [x] Auth0 두 resource와 MCP OBO client, worker M2M client, CIMD/PKCE/resource/issuer 설정을 구성하는 재실행 가능한 설정 스크립트와 비밀 없는 예제를 작성한다.
+- [x] external_identities migration, JWT 검증, 인간/서비스 신원 분리, `/me`, 401 metadata challenge를 구현한다. discovery와 JWKS는 표준 라이브러리를 사용한다.
+- [x] stdio와 Streamable HTTP에서 같은 tool registry를 사용하게 분리한다. 기존 stdio도 자격증명 검증을 생략하지 않는다.
 - [ ] 고정 HTTPS MCP에서 ChatGPT와 Codex로 같은 사전 등록 MANAGER 로그인·`whoami` 호출·토큰 갱신을 실제 검증한다. 계정 미등록, issuer/audience 오류, 만료, 역할 변경, 서비스의 승인 접근 거부를 테스트한다.
 
 **산출 계약:** 검증된 HumanActor/ServiceActor와 공통 authorization 계층. 실제 연결 성공 후 다음 단계의 쓰기를 공개한다.
@@ -250,3 +250,12 @@ ACT 접수 → Orchestrator 실행 예약
 - [Spring Security Resource Server](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html): 백엔드 JWT 검증.
 - [Codex MCP 설정](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [ChatGPT Developer mode](https://developers.openai.com/api/docs/guides/developer-mode): OAuth 연결과 도구 확인 설정.
 - [ngrok 고정 Dev Domain](https://ngrok.com/docs/gateway/domains): 로컬 MCP의 고정 HTTPS 주소.
+
+## 6. 구현 진행 기록
+
+- 브랜치: `feat/replenishment-demo-auth0`. 요구사항과 계획 기준점은 `6395e23`에 보존했다.
+- 1단계 코드: JWT·ERP 역할 검증, external identity V18/DDL10, `/me`, 인증된 stdio·HTTP MCP, OBO 교환, Auth0 준비·설정 도구를 구현한다.
+- 접근 경계 변경: 인간 모니터는 읽기 전용이며 이벤트·Run 예약·dispatch는 허용된 worker 서비스만 호출한다.
+- 검증은 실제 PostgreSQL 18 통합 테스트와 서명 JWT/JWKS·token 교환 fixture를 사용한다. 실제 Auth0·ChatGPT·Codex 로그인/갱신은 별도로 기록한다.
+- 로컬 검증 결과: Backend `clean test bootJar` 208개, MCP `npm ci` 후 `npm test` 14개, Auth0 설정 스크립트 테스트 18개 통과. 독립 DDL 00~10과 seed 적용·V18/DDL10 일치도 확인했다. 실패·skip은 없으며 실제 tenant 호출은 포함하지 않는다.
+- 아직 실제 tenant issuer·OBO 자격증명·고정 공개 주소가 설정되지 않아 1단계 전체 완료로 표시하지 않는다. 2~8단계는 미구현이다.

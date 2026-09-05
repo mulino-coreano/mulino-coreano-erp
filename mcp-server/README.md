@@ -1,27 +1,76 @@
 # Mulino Coreano ERP — MCP Server
 
-로컬 stdio MCP 클라이언트(Claude Desktop 등)가 **하나의 비즈니스 표면**(Case)을 공유하도록 노출하는 커넥터입니다. 원격 ChatGPT 연결에는 별도의 HTTP 전송 계층이 필요하며 현재 범위에는 포함되지 않습니다.
+같은 도구 registry를 로컬 stdio와 원격 Streamable HTTP에서 사용합니다. HTTP는 Auth0 사용자 토큰을 검증하고 OBO token exchange로 ERP API를 호출합니다. Backend도 ERP audience 토큰과 사전 연결된 사용자·역할·활성 상태를 검증합니다.
 
-## 실행
+## 준비와 실행
+
+Node.js 22 이상이 필요합니다. 의존성은 MCP SDK `1.30.0`, JOSE `6.2.11`로 고정하며 `package-lock.json`을 함께 사용합니다.
 
 ```bash
-npm install
-npm start   # Mulino Coreano backend (localhost:8080) 기본 상대
+cd mcp-server
+npm ci
+npm test
 ```
 
-`MULINO_API_BASE`로 백엔드 주소를, `MULINO_API_TIMEOUT_MS`로 호출 제한 시간을 설정할 수 있습니다. 제한 시간 기본값은 10초입니다. 변경 요청의 응답이 시간 초과되면 서버 반영 여부가 불확실하므로 커넥터는 자동 재시도하지 않습니다.
+전체 Auth0 리소스·OBO client·사용자 연결·ngrok 준비 순서는 [Auth0 설정 문서](../docs/11_auth0_setup.md)를 참고합니다. 이 구현의 자동 시험은 로컬 JWKS/Auth0/ERP HTTP fixture를 사용합니다. 실제 Auth0 tenant 로그인·갱신과 ChatGPT/Codex 연결 성공을 대신 증명하지 않습니다.
+
+### 원격 HTTP
+
+`.env.example`을 gitignored `.env`로 복사하고 환경별 값을 설정합니다. 공개 MCP resource는 고정 HTTPS 주소의 `/mcp`입니다.
+
+```bash
+node --env-file=.env src/http-entry.js
+# 이미 환경변수를 주입했다면:
+npm run start:http
+```
+
+기본 수신 주소는 `127.0.0.1:3001`입니다. ngrok는 이 주소로 연결하고 `MULINO_PUBLIC_ORIGIN`에는 고정 HTTPS origin을 설정합니다. 설정값은 요청의 Host/Forwarded 헤더로 추론하지 않습니다. 브라우저 Origin이 있다면 해당 공개 origin만 허용합니다. 서버 간 MCP 클라이언트는 Origin 없이 접근할 수 있습니다.
+
+| 변수 | 용도 |
+|---|---|
+| `MULINO_PUBLIC_ORIGIN` | 고정 HTTPS origin. 경로·쿼리·fragment 제외 |
+| `MULINO_AUTH_ISSUER` | Auth0 issuer의 정확한 값. HTTPS이며 마지막 `/` 포함 |
+| `MULINO_MCP_AUDIENCE` | 기본값 `${MULINO_PUBLIC_ORIGIN}/mcp`. 지정해도 이 값과 같아야 함 |
+| `MULINO_API_AUDIENCE` | ERP resource. 기본값 `urn:mulino:erp-api`, MCP audience와 달라야 함 |
+| `MULINO_AUTH0_CLIENT_ID` / `MULINO_AUTH0_CLIENT_SECRET` | MCP resource에 연결된 OBO client. HTTP 시작 시 필수 |
+| `MULINO_API_BASE` | 기본값 `http://localhost:8080/api/v1`. HTTPS 또는 loopback HTTP만 허용 |
+| `MULINO_API_TIMEOUT_MS` | JWKS·토큰 교환·ERP 호출 제한 시간. 기본값 10000ms |
+| `MULINO_HOST` / `MULINO_PORT` | 기본값 `127.0.0.1` / `3001` |
+
+`GET /.well-known/oauth-protected-resource/mcp`와 루트 well-known 주소에서 resource metadata를 제공합니다. `/mcp` 요청의 누락·잘못된 Bearer token은 metadata URL을 포함한 `WWW-Authenticate`와 401을 반환합니다. Scope 부족은 필요한 scope를 포함한 403입니다. Initialize와 tools/list도 `erp:read`가 필요합니다. 도구 목록은 scope가 부족한 도구도 보여주므로 클라이언트가 필요한 scope를 알 수 있고, 실행 때 해당 scope를 다시 확인합니다.
+
+JWT는 RS256 서명·issuer·audience·필수 만료·subject를 검증하며 Auth0 M2M 신원(`gty=client-credentials` 또는 `@clients` subject)은 원격 인간 인터페이스에서 거부합니다. Auth0의 고정 issuer 아래 JWKS와 `/oauth/token`만 사용합니다. OBO 반환 토큰도 ERP audience·같은 subject·만료·요청 scope를 검증합니다. 입력 토큰을 ERP에 그대로 전달하는 fallback은 없습니다.
+
+각 HTTP 요청은 새로운 stateless MCP transport와 사용자 문맥을 사용합니다. GET SSE/session resume은 제공하지 않으며 인증된 GET/DELETE에는 405를 반환합니다. 사용자 토큰 갱신은 OAuth 클라이언트가 담당하고 다음 요청부터 새 토큰을 검증합니다. MCP는 refresh token을 보관하지 않습니다.
+
+Resource metadata에는 로그인 갱신용 `offline_access`도 포함합니다. Auth0 MCP API의 `allow_offline_access`, 클라이언트의 `refresh_token` grant와 OAuth 요청의 `offline_access`를 함께 준비해야 합니다. 이 scope는 업무 도구의 ERP 권한이나 개별 OBO 요청 scope를 추가로 부여하지 않습니다.
+
+### 로컬 stdio
+
+```bash
+# MULINO_API_TOKEN을 비밀 저장소 또는 로컬 환경에서 주입한 뒤:
+npm start
+```
+
+`MULINO_API_TOKEN`은 **ERP API audience**의 access token이며 필수입니다. 미설정이면 프로세스가 종료됩니다. 매 API 요청에 이 토큰을 전달하고 유효성·scope·ERP 신원 검증은 backend가 수행합니다. stdio 자체에는 사용자 OAuth 로그인이나 OBO 교환 경로가 없습니다. 만료되면 호출이 실패하므로 새 ERP 자격증명을 주입해 재시작합니다. ID token이나 MCP audience 토큰은 사용할 수 없습니다.
 
 ## 제공 도구
 
-| tool | 설명 |
-|---|---|
-| `ask_inventory` | ASK — 제품명/SKU 완제품 재고 검색 또는 명시적인 전체 재고 조회 (Case 생성 안 함) |
-| `create_case` | ACT — 비즈니스 목표 위임으로 영속 Case 생성 |
-| `list_cases` / `monitor_status` | MONITOR — 현황 조회 |
-| `list_attention` | 인간 주의 필요 항목 (권한·판단 컷오프) |
+| tool | 설명 | Scope | 읽기 전용 |
+|---|---|---|---|
+| `whoami` | 인증된 사용자·ERP 역할·capability 확인 (`GET /me`) | `erp:read` | 예 |
+| `ask_inventory` | ASK — 제품명/SKU 완제품 재고 검색, 명시적 전체 조회 | `erp:read` | 예 |
+| `create_case` | ACT — 명시적인 비즈니스 목표로 영속 Case 생성 | `work:write` | 아니오 |
+| `list_cases` | 상태별 Case 조회 | `erp:read` | 예 |
+| `list_attention` | 인간의 권한·판단이 필요한 항목 조회 | `erp:read` | 예 |
+| `monitor_status` | 저장된 운영 현황의 읽기 전용 snapshot | `erp:read` | 예 |
 
-## 설계 결정 (docs/08_interface_overview.md §3)
+기존 5개 도구의 입력과 업무 응답 형식을 유지합니다. 질문은 자동으로 Case를 만들지 않습니다. 구매 승인·발주 도구 및 실행기 API는 이번 단계의 MCP 도구에 추가하지 않습니다. `monitor_status`는 backend의 재판정·Run dispatch를 실행하지 않습니다.
 
-- 대화는 인터페이스이고, Case가 업무의 영속 표면입니다.
-- QUERY는 자동으로 업무가 되지 않습니다 — 사용자가 명시할 때만 ACT로 전환합니다.
-- 외부 대표 권한(이메일 발송 등)은 인간에게 있으며, 이 서버에는 포함하지 않았습니다.
+## 오류와 검증 범위
+
+Auth0/ERP 응답 본문·토큰·시크릿·내부 오류는 도구 오류에 노출하지 않습니다. OBO 실패는 인증/API 연결 실패로 보고되며 Auth0 OBO 활성화·client grant·사용자 scope·backend 사용자 연결을 확인해야 합니다. 백엔드의 401/403 등 상태 번호는 반환하되 응답 본문은 공개하지 않습니다. Redirect는 따라가지 않습니다.
+
+API 제한 시간이 지나면 호출을 자동 재시도하지 않습니다. 변경 요청은 서버에서 이미 반영되었을 가능성을 안내하며 상태를 먼저 확인해야 합니다.
+
+`npm test`는 실제 SDK stdio/HTTP 클라이언트, 서명된 JWT, 로컬 JWKS 및 token/ERP endpoint로 다음을 검증합니다: 메타데이터와 challenge, 누락·서명·issuer·audience·만료·scope 오류, M2M 거부, 사용자별 문맥 분리와 토큰 교체, 정확한 OBO 요청, 바뀐 subject/audience 및 잘못된 OBO 결과 거부, backend credential 전달, 오류 비밀 제거, redirect 및 Host/Origin 거부, 기존 도구 호환성과 변경 요청 timeout.

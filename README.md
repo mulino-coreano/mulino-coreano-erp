@@ -14,7 +14,7 @@
 
 | 레이어 | 구성 | 역할 |
 |---|---|---|
-| L0 | PostgreSQL 18(30개 테이블) + Spring Boot + MCP Server | ERP 데이터 및 기능을 Tool로 노출 |
+| L0 | PostgreSQL 18(ERP 30 + 인터페이스 13 + 인증 신원 1) + Spring Boot + MCP Server | ERP 데이터 및 기능을 Tool로 노출 |
 | L1 | Governance Engine | 액션성 Tool Call 가로채기 → 승인/차단/보류 라우팅 + 불변 감사 로그 |
 | L2 | Multi-Agent (Claude Code / Codex) | Orchestrator / Supply Chain / Procurement / QC |
 | L3 | 자연어 대시보드 | Intent Parsing → 결재 큐/품질 알람/추적 차트 자동 생성 |
@@ -53,11 +53,17 @@
 
 ## 기술 스택
 
-- **DB**: PostgreSQL 18 (30개 테이블, 16종 ENUM, 46개 FK)
+- **DB**: PostgreSQL 18 (ERP 30 + 인터페이스 13 + 인증 신원 1개 테이블)
 - **Backend**: Spring Boot 4.1.x + Java 21 + Gradle
 - **Tool 노출**: Single Zig CLI (`mulino`) + MCP Server
 - **Agent**: Claude Code / Codex Subagent Architecture (Orchestrator / Supply Chain / Procurement / QC)
 - **Frontend**: React 19 + Vite (자연어 대시보드)
+
+## 인증 구현과 실행 준비
+
+현재 작업 브랜치는 Auth0 JWT 인증, ERP 사용자 역할 검증, `whoami`, 인증된 stdio·Streamable HTTP MCP와 사용자 위임 토큰 교환(OBO)을 구현합니다. 실제 Auth0 tenant와 ChatGPT·Codex 로그인 연결은 별도 설정 및 시험이 필요합니다. 발주 결정·실제 에이전트 실행·완결 데모는 후속 단계입니다.
+
+Backend는 DB 설정과 Auth0 issuer/audience가 필요하며, stdio MCP는 ERP access token을 요구합니다. 인증을 생략하는 개발용 변경 API는 제공하지 않습니다. 준비 순서는 [Auth0 연결 안내](docs/11_auth0_setup.md), 세부 구현 순서는 [재보충 데모 계획](docs/superpowers/plans/2026-09-05-replenishment-demo.md)을 따릅니다.
 
 ---
 
