@@ -268,3 +268,11 @@ flowchart TD
 Auth0의 `(issuer, subject)`는 `external_identities`를 통해 사전 등록된 `users`에 연결한다. 이메일 자동 매칭은 하지 않으며, 조회와 Case 접수 시 현재 사용자 역할과 활성 여부를 확인한다. 외부 로그인 사용자에게 로컬 비밀번호를 요구하지 않는다. 이 관계는 ERP LOT 추적 체인을 변경하지 않는다.
 
 `GET /api/v1/monitor`는 조회만 수행한다. 기한·의존 업무의 재판정과 이벤트 인입은 허용된 실행기 서비스 신원의 `POST /api/v1/dispatch`, `POST /api/v1/events`로 제한한다. OAuth 접근 허용과 발주·입고·리콜에 대한 인간 승인은 별개의 단계다. 설정은 [Auth0 연결 안내](11_auth0_setup.md)를 따른다.
+
+### 재보충 계산과 생산 계획의 연결
+
+완제품 부족은 `planning_policies`의 수집 기간·예측 기간·안전재고와 주문 이력으로 계산한다. `bom_versions`·`bom_components`를 따라 반제품과 원재료의 필요량·필요일을 전개하고, 현재 LOT와 예정 입고를 차감한 다음 `supplier_material_terms`로 원재료 구매 후보를 비교한다. `measurement_units`는 성분과 구매 단위의 차원·환산율을 검증한다.
+
+반제품 실제 사용 이력은 `production_product_inputs`에서 생산 기록과 원본 생산 LOT을 연결한다. 원재료의 기존 `production_ingredients` 경로는 유지한다. 출고 LOT 합계·제품 잔량·입고별 원재료 LOT 합계·생산 투입 후 잔량이 일치하지 않으면 계획 계산을 거부한다.
+
+`planning_cases`·`replenishment_plans`는 거점별 업무와 불변 계획 버전을 저장할 구조다. 현재 서버 내부 계산은 읽기 전용이며 발주·생산·입고·재고를 변경하지 않는다. 모델 호출·계획 저장·MANAGER 승인·발주 적용의 연결은 후속이다. [ERD §8](03_erd.md)과 [계산 구현 안내](12_replenishment_calculation.md)를 함께 따른다.

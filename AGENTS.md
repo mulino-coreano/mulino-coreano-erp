@@ -6,11 +6,11 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Italian food brand) enters the Korean market. A SAP consulting portfolio project that localizes a EU-standard ERP to Korean food regulations (Food Traceability Act, 22 allergens, electronic tax invoices, etc.).
 
-**Current status**: Phase 4 is in progress. The Spring Boot backend implements Case intake, inventory lookup, event dispatch, Run scheduling and Auth0 JWT/ERP-role access control; `mcp-server/` provides authenticated stdio and Streamable HTTP with Auth0 OBO token exchange. PostgreSQL has 30 ERP tables plus 13 interface tables and one external identity table. Real tenant/client login validation remains separate from local tests. `governance/`, `dashboard/` and the Zig CLI remain scaffolds. Actual LLM execution and approval/write adapters are future work; see `docs/08_interface_overview.md` §13 and `docs/11_auth0_setup.md`. All business documentation is written in Korean.
+**Current status**: Phase 4 is in progress. The Spring Boot backend implements Case intake, inventory lookup, event dispatch, Run scheduling and Auth0 JWT/ERP-role access control; `mcp-server/` provides authenticated stdio and Streamable HTTP with Auth0 OBO token exchange. Internal planning services now load reconciled ERP snapshots and calculate historical demand, dated BOM requirements and supplier candidates. PostgreSQL has 30 ERP tables plus 13 interface, one identity and nine planning tables. Real tenant/client login validation remains separate from local tests. `governance/`, `dashboard/` and the Zig CLI remain scaffolds. Actual LLM execution, plan persistence APIs and approval/write adapters are future work; see `docs/08_interface_overview.md` §13, `docs/11_auth0_setup.md` and `docs/12_replenishment_calculation.md`. All business documentation is written in Korean.
 
 ## Commands
 
-Use Java 21 and PostgreSQL 18. For the backend, create an empty DB and configure `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `MULINO_AUTH_ISSUER` and `MULINO_API_AUDIENCE` locally; Flyway applies V1–V18, including the required Orchestrator/channel bootstrap and external identities. Follow `docs/11_auth0_setup.md` for Auth0/MCP configuration. Use a separate disposable DB for integration tests.
+Use Java 21 and PostgreSQL 18. For the backend, create an empty DB and configure `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `MULINO_AUTH_ISSUER` and `MULINO_API_AUDIENCE` locally; Flyway applies V1–V19, including the required Orchestrator/channel bootstrap, external identities and planning data. Follow `docs/11_auth0_setup.md` for Auth0/MCP configuration. Use a separate disposable DB for integration tests. The planning fixture must be loaded into an empty disposable business database before adding demo login identities; see `database/seed/replenishment_demo_README.md`.
 
 ```bash
 cd backend
@@ -39,6 +39,7 @@ psql -d mulino_coreano -f database/ddl/07_case_management.sql
 psql -d mulino_coreano -f database/ddl/08_case_indexes.sql
 psql -d mulino_coreano -f database/ddl/09_case_fks.sql
 psql -d mulino_coreano -f database/ddl/10_external_identities.sql
+psql -d mulino_coreano -f database/ddl/11_planning_data.sql
 psql -d mulino_coreano -f database/seed/interface.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```
@@ -49,7 +50,7 @@ psql -d mulino_coreano -f database/seed/allergens.sql
 
 | Layer | Directory | Role |
 |---|---|---|
-| L0 | `database/`, `backend/` | PostgreSQL 18 (30 ERP + 13 interface + 1 identity tables) + Spring Boot REST API (single entry point for CLI and dashboard) |
+| L0 | `database/`, `backend/` | PostgreSQL 18 (30 ERP + 13 interface + 1 identity + 9 planning tables) + Spring Boot REST API (single entry point for CLI and dashboard) |
 | L1 | `governance/` | Intercept action-bearing API calls → approve / block / hold + audit log. **Reads pass through; only writes are gated** |
 | L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude Code and Codex are both supported agent runtimes; the orchestrator dispatches role subagents. See `agents/CLAUDE.md` |
 | L3 | `dashboard/` | Natural-language query → Intent Parsing → chart generation |

@@ -10,7 +10,14 @@ export function createApiClient({ token, base = process.env.MULINO_API_BASE ?? "
         redirect: "error",
       });
       if (!res.ok) throw new Error("API " + res.status + ": 요청을 처리할 수 없습니다.");
-      return await res.json();
+      // NUMERIC(18,6) can exceed IEEE-754 precision even when its integer part is safe.
+      // Node 22+ exposes each JSON number's original lexeme to the reviver. Keep decimal
+      // quantities/prices and unsafe integer identifiers as strings instead of rounding them.
+      return JSON.parse(await res.text(), (_key, value, context) => {
+        if (typeof value !== "number") return value;
+        if (typeof context?.source !== "string") throw new Error("Exact JSON number parsing requires Node 22 or newer");
+        return /[.eE]/.test(context.source) || !Number.isSafeInteger(value) ? context.source : value;
+      });
     } catch (error) {
       if (error?.name === "TimeoutError" || error?.name === "AbortError") {
         const uncertain = !["GET", "HEAD", "OPTIONS"].includes(method)

@@ -65,7 +65,9 @@ npm start
 | `list_attention` | 인간의 권한·판단이 필요한 항목 조회 | `erp:read` | 예 |
 | `monitor_status` | 저장된 운영 현황의 읽기 전용 snapshot | `erp:read` | 예 |
 
-기존 5개 도구의 입력과 업무 응답 형식을 유지합니다. 질문은 자동으로 Case를 만들지 않습니다. 구매 승인·발주 도구 및 실행기 API는 이번 단계의 MCP 도구에 추가하지 않습니다. `monitor_status`는 backend의 재판정·Run dispatch를 실행하지 않습니다.
+기존 5개 도구의 입력과 업무 응답 필드를 유지합니다. 질문은 자동으로 Case를 만들지 않습니다. 구매 승인·발주 도구 및 실행기 API는 이번 단계의 MCP 도구에 추가하지 않습니다. `monitor_status`는 backend의 재판정·Run dispatch를 실행하지 않습니다.
+
+수량·가격의 `NUMERIC(18,6)` 정밀도를 보존하기 위해 ERP JSON의 소수/지수 표기 숫자와 JavaScript 안전 범위를 벗어나는 정수는 MCP 응답에서 원래 숫자 문자열로 반환합니다. 예를 들어 `999999999999.999999`를 `1000000000000`으로 반올림하지 않습니다. 작은 정수 건수와 boolean은 기존 타입을 유지합니다.
 
 ## 오류와 검증 범위
 

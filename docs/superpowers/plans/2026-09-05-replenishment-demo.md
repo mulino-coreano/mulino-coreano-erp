@@ -1,6 +1,6 @@
 # 국내 생산 재보충 데모 구현 계획
 
-> 상태: 1단계 인증 기반 구현 중 · 2026-09-05
+> 상태: 2단계 데이터 구현 완료, 3단계 계산 코어 구현 · 실제 인증 연결/후속 업무 API 미완료 · 2026-09-05
 > 구현 담당자는 `superpowers:executing-plans`를 사용하여 아래 검증 단위별로 진행한다. 이 문서는 기능 구현 완료를 의미하지 않는다.
 
 **목표:** ChatGPT 또는 Codex에서 맡긴 완제품 보충 목표를 주문 이력·다단계 BOM·공급 조건으로 분석하고, Auth0로 로그인한 MANAGER가 대화에서 승인하면 원재료 발주를 한 번 반영하고 결과를 검증한다.
@@ -155,10 +155,10 @@ ACT 접수 → Orchestrator 실행 예약
 
 **책임 영역:** Flyway/DDL, `backend/.../planning/` 모델, `database/seed/`.
 
-- [ ] 공통 계약의 BOM·공급조건·정책·plan·수량·거점·반제품 사용 관계 migration을 추가한다. 순환 BOM, 단위 차원 불일치, 중복 활성 버전을 검증한다.
-- [ ] 56일 주문, 2개 완제품, 공유 반제품, 2단계 이상 BOM, 복수 공급처, 일부 HOLD/만료 LOT, 미입고 PO가 있는 fixture를 만든다. 모든 LOT·stock·출고 수량을 대조한다.
-- [ ] 시간은 주입 가능한 Clock과 데모 기준일로 고정한다. 공급처·가격·BOM 등은 seed로 제공하고 마스터 CRUD 화면은 만들지 않는다.
-- [ ] 빈 DB Flyway 적용과 V17 DB 업그레이드, 독립 DDL 적용을 서로 다른 disposable DB에서 검증한다. 기존 FK·CHECK·감사 불변성이 유지되는지 검사한다.
+- [x] 공통 계약의 BOM·공급조건·정책·plan·수량·거점·반제품 사용 관계 migration을 추가한다. 순환 BOM, 단위 차원 불일치, 중복 활성 버전을 검증한다.
+- [x] 56일 주문, 2개 완제품, 공유 반제품, 2단계 이상 BOM, 복수 공급처, 일부 HOLD/만료 LOT, 미입고 PO가 있는 fixture를 만든다. 모든 LOT·stock·출고 수량을 대조한다.
+- [x] 계산 기준일을 명시적 LocalDate 입력으로 주입하여 데모 시간을 고정한다. 실제 API의 날짜 공급은 실행 연결 단계의 Clock에서 담당하고 인증용 시계는 변경하지 않는다. 공급처·가격·BOM 등은 seed로 제공하고 마스터 CRUD 화면은 만들지 않는다.
+- [x] 빈 DB Flyway 적용과 V17 DB 업그레이드, 독립 DDL 적용을 서로 다른 disposable DB에서 검증한다. 기존 FK·CHECK·감사 불변성이 유지되는지 검사한다.
 
 **산출 계약:** 동일 입력에서 동일 수요/BOM 테스트를 실행할 수 있는 데이터와 버전 참조.
 
@@ -168,7 +168,7 @@ ACT 접수 → Orchestrator 실행 예약
 
 - [ ] §3 계산을 구현하고 입력 snapshot·plan version·source references·제외 사유를 반환한다.
 - [ ] `POST /cases/{ref}/plans`, `GET /plans/{ref}`를 구현한다. 거점의 활성 계획 제약과 같은 Case의 버전 교체를 트랜잭션으로 보장한다.
-- [ ] 수요 0, 이력 부족, 확정 주문 중복, 공유 반제품, 순환 BOM, 배치/단위 올림, 만료/보류, 미입고 납기 초과, MOQ, 공급처 동률·없음과 데이터 불일치를 테스트한다.
+- [x] 수요 0, 이력 부족, 확정 주문 중복, 공유 반제품, 순환 BOM, 배치/단위 올림, 만료/보류, 미입고 납기 초과, MOQ, 공급처 동률·없음과 데이터 불일치를 테스트한다.
 
 **산출 계약:** immutable ReplenishmentPlan={ref,version,asOf,horizon,sources,forecast,productionRequirements,materialRequirements,purchaseCandidates,exceptions,hash}. 계산 실행 자체는 ERP 수량을 변경하지 않는다.
 
@@ -258,4 +258,6 @@ ACT 접수 → Orchestrator 실행 예약
 - 접근 경계 변경: 인간 모니터는 읽기 전용이며 이벤트·Run 예약·dispatch는 허용된 worker 서비스만 호출한다.
 - 검증은 실제 PostgreSQL 18 통합 테스트와 서명 JWT/JWKS·token 교환 fixture를 사용한다. 실제 Auth0·ChatGPT·Codex 로그인/갱신은 별도로 기록한다.
 - 로컬 검증 결과: Backend `clean test bootJar` 208개, MCP `npm ci` 후 `npm test` 14개, Auth0 설정 스크립트 테스트 18개 통과. 독립 DDL 00~10과 seed 적용·V18/DDL10 일치도 확인했다. 실패·skip은 없으며 실제 tenant 호출은 포함하지 않는다.
-- 아직 실제 tenant issuer·OBO 자격증명·고정 공개 주소가 설정되지 않아 1단계 전체 완료로 표시하지 않는다. 2~8단계는 미구현이다.
+- 아직 실제 tenant issuer·OBO 자격증명·고정 공개 주소가 설정되지 않아 1단계 전체 완료로 표시하지 않는다.
+- 2단계 V19/DDL11·fixture 구현과 3단계 서버 내부 계산 코어·ERP 스냅샷을 추가했다. 실제 fixture 통합 시험에서 생산 50/30 CASE·반죽 15 KG·구매 후보 16,500원이 확인됐고 ERP 거래는 변경되지 않았다.
+- 최신 검증: Backend `clean test bootJar` 328개, MCP 15개 통과. 숫자 정밀도·날짜별 BOM·입고/LOT 수량 조작 회귀를 포함한다. 계산 버전 저장·agent API와 4~8단계는 이어서 구현한다. 상세는 [계산 구현 안내](../../12_replenishment_calculation.md)를 따른다.

@@ -592,3 +592,41 @@ erDiagram
 - `user_id`는 실제 사용자를 참조하고 연결된 사용자 삭제를 제한한다. 로그인 시 `users.is_active`와 현재 역할을 확인한다.
 - `users.password`는 외부 로그인 계정에 대해 NULL을 허용한다. 이 변경은 로컬 비밀번호 로그인 기능을 추가하지 않는다.
 - 이메일 자동 연결, 첫 로그인 자동 사용자 생성, 토큰의 임의 role 문자열에 의한 승격은 지원하지 않는다.
+
+## 8. 재보충 계획 데이터
+
+Flyway V19와 `database/ddl/11_planning_data.sql`은 계획 관련 테이블 9개를 추가한다. 기존 구매·입고·LOT·생산 투입·재고·수주·출고 수량과 가격은 NUMERIC(18,6)으로 확장하며 기존 FK와 수량 제약을 유지하고 NaN을 거부한다.
+
+```mermaid
+erDiagram
+    products ||--o{ bom_versions : product_id
+    bom_versions ||--o{ bom_components : bom_version_id
+    products o|--o{ bom_components : child_product_id
+    raw_materials o|--o{ bom_components : raw_material_id
+    suppliers ||--o{ supplier_material_terms : supplier_id
+    raw_materials ||--o{ supplier_material_terms : raw_material_id
+    measurement_units ||--o{ supplier_material_terms : purchase_unit
+    warehouses o|--o{ production_lots : warehouse_id
+    production_records ||--o{ production_product_inputs : production_record_id
+    production_lots ||--o{ production_product_inputs : source_production_lot_id
+    warehouses ||--o| planning_policies : warehouse_id
+    warehouses ||--o{ planning_cases : warehouse_id
+    cases ||--o| planning_cases : case_id
+    planning_cases ||--o{ replenishment_plans : "case_id + warehouse_id"
+```
+
+| 테이블 | 저장 내용 / 주요 제약 |
+|---|---|
+| `measurement_units` | 단위·차원·기준 환산율. CASE와 EA는 다른 차원 |
+| `planning_data_guard` | 동시 교차 행 검증을 직렬화하는 내부 단일 행 revision. 업무 엔터티 FK 없음 |
+| `bom_versions` | 제품별 버전·배치 산출량·생산 리드타임·유효기간. 활성 기간 겹침 및 같은 날짜의 순환 금지 |
+| `bom_components` | 배치당 성분 기본단위 수량. 하위 제품 또는 원재료 중 하나만 참조 |
+| `supplier_material_terms` | 자재별 복수 공급처 조건·단위·가격·MOQ·배수·납기·인증. 차원/환산율 일치 |
+| `production_product_inputs` | 생산 기록에서 소비한 반제품 LOT과 수량. 자기 LOT 투입·확인된 타 창고 투입 금지 |
+| `planning_policies` | 거점별 수집 시작일·기본 예측 기간·안전재고 일수 |
+| `planning_cases` | Case와 거점 연결·ACTIVE/CLOSED 상태. 거점당 ACTIVE 한 건 |
+| `replenishment_plans` | Case별 불변 버전·기준 시점·출처 snapshot·결과·hash. Case/거점 조합 검증, UPDATE/DELETE 금지 |
+
+`production_lots.warehouse_id`는 기존 생산 기록의 창고가 단일하게 확인될 때만 보정한다. 자료가 없거나 여러 창고로 해석되는 LOT은 NULL을 유지하고 계획 계산 시 해당 양수 LOT을 예외로 처리한다. 재고 위치를 추측해 보정하지 않는다.
+
+단위·BOM·공급 조건은 이후 계획 계산의 근거다. 이 데이터 추가는 실제 생산 투입 차감이나 발주 승인·적용 API의 완성을 의미하지 않는다. 상세 대사와 계산 규칙은 [계산 구현 안내](12_replenishment_calculation.md)를 따른다.
