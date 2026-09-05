@@ -255,14 +255,14 @@ JWT 인증과 현재 ERP 역할 검증을 추가했다. 업무 조회는 `erp:re
 |---|---|---|
 | ASK로 업무 상태 질의 | 제품명/SKU 기준 완제품 재고 조회, Case 생성 없음 | 임의 자연어 ERP 질의·리포트·설명 capability |
 | ACT로 목표와 책임 생성 | 멱등 접수, 인간/Orchestrator 참여·범위 기록, 초기 QUEUED Run | 실제 모델 목표 분해와 전체 업무 실행 |
-| 이벤트로 대기 업무 재개 | 조건 판정, QUEUED/RUNNING·lease·완료·대기·실패·복구 API와 Node 실행기 | 실제 Codex 이미지/CLI·모델 실행 검증 |
+| 이벤트로 대기 업무 재개 | 조건 판정, QUEUED/RUNNING·lease·완료·대기·실패·복구 API와 Node 실행기 | 실제 로그인·모델 실행 검증 |
 | 실행마다 6계층 컨텍스트 재구성 | Case의 책임·배정·대기·증거·Claim·결정 참조를 단일 DB 스냅샷으로 조립 | ERP capability 확장과 데이터 기반 정책 인덱스 |
 | 채널 간 동일 Case 공유 | 인증된 REST·stdio·HTTP MCP의 목록 조회·목표 생성 | 실제 Auth0/클라이언트 연결 검증, 상세 조회, Slack·이메일 어댑터 |
 | 인간 판단과 범위 있는 답변 | Attention 조회·계산 실패 기록, 기존 승인 이벤트 검증 | Attention 답변·Decision 생성 및 대화 승인 |
 | 검증된 업무 종결과 거버넌스 | 저장 테이블·기존 승인 결과 검증·JWT/ERP 권한 통제 | 결정론적/반론 기반 검증기, 인간 결정과 Change Request 적용 |
 | MONITOR 운영 통제면 | 읽기 전용 상태 집계·열린 Attention | 실제 대시보드, 실행기 주기 재판정·능동 감시·알림 정책 |
 
-`QUEUED`는 예약, `RUNNING`은 실행기가 lease를 획득한 상태다. Node 실행기의 claim/heartbeat/finish 경로는 구현했으며 실제 Codex용 이미지·CLI 및 실연결은 아직 검증 전이다. Work Item·worker별 활성 실행 중복을 막고 최신 계산 결과와 권한으로 완료를 검증한다. Attention 조회는 인간의 답변이나 승인을 기록하지 않는다. 자세한 변경은 [실행 연결 안내](13_execution_and_plan_api.md)를 따른다.
+`QUEUED`는 예약, `RUNNING`은 실행기가 lease를 획득한 상태다. Node 실행기의 claim/heartbeat/finish 경로는 구현했으며 최소 Zig CLI와 Codex Docker 이미지의 격리·CLI 호출도 검증했다. 실제 로그인·모델 업무 수행은 아직 검증 전이다. Work Item·worker별 활성 실행 중복을 막고 최신 계산 결과와 권한으로 완료를 검증한다. Attention 조회는 인간의 답변이나 승인을 기록하지 않는다. 자세한 변경은 [실행 연결 안내](13_execution_and_plan_api.md)를 따른다.
 
 ### 로컬 실행
 

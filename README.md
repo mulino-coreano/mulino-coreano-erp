@@ -65,7 +65,7 @@
 
 Backend는 DB 설정과 Auth0 issuer/audience가 필요하며, stdio MCP는 ERP access token을 요구합니다. 인증을 생략하는 개발용 변경 API는 제공하지 않습니다. 준비 순서는 [Auth0 연결 안내](docs/11_auth0_setup.md), 세부 구현 순서는 [재보충 데모 계획](docs/superpowers/plans/2026-09-05-replenishment-demo.md)을 따릅니다.
 
-주문 이력·다단계 BOM·공유 재고·복수 공급처를 연결하는 서버 내부 계산과 재현 가능한 fixture도 구현했습니다. [계산 구현 안내](docs/12_replenishment_calculation.md)에 산식·데이터 대사·기대 결과를 정리했습니다. 불변 계획 저장과 scoped Run API·Node 실행기까지 연결했습니다. [실행 연결 안내](docs/13_execution_and_plan_api.md)에 계약과 검증 범위를 정리했습니다. 실제 Codex용 CLI/이미지·실연결 및 승인·발주 적용은 후속입니다.
+주문 이력·다단계 BOM·공유 재고·복수 공급처를 연결하는 서버 계산과 재현 가능한 fixture를 구현했습니다. [계산 구현 안내](docs/12_replenishment_calculation.md)에 산식·데이터 대사·기대 결과를 정리했습니다. 불변 계획 저장과 scoped Run API·Node 실행기에 이어 [최소 Zig CLI와 Codex 이미지](docs/14_cli_and_runtime.md)도 연결했습니다. [실행 연결 안내](docs/13_execution_and_plan_api.md)에 계약과 검증 범위를 정리했습니다. 실제 로그인·모델 업무 수행 및 승인·발주 적용은 후속입니다.
 
 ---
 

@@ -261,7 +261,7 @@ flowchart TD
 - `waiting_conditions.resolved_by_event_id`와 `runs.trigger_event_id`가 재개 원인을 보존한다. 증거와 Claim의 지지/반증 관계는 검증된 동일 Case 안에 기록한다.
 - `decisions`와 `attention_requests`가 Work Item을 참조하면 같은 Case여야 한다. 인간 답변의 `answer_scope`/결정의 `scope`는 컨텍스트에 보존하며 자동으로 전사 정책으로 확대하지 않는다.
 - Work Item의 `metadata.businessRef`는 ERP 행을 가리키는 인덱스다. 운영 Case의 생성이나 승인 Event 수신이 발주·입고·리콜 등 ERP 쓰기 권한을 대신하지 않는다. 해당 변경은 위 거버넌스 승인 매트릭스를 그대로 따른다.
-- Run의 QUEUED/lease·완료·대기·실패 API와 Node 실행기 기반을 구현했다. 실제 Codex용 CLI/이미지·실연결, 인간 답변/승인 채널과 ERP 변경 capability는 후속이다.
+- Run의 QUEUED/lease·완료·대기·실패 API와 Node 실행기, 최소 Zig CLI·Codex 이미지를 구현했다. 실제 로그인·모델 업무 수행, 인간 답변/승인 채널과 ERP 변경 capability는 후속이다. 명령·이미지 검증은 [실행 이미지 안내](14_cli_and_runtime.md)를 따른다.
 
 ### 외부 신원과 조회 경계
 

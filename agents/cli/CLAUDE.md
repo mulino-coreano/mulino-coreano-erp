@@ -1,6 +1,6 @@
 # agents/cli/ — `mulino` CLI (Zig)
 
-Single static binary. Pattern: `mulino <noun> <verb>` where nouns mirror the traceability chain: `supplier`, `cert`, `material`, `po`, `inbound`, `lot`, `production`, `outbound`, `order`, `recall`. Example: `mulino lot trace RM-2026-001 --reverse`.
+Single static binary. Current commands: `case show`, `plan show/calculate`, `work create/transition`. Exact arguments and DTOs are in [README.md](README.md). Other traceability-chain commands (`material`, `po`, `lot`, etc.) remain future work; never present them as installed capabilities.
 
 ## Contract (consumers are LLM agents, not humans)
 

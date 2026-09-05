@@ -2,6 +2,7 @@ package com.mulinocoreano.backend.interfacepackage;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.LinkedHashMap;
@@ -216,6 +217,8 @@ public class ContextSnapshotService {
                 .query(String.class)
                 .single();
 
-        return new LinkedHashMap<>(objectMapper.readValue(json, Map.class));
+        Map<String, Object> snapshot = objectMapper.readerFor(Map.class)
+                .with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).readValue(json);
+        return new LinkedHashMap<>(snapshot);
     }
 }

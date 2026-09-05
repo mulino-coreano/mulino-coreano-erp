@@ -100,6 +100,24 @@ class ContextSnapshotCompletenessIntegrationTest {
     }
 
     @Test
+    void businessReferenceNumbersRetainBigintAndDecimalPrecisionThroughContextMaps() {
+        Fixture fixture = fixture();
+        jdbc.sql("UPDATE work_items SET metadata=CAST(:metadata AS jsonb) WHERE work_item_id=:id")
+                .param("id",fixture.workItemId())
+                .param("metadata", """
+                        {"businessRef":{"id":9007199254740993,"amount":999999999999.123456,
+                          "nested":{"quantities":[123456789012.345678,0.000001]}}}
+                        """)
+                .update();
+
+        JsonNode reference = snapshot(fixture.caseRef()).path("business").path("references").get(0);
+        assertThat(reference.path("id").longValue()).isEqualTo(9007199254740993L);
+        assertThat(reference.path("amount").decimalValue()).isEqualByComparingTo("999999999999.123456");
+        assertThat(reference.path("nested").path("quantities").get(0).decimalValue()).isEqualByComparingTo("123456789012.345678");
+        assertThat(reference.path("nested").path("quantities").get(1).decimalValue()).isEqualByComparingTo("0.000001");
+    }
+
+    @Test
     void claimProvenanceDerivesRunAgentAndRetainsRunForExplicitActor() {
         Fixture fixture = fixture();
         String runRef = "RUN-" + UUID.randomUUID().toString().substring(0, 8);

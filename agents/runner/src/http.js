@@ -7,7 +7,7 @@ export class HttpError extends Error {
 }
 const BACKEND_CODES = new Set(['COMPLETION_NOT_VERIFIED', 'INVALID_RESULT', 'STALE_LEASE', 'WORKER_ALREADY_LEASED']);
 
-async function readJson(response, maxBytes) {
+async function readJson(response, maxBytes, preserveNumbers = false) {
   const reader = response.body?.getReader();
   if (!reader) throw new HttpError('EMPTY_HTTP_RESPONSE');
   let size = 0;
@@ -20,7 +20,14 @@ async function readJson(response, maxBytes) {
       if (size > maxBytes) throw new HttpError('HTTP_RESPONSE_TOO_LARGE');
       chunks.push(value);
     }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'), preserveNumbers ? (key, value, context) => {
+      // Do not round ERP NUMERIC/BIGINT facts when forwarding a claim to the model.
+      if (typeof value === 'number' && (!Number.isSafeInteger(value) || /[.eE]/.test(context?.source ?? ''))) {
+        if (!context?.source) throw new HttpError('UNSUPPORTED_JSON_RUNTIME');
+        return context.source;
+      }
+      return value;
+    } : undefined);
   } catch (error) {
     await reader.cancel().catch(() => {});
     throw error instanceof HttpError ? error : new HttpError('INVALID_HTTP_RESPONSE');
@@ -92,7 +99,7 @@ export class WorkerApi {
           const backendCode = BACKEND_CODES.has(rejected?.error) ? rejected.error : null;
           throw new HttpError('WORKER_REQUEST_REJECTED', response.status, backendCode);
         }
-        return await readJson(response, 524288);
+        return await readJson(response, 524288, true);
       }
     } catch (error) {
       throw error instanceof HttpError ? error : new HttpError('WORKER_REQUEST_UNAVAILABLE');

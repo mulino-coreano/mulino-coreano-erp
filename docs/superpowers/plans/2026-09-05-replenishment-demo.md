@@ -1,6 +1,6 @@
 # 국내 생산 재보충 데모 구현 계획
 
-> 상태: 2·3단계 구현 완료, 4단계 로컬 서버·Node 실행기 구현 완료 · 실제 Auth0/두 클라이언트 로그인·Codex CLI/이미지/모델 실행 인수와 구매 승인·적용은 미완료 · 2026-09-05
+> 상태: 2·3단계 구현 완료, 4단계 로컬 서버·Node 실행기 구현 완료 · 최소 Zig CLI·Codex 이미지 추가, 실제 Auth0/두 클라이언트 로그인·모델 실행 인수와 구매 승인·적용은 미완료 · 2026-09-05
 > 구현 담당자는 `superpowers:executing-plans`를 사용하여 아래 검증 단위별로 진행한다. 전체 데모의 완료와 로컬 구현 완료를 구분하며, 최신 검증 결과는 [실행·계획 API 안내](../../13_execution_and_plan_api.md)를 따른다.
 
 **목표:** ChatGPT 또는 Codex에서 맡긴 완제품 보충 목표를 주문 이력·다단계 BOM·공급 조건으로 분석하고, Auth0로 로그인한 MANAGER가 대화에서 승인하면 원재료 발주를 한 번 반영하고 결과를 검증한다.
@@ -191,8 +191,9 @@ ACT 접수 → Orchestrator 실행 예약
 
 **책임 영역:** `agents/cli/`, `agents/skills/`, 실행기와 backend agent capability.
 
-- [ ] Zig 0.16.0 stdlib로 필요한 명령만 구현한다: `case show`, `work create/transition`, `plan calculate/show`, `material show`, `po propose/show`. 각 명령은 해당 API로만 전달하며 JSON stdout/error stderr와 기존 exit code 계약을 유지한다.
-- [ ] 토큰은 환경변수로 받되 실행 결과·로그에 포함하지 않는다. CLI는 자동 재시도하지 않고 호출자의 멱등 키를 전달한다. 인간 승인 명령은 agent CLI에 넣지 않는다.
+- [x] Zig 0.16.0 stdlib로 `case show`, `work create/transition`, `plan calculate/show`를 구현한다. JSON stdout/error stderr와 기존 exit code 계약, 숫자 정밀도·TLS·제한 시간·리다이렉트 차단을 검증한다.
+- [ ] 백엔드 구매 연결 후 `material show`, `po propose/show`를 추가한다. 현재 미구현 경로를 성공한 명령으로 노출하지 않는다.
+- [x] 토큰은 환경변수로 받되 실행 결과·로그에 포함하지 않는다. CLI는 자동 재시도하지 않고 호출자의 멱등 키를 전달한다. 인간 승인 명령은 agent CLI에 넣지 않는다.
 - [ ] Orchestrator → Supply Chain → Procurement의 역할별 업무·hand-off·승인 대기를 연결한다. 대기 중 역할 실행의 종료와 상위 Case 책임의 지속을 스킬에 구분한다. 역할 변경을 업무 흐름에도 반영한다.
 - [ ] 모의 런타임 계약 테스트와 실제 Codex native subagent 실행 시험을 분리한다. 실제 시험은 계산 결과 참조와 승인 요청이 저장되는 것을 확인한다.
 
@@ -268,9 +269,17 @@ ACT 접수 → Orchestrator 실행 예약
 - 2단계 V19/DDL11·fixture 구현과 3단계 서버 내부 계산 코어·ERP 스냅샷을 추가했다. 실제 fixture 통합 시험에서 생산 50/30 CASE·반죽 15 KG·구매 후보 16,500원이 확인됐고 ERP 거래는 변경되지 않았다.
 - V19 계산 코어 당시 검증: Backend `clean test bootJar` 328개, MCP 15개 통과. 숫자 정밀도·날짜별 BOM·입고/LOT 수량 조작 회귀를 포함했다. 이 수치는 현재 최종 검사 수가 아니다.
 
-### 현재 구현 기준점 — 3단계 및 4단계 로컬 연결
+### 계획·실행 API 기준점 — 3단계 및 4단계 로컬 연결
 
 - 3단계 계획 API·불변 버전·실제 source snapshot·정밀 hash와 V22 최신 계산 결과를 구현했다. 인간의 구조화된 범위를 강제하고 자료 부족·정합성 오류를 구분한다.
 - 4단계의 인증된 멱등 접수·초기 QUEUED 예약·활성 창고 Case 재사용, 역할별 업무 API, lease·복구·대기·완료 검증과 Node 실행기를 구현했다. claim credential은 저장·재생하지 않으며 일반 업무 쓰기의 멱등성과 구분한다.
 - 최신 Backend 전체·Node runner·MCP 검증 수와 실행 범위는 [실행·계획 API 안내](../../13_execution_and_plan_api.md)를 따른다. 이력에 남긴 과거 검사 수를 최신 값으로 재사용하지 않는다.
 - 실제 Auth0/ChatGPT/Codex 로그인, 실제 Codex용 CLI·이미지·모델 실행 인수, 구매 제안·MANAGER 결정·ERP 발주 적용과 전체 시연은 남아 있다. 5단계 이후의 예정 작업을 이 기준점의 완료로 표시하지 않는다.
+
+### 5단계 현재 진행 — CLI와 실행 이미지
+
+- 최소 5개 CLI 경로, ARM64/AMD64 정적 Linux 빌드, Codex 0.151.0 고정 이미지를 추가했다. CLI 6개 단위·24개 독립 HTTP 시험이 통과했다.
+- 실제 ARM64 Docker에서 파일·권한·환경·CA·CLI·설정·취소를 검증했다. 중첩 bwrap의 namespace 오류 때문에 Docker를 보안 경계로 유지하고 내부 Codex의 sandbox만 조정했다. 호스트 권한·Docker privileged 설정은 바꾸지 않았다.
+- Orchestrator·Supply Chain 지침의 빠진 명령·영속 대기·최종 JSON을 시나리오 시험으로 확인하고 수정했다. 참고 지침 시험이며 실제 모델 업무 수행 인수는 아니다.
+- 서버 맥락과 Node 전달 경로의 소수·큰 정수 정밀도를 보존한다. 실제 예시 계획 claim 크기도 현재 제한 안에서 확인했다.
+- [CLI·런타임 안내](../../14_cli_and_runtime.md)에 재현 방법과 검증 범위를 기록했다. 실제 로그인·native subagent 업무 수행, 구매 명령·승인·반영은 계속 남아 있다.

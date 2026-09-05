@@ -6,7 +6,7 @@ import { claim, server, json } from './helpers.js';
 
 const env = {
   MULINO_AUTH_ISSUER: 'https://tenant.example/', MULINO_WORKER_CLIENT_ID: 'worker-client',
-  MULINO_WORKER_CLIENT_SECRET: 'worker-secret', MULINO_RUNTIME_IMAGE: 'mulino-runtime:local',
+  MULINO_WORKER_CLIENT_SECRET: 'worker-secret', MULINO_RUNTIME_IMAGE: 'mulino-runtime:local', MULINO_CODEX_MODEL: 'demo-model',
   MULINO_CODEX_AUTH_VOLUME: 'mulino-codex-auth', MULINO_WORKER_ID: 'worker-1',
 };
 
@@ -105,6 +105,19 @@ test('worker HTTP uses bearer and preserves idempotency key across token refresh
   assert.equal(calls.length, 2);
   assert.deepEqual(calls.map(c => c.key), ['request-1', 'request-1']);
   assert.deepEqual(calls.map(c => c.authorization), ['Bearer old-token', 'Bearer new-token']);
+});
+
+test('claim business context preserves exact decimal and large integer source values', async t => {
+  const app = await server((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"timeoutSeconds":600,"context":{"quantity":999999999999.999999,"productId":9007199254740993,"unitPrice":0.000001,"ratio":1e-6,"count":2}}');
+  });
+  t.after(app.close);
+  const api = new WorkerApi({ baseUrl: `${app.url}/api/v1`, tokenClient: { getToken: async () => 'access' } });
+  const value = await api.post('claim', {}, { idempotencyKey: 'numeric-claim' });
+  assert.equal(value.timeoutSeconds, 600);
+  assert.deepEqual(value.context, { quantity: '999999999999.999999', productId: '9007199254740993',
+    unitPrice: '0.000001', ratio: '1e-6', count: 2 });
 });
 
 test('worker HTTP surfaces lease conflict without server secrets or automatic mutation retry', async t => {

@@ -1,0 +1,6 @@
+{
+  "name": "mulino-codex-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "dependencies": { "@openai/codex": "0.151.0" }
+}

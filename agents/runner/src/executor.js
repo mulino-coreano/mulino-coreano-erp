@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import { redact, safeUrl, validateResult } from './protocol.js';
+import { codexConfiguration } from './runtime-config.js';
 
 export class ExecutionError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -89,14 +90,16 @@ export class ProcessExecutor {
 }
 
 export class DockerExecutor extends ProcessExecutor {
-  constructor({ image, authVolume, agentApiUrl = 'http://host.docker.internal:8080/api/v1', ...options }) {
+  constructor({ image, authVolume, model, agentApiUrl = 'http://host.docker.internal:8080/api/v1', ...options }) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/.test(image ?? '')
       || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(authVolume ?? '')) throw new Error('INVALID_DOCKER_CONFIG');
     super({ ...options, invocation: claim => this.buildInvocation(claim) });
-    Object.assign(this, { image, authVolume, agentApiUrl: safeUrl(agentApiUrl, { container: true }) });
+    if (model !== undefined && (typeof model !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model))) throw new Error('INVALID_MODEL');
+    Object.assign(this, { image, authVolume, model, agentApiUrl: safeUrl(agentApiUrl, { container: true }) });
   }
 
   buildInvocation(claim) {
+    const runtimeConfig = codexConfiguration(claim.agentKey);
     const name = `mulino-run-${randomUUID()}`;
     const hostEnv = { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin' };
     return { command: 'docker', env: { ...hostEnv, MULINO_TOKEN: claim.capabilityToken }, args: [
@@ -107,10 +110,14 @@ export class DockerExecutor extends ProcessExecutor {
       '--workdir=/work', '--mount', `type=volume,src=${this.authVolume},dst=/home/mulino/.codex`,
       '--env', 'MULINO_TOKEN', '--env', `MULINO_API_URL=${this.agentApiUrl}`,
       '--env', 'CODEX_HOME=/home/mulino/.codex', '--env', 'HOME=/home/mulino',
-      '--entrypoint=codex', this.image, 'exec', '--ignore-user-config', '--ignore-rules', '--ephemeral',
+      '--entrypoint=codex', this.image, 'exec', '--strict-config', '--ignore-user-config', '--ignore-rules', '--ephemeral',
       '--skip-git-repo-check', '--json', '--color=never', '--output-schema', '/opt/mulino/result.schema.json',
-      '--sandbox=workspace-write', '--config', 'sandbox_workspace_write.network_access=true',
-      '--config', 'approval_policy="never"', '--config', 'mcp_servers={}', '-',
+      // Docker is the isolation boundary. Nested bwrap cannot create user namespaces
+      // under the container's non-root/cap-drop policy; never add privileged Docker flags.
+      '--sandbox=danger-full-access',
+      '--config', 'approval_policy="never"', '--config', 'mcp_servers={}',
+      ...runtimeConfig.flatMap(value => ['--config', value]),
+      ...(this.model ? ['--model', this.model] : []), '-',
     ], onCancel: () => new Promise(resolve => {
       // Killing the Docker client does not guarantee its container stopped. Remove it separately.
       const cleanup = spawn('docker', ['rm', '--force', name], { shell: false, stdio: 'ignore', env: hostEnv });
