@@ -50,12 +50,18 @@ public class DispatcherService {
         EventScope scope = resolveScope(request.caseRef(), request.workItemRef());
         Map<String, Object> sourcePayload = mutablePayload(request.payload());
         EventActor actor = EventActor.none();
+        boolean globallyScopedGovernanceApproval = false;
         if ("WORK_ITEM_STATUS_CHANGED".equals(eventType)) {
             scope = resolveDependencySource(scope, sourcePayload);
         } else if ("CHANGE_REQUEST_APPROVED".equals(eventType)) {
             PreparedApproval approval = resolveApproval(scope, sourcePayload);
             scope = approval.scope();
             actor = approval.actor();
+            globallyScopedGovernanceApproval = approval.globallyScopedGovernance();
+        }
+        if (globallyScopedGovernanceApproval && containsClaimEvidenceSelector(sourcePayload)) {
+            throw new InvalidInterfaceRequestException(
+                    "Claim/Evidence cannot narrow a globally scoped governance approval");
         }
         PreparedClaimEvidence claimEvidence = prepareClaimEvidence(scope, sourcePayload);
         scope = claimEvidence.scope();
@@ -225,7 +231,7 @@ public class DispatcherService {
         Set<String> readyWorkItems = new LinkedHashSet<>();
         for (RunnableWorkItem workItem : runnable.values()) {
             readyWorkItems.add(workItem.workItemRef());
-            if (workItem.agentKey() == null) {
+            if (workItem.agentKey() == null || !lockAndCheckActiveAgent(workItem.agentKey())) {
                 if (workItem.assignedUserId() == null) {
                     openUnassignedAttention(workItem);
                 }
@@ -267,6 +273,19 @@ public class DispatcherService {
                 .param("caseId", workItem.caseId())
                 .param("workItemId", workItem.workItemId())
                 .update();
+    }
+
+    private boolean lockAndCheckActiveAgent(String agentKey) {
+        return jdbc.sql("""
+                SELECT is_active
+                FROM agents
+                WHERE agent_key=:agentKey
+                FOR SHARE
+                """)
+                .param("agentKey", agentKey)
+                .query(Boolean.class)
+                .optional()
+                .orElse(false);
     }
 
     private void openRunFailureAttention(RunnableWorkItem workItem, RunDto run) {
@@ -515,18 +534,17 @@ public class DispatcherService {
 
     private EventScope resolveDependencySource(EventScope requestedScope,
                                                Map<String, Object> payload) {
-        Object suppliedReference = firstPayloadValue(
+        String suppliedReference = normalizedPayloadReference(
                 payload, "workItemRef", "work_item_ref", "dependentWiRef", "dependent_wi_ref");
         String dependencyRef = requestedScope.workItemRef();
         if (dependencyRef == null) {
-            if (!(suppliedReference instanceof CharSequence text)
-                    || normalizeScopeRef(text.toString()) == null) {
+            if (suppliedReference == null) {
                 throw new InvalidInterfaceRequestException(
                         "WORK_ITEM_STATUS_CHANGED requires a real workItemRef");
             }
-            dependencyRef = normalizeScopeRef(text.toString());
+            dependencyRef = suppliedReference;
         } else if (suppliedReference != null
-                && !dependencyRef.equals(normalizeScopeRef(suppliedReference.toString()))) {
+                && !dependencyRef.equals(suppliedReference)) {
             throw new InvalidInterfaceRequestException(
                     "payload workItemRef does not match resolved workItemRef");
         }
@@ -616,7 +634,7 @@ public class DispatcherService {
                     attention.workItemId(), attention.workItemRef());
             assertCompatibleScope(requestedScope, authoritative);
             return new PreparedApproval(
-                    authoritative, new EventActor("USER", attention.userId()));
+                    authoritative, new EventActor("USER", attention.userId()), false);
         }
 
         ApprovedGovernanceAction approval = jdbc.sql("""
@@ -649,7 +667,8 @@ public class DispatcherService {
         EventScope authoritative = authoritativeGovernanceScope(approval, requestedScope);
         assertCompatibleScope(requestedScope, authoritative);
         return new PreparedApproval(
-                authoritative, new EventActor("USER", approval.userId()));
+                authoritative, new EventActor("USER", approval.userId()),
+                authoritative.caseId() == null);
     }
 
     private Optional<EventScope> governanceScope(ApprovedGovernanceAction approval) {
@@ -684,7 +703,11 @@ public class DispatcherService {
             return resolved.orElseThrow(() -> new InvalidInterfaceRequestException(
                     "Approved governance authoritative resource does not exist"));
         }
-        return requestedScope;
+        if (requestedScope.caseId() != null || requestedScope.workItemId() != null) {
+            throw new InvalidInterfaceRequestException(
+                    "Approval scope cannot be supplied for an unmapped governance resource");
+        }
+        return new EventScope(null, null, null, null);
     }
 
     private PreparedClaimEvidence prepareClaimEvidence(
@@ -744,6 +767,13 @@ public class DispatcherService {
                 : requestedScope;
         return new PreparedClaimEvidence(
                 authoritativeScope, claimId, target.evidenceId(), relation);
+    }
+
+    private boolean containsClaimEvidenceSelector(Map<String, Object> payload) {
+        return payload.containsKey("claim_id")
+                || payload.containsKey("claimId")
+                || payload.containsKey("evidence_ref")
+                || payload.containsKey("evidenceRef");
     }
 
     private void linkClaimEvidence(PreparedClaimEvidence prepared) {
@@ -996,7 +1026,8 @@ public class DispatcherService {
         }
     }
 
-    private record PreparedApproval(EventScope scope, EventActor actor) { }
+    private record PreparedApproval(EventScope scope, EventActor actor,
+                                    boolean globallyScopedGovernance) { }
 
     private record PreparedClaimEvidence(EventScope scope, Long claimId,
                                          Long evidenceId, String relation) { }

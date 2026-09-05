@@ -13,12 +13,31 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const BASE = process.env.MULINO_API_BASE ?? "http://localhost:8080/api/v1";
+const BASE = (process.env.MULINO_API_BASE ?? "http://localhost:8080/api/v1").replace(/\/$/, "");
+const configuredTimeout = Number(process.env.MULINO_API_TIMEOUT_MS ?? "10000");
+const API_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+  ? configuredTimeout
+  : 10000;
+const CASE_STATUSES = new Set(["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"]);
 
 async function api(path, opts = {}) {
-  const res = await fetch(BASE + path, opts);
-  if (!res.ok) throw new Error("API " + res.status + ": " + (await res.text()));
-  return res.json();
+  const method = (opts.method ?? "GET").toUpperCase();
+  try {
+    const res = await fetch(BASE + path, {
+      ...opts,
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error("API " + res.status + ": " + (await res.text()));
+    return await res.json();
+  } catch (error) {
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      const uncertain = !["GET", "HEAD", "OPTIONS"].includes(method)
+        ? " 서버에서 요청이 반영되었을 수 있습니다. 자동 재시도하지 말고 현재 상태를 먼저 확인하세요."
+        : "";
+      throw new Error(`API 요청 시간 초과 (${API_TIMEOUT_MS}ms).${uncertain}`);
+    }
+    throw error;
+  }
 }
 
 const server = new Server(
@@ -38,16 +57,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "ask_inventory",
       description:
-        "ASK mode — query current ERP state (finished-goods stock). This does NOT create a Case; it is a read-only business question.",
+        "ASK mode — search finished-goods stock by an explicit product name or SKU. Extract only that product/SKU from the conversation. Omit it only when the user explicitly asks for all inventory. This does NOT create a Case.",
       inputSchema: {
         type: "object",
         properties: {
-          question: {
+          productQuery: {
             type: "string",
-            description: "Natural-language question (e.g. 'Amaretti 재고 얼마나 있어?')",
+            minLength: 1,
+            description: "Product name or SKU search term only (e.g. 'Amaretti' or 'AMR-200'). Omit for an explicit all-inventory query.",
           },
         },
-        required: ["question"],
       },
     },
     {
@@ -91,11 +110,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+  const { name, arguments: suppliedArguments } = request.params;
+  const args = suppliedArguments ?? {};
   try {
     switch (name) {
       case "ask_inventory": {
-        const data = await api("/ask?q=" + encodeURIComponent(args.question));
+        const query = args?.productQuery?.trim();
+        const data = await api(query ? "/ask?q=" + encodeURIComponent(query) : "/ask");
         return {
           content: [
             {
@@ -119,7 +140,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const data = await api("/cases", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ objective: args.objective, intentType: "ACT", channel: args.channel ?? "CHAT" }),
+          body: JSON.stringify({ objective: args.objective, channel: args.channel ?? "CHAT" }),
         });
         return {
           content: [
@@ -132,7 +153,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
       case "list_cases": {
-        const q = args.status ? "?status=" + args.status : "";
+        if (args.status && !CASE_STATUSES.has(args.status)) {
+          throw new Error("status must be OPEN, IN_PROGRESS, WAITING, RESOLVED, or CLOSED");
+        }
+        const q = args.status ? "?status=" + encodeURIComponent(args.status) : "";
         const data = await api("/cases" + q);
         return {
           content: [
@@ -174,7 +198,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               type: "text",
               text:
                 "Case (열림/진행): " + data.casesOpen +
-                "\nCase (대기): " + data.casesAtRisk +
+                "\nCase (위험): " + data.casesAtRisk +
                 "\nWork Item (READY): " + data.workItemsReady +
                 "\nWork Item (WAITING): " + data.workItemsWaiting +
                 "\n주의 요청 (OPEN): " + data.attentionOpen,

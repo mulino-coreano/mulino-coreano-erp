@@ -25,13 +25,13 @@ public class InterfaceController {
 
     // ------------------------------------------------------------ ASK
     @GetMapping("/ask")
-    public AskResponse ask(@RequestParam String q) {
+    public AskResponse ask(@RequestParam(required = false) String q) {
         return service.ask(q);
     }
 
     // ------------------------------------------------------------ ACT
     @PostMapping("/cases")
-    public CaseDto createCase(@RequestBody CreateCaseRequest req) {
+    public CaseDto createCase(@Valid @RequestBody CreateCaseRequest req) {
         return service.createCase(req);
     }
 

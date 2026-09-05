@@ -1,11 +1,15 @@
 package com.mulinocoreano.backend.interfacepackage;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * 인터페이스 메커니즘 (docs/08_interface_overview.md) 구현.
@@ -16,6 +20,11 @@ import java.util.Map;
 @Service
 public class InterfaceService {
 
+    private static final int INVENTORY_RESULT_LIMIT = 20;
+    private static final String DEFAULT_CHANNEL_REF = "SYSTEM_DEFAULT";
+    private static final Set<String> SUPPORTED_CHANNELS =
+            Set.of("CHAT", "SLACK", "EMAIL", "DASHBOARD", "API");
+
     private final JdbcClient jdbc;
     private final RunService runService;
 
@@ -25,64 +34,97 @@ public class InterfaceService {
     }
 
     // ------------------------------------------------------------------ ASK
-    public AskResponse ask(String question) {
-        List<InventoryDto> inventory = jdbc.sql("""
-                SELECT p.name, p.sku, s.quantity, w.name
+    public AskResponse ask(String productQuery) {
+        String query = normalizeSearchTerm(productQuery);
+        String filter = query == null ? "" : """
+                WHERE POSITION(LOWER(:query) IN LOWER(p.name)) > 0
+                   OR POSITION(LOWER(:query) IN LOWER(p.sku)) > 0
+                """;
+        String sql = """
+                SELECT p.name, p.sku, s.quantity, w.name,
+                       count(*) OVER () AS total_locations
                 FROM stock s
                 JOIN products p ON p.product_id = s.product_id
                 JOIN warehouses w ON w.warehouse_id = s.warehouse_id
-                ORDER BY p.name
-                LIMIT 20
-                """)
-                .query((rs, i) -> new InventoryDto(
-                        rs.getString(1), rs.getString(2),
-                        rs.getBigDecimal(3), rs.getString(4)))
+                %s
+                ORDER BY p.name, p.sku, w.name, w.warehouse_id
+                LIMIT %d
+                """.formatted(filter, INVENTORY_RESULT_LIMIT);
+        var statement = jdbc.sql(sql);
+        if (query != null) {
+            statement = statement.param("query", query);
+        }
+        List<InventorySearchRow> rows = statement
+                .query((rs, i) -> new InventorySearchRow(
+                        new InventoryDto(rs.getString(1), rs.getString(2),
+                                rs.getBigDecimal(3), rs.getString(4)),
+                        rs.getLong(5)))
                 .list();
+        List<InventoryDto> inventory = rows.stream().map(InventorySearchRow::inventory).toList();
+        long totalLocations = rows.isEmpty() ? 0 : rows.get(0).totalLocations();
+        boolean truncated = totalLocations > inventory.size();
 
-        String answer = inventory.isEmpty()
-                ? "등록된 완제품 재고가 없습니다. (조회 시간: 시스템 시각)"
-                : "현재 완제품 재고는 총 " + inventory.size() + "개 제품군이 있습니다. 첫 항목: "
-                  + inventory.get(0).productName() + " " + inventory.get(0).quantity() + " " + inventory.get(0).warehouseName();
+        String subject = query == null ? "전체 완제품" : "'" + query + "' 검색";
+        String answer = totalLocations == 0
+                ? subject + " 재고 위치가 없습니다."
+                : subject + " 결과: 재고 위치 총 " + totalLocations + "건 중 "
+                  + inventory.size() + "건을 반환했습니다."
+                  + (truncated ? " 결과는 " + INVENTORY_RESULT_LIMIT + "건으로 제한됩니다." : "");
 
-        return new AskResponse(answer, "ASK", inventory,
-                "sources=stock,products,warehouses;generated_by=ask_capability");
+        return new AskResponse(answer, "ASK", query, inventory,
+                totalLocations, inventory.size(), truncated,
+                "sources=stock,products,warehouses;generated_by=inventory_search");
     }
 
     // ------------------------------------------------------------------ ACT
     @Transactional
     public CaseDto createCase(CreateCaseRequest req) {
-        String caseRef = nextRef("cases", "CASE");
-        String channel = req.channel() == null ? "CHAT" : req.channel();
-        String title = truncate(req.objective(), 60);
+        ValidatedCaseRequest request = validateCaseRequest(req);
+        String caseRef = newPublicRef("CASE");
+        String title = truncate(request.objective(), 60);
 
         // 기본 담당 = orchestrator 로 시작 (다중 배정은 UI/API로 확장)
-        Long agentId = jdbc.sql("SELECT agent_id FROM agents WHERE agent_key='ORCHESTRATOR'")
-                .query(Long.class).optional().orElse(null);
+        long agentId = jdbc.sql("""
+                        SELECT agent_id FROM agents
+                        WHERE agent_key='ORCHESTRATOR' AND is_active=true
+                        FOR SHARE
+                        """)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> unavailable(
+                        "No active ORCHESTRATOR agent is configured"));
+        long channelId = jdbc.sql("""
+                        SELECT channel_id FROM channels
+                        WHERE channel_type=:channel::channel_type
+                          AND external_ref=:externalRef
+                        """)
+                .param("channel", request.channel())
+                .param("externalRef", DEFAULT_CHANNEL_REF)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> unavailable(
+                        "No default channel is configured for " + request.channel()));
 
         jdbc.sql("""
                 INSERT INTO cases (case_ref, title, objective, intent_type, origin_channel_id)
-                VALUES (:ref, :title, :obj, :intent::intent_type,
-                        (SELECT channel_id FROM channels WHERE channel_type=:ch::channel_type LIMIT 1))
+                VALUES (:ref, :title, :obj, 'ACT', :channelId)
                 """)
                 .param("ref", caseRef).param("title", title)
-                .param("obj", req.objective())
-                .param("intent", req.intentType() == null ? "ACT" : req.intentType())
-                .param("ch", channel)
+                .param("obj", request.objective())
+                .param("channelId", channelId)
                 .update();
 
         Long caseId = jdbc.sql("SELECT case_id FROM cases WHERE case_ref=:r")
                 .param("r", caseRef).query(Long.class).single();
 
-        if (agentId != null) {
-            jdbc.sql("""
-                    INSERT INTO case_participants (case_id, actor_type, agent_id)
-                    VALUES (:cid, 'AGENT', :aid)
-                    """)
-                    .param("cid", caseId).param("aid", agentId).update();
-        }
+        jdbc.sql("""
+                INSERT INTO case_participants (case_id, actor_type, agent_id)
+                VALUES (:cid, 'AGENT', :aid)
+                """)
+                .param("cid", caseId).param("aid", agentId).update();
 
         // 초기 Work Item 1건: 목표 분해
-        String wiRef = nextRef("work_items", "WI");
+        String wiRef = newPublicRef("WI");
         jdbc.sql("""
                 INSERT INTO work_items (work_item_ref, case_id, title, status, assigned_agent_id)
                 VALUES (:ref, :cid, '목표 분해 및 계획 수립', 'READY', :aid)
@@ -167,7 +209,23 @@ public class InterfaceService {
         Map<String, Long> counts = jdbc.sql("""
                 SELECT
                   (SELECT count(*) FROM cases WHERE status IN ('OPEN','IN_PROGRESS')) AS cases_open,
-                  (SELECT count(*) FROM cases WHERE status='WAITING') AS cases_waiting,
+                  (SELECT count(*)
+                   FROM cases c
+                   WHERE c.status IN ('OPEN','IN_PROGRESS','WAITING')
+                     AND (
+                       EXISTS (
+                         SELECT 1 FROM work_items wi
+                         WHERE wi.case_id=c.case_id
+                           AND wi.status NOT IN ('DONE','CANCELLED')
+                           AND wi.due_at < CURRENT_TIMESTAMP
+                       )
+                       OR EXISTS (
+                         SELECT 1 FROM attention_requests ar
+                         WHERE ar.case_id=c.case_id
+                           AND ar.status='OPEN'
+                           AND ar.reason_type='MATERIAL_EXCEPTION'
+                       )
+                     )) AS cases_at_risk,
                   (SELECT count(*) FROM work_items WHERE status='READY') AS wi_ready,
                   (SELECT count(*) FROM work_items WHERE status='WAITING') AS wi_waiting,
                   (SELECT count(*) FROM attention_requests WHERE status='OPEN') AS attn_open
@@ -187,12 +245,41 @@ public class InterfaceService {
     }
 
     // ------------------------------------------------------------------ helpers
-    private String nextRef(String table, String prefix) {
-        Long n = jdbc.sql("SELECT count(*) FROM " + table).query(Long.class).single();
-        return prefix + "-" + (1900 + n);
+    private ValidatedCaseRequest validateCaseRequest(CreateCaseRequest request) {
+        if (request == null || request.objective() == null || request.objective().isBlank()) {
+            throw new InvalidInterfaceRequestException("objective is required");
+        }
+        if (request.intentType() != null && !"ACT".equals(request.intentType())) {
+            throw new InvalidInterfaceRequestException("intentType must be ACT when supplied");
+        }
+        String channel = request.channel() == null ? "CHAT" : request.channel();
+        if (!SUPPORTED_CHANNELS.contains(channel)) {
+            throw new InvalidInterfaceRequestException("channel is invalid");
+        }
+        return new ValidatedCaseRequest(request.objective().trim(), channel);
+    }
+
+    private String normalizeSearchTerm(String query) {
+        return query == null || query.isBlank() ? null : query.trim();
+    }
+
+    private String newPublicRef(String prefix) {
+        int randomLength = 18 - prefix.length();
+        return prefix + "-" + UUID.randomUUID().toString().replace("-", "")
+                .substring(0, randomLength);
+    }
+
+    private ResponseStatusException unavailable(String reason) {
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, reason);
     }
 
     private String truncate(String s, int len) {
         return s.length() <= len ? s : s.substring(0, len - 1) + "…";
+    }
+
+    private record InventorySearchRow(InventoryDto inventory, long totalLocations) {
+    }
+
+    private record ValidatedCaseRequest(String objective, String channel) {
     }
 }

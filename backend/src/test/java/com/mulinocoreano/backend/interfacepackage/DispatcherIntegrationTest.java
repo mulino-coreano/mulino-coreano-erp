@@ -326,6 +326,53 @@ class DispatcherIntegrationTest {
     }
 
     @Test
+    void governanceApprovalRejectsCallerScopeForAnUnmappedBusinessResource() {
+        Fixture intended = waitingFixture("APPROVAL", "{}", "WAITING");
+        Fixture unrelated = waitingFixture("SUPPLIER_REPLY", "{\"supplier_id\":996}", "WAITING");
+        long approverId = user("misrouted-governance-approval");
+        long approvalId = approvedGovernanceAction(approverId);
+        jdbc.sql("""
+                UPDATE waiting_conditions
+                SET condition_payload=jsonb_build_object('approval_id', :approvalId)
+                WHERE waiting_condition_id=:waitingId
+                """)
+                .param("approvalId", approvalId)
+                .param("waitingId", intended.waitingId())
+                .update();
+        String externalRef = unique("approval");
+
+        assertThatThrownBy(() -> dispatcher.ingest(new CreateEventRequest(
+                "CHANGE_REQUEST_APPROVED", externalRef, unrelated.caseRef(), null,
+                Map.of("approvalId", approvalId))))
+                .isInstanceOf(InvalidInterfaceRequestException.class)
+                .hasMessageContaining("scope");
+
+        assertThat(eventCount("CHANGE_REQUEST_APPROVED", externalRef)).isZero();
+        assertThat(waitingStatus(intended.waitingId())).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void globallyScopedGovernanceApprovalRejectsClaimEvidenceCaseNarrowing() {
+        Fixture fixture = waitingFixture("APPROVAL", "{}", "WAITING");
+        long approverId = user("approval-claim-scope");
+        long approvalId = approvedGovernanceAction(approverId);
+        long claimId = claim(fixture.caseId());
+        String evidenceRef = evidence(fixture.caseId());
+        String externalRef = unique("approval");
+
+        assertThatThrownBy(() -> dispatcher.ingest(new CreateEventRequest(
+                "CHANGE_REQUEST_APPROVED", externalRef, null, null,
+                Map.of("approvalId", approvalId,
+                        "claimId", claimId,
+                        "evidenceRef", evidenceRef))))
+                .isInstanceOf(InvalidInterfaceRequestException.class)
+                .hasMessageContaining("Claim/Evidence");
+
+        assertThat(eventCount("CHANGE_REQUEST_APPROVED", externalRef)).isZero();
+        assertThat(claimEvidenceCount(claimId, evidenceRef, "SUPPORTS")).isZero();
+    }
+
+    @Test
     void externalDataEventWakesMatchingWaitingWorkItemAndSchedulesAuditableRun() {
         Fixture fixture = waitingFixture("EXTERNAL_DATA", "{\"expected_source\":\"3PL\"}", "WAITING");
 
@@ -414,6 +461,32 @@ class DispatcherIntegrationTest {
         assertThat(waitingStatus(fixture.waitingId())).isEqualTo("ACTIVE");
     }
 
+    @Test
+    void dependencyStatusEventRejectsContradictorySourceAliasesBeforeInsertion() {
+        Fixture fixture = waitingFixture("DEPENDENCY_DONE", "{}", "WAITING");
+        String dependencyRef = terminalDependency(fixture, "DONE");
+        jdbc.sql("""
+                UPDATE waiting_conditions
+                SET condition_payload=jsonb_build_object('dependent_wi_ref', :dependencyRef)
+                WHERE waiting_condition_id=:waitingId
+                """)
+                .param("dependencyRef", dependencyRef)
+                .param("waitingId", fixture.waitingId())
+                .update();
+        String externalRef = unique("status-change");
+
+        assertThatThrownBy(() -> dispatcher.ingest(new CreateEventRequest(
+                "WORK_ITEM_STATUS_CHANGED", externalRef, fixture.caseRef(), dependencyRef,
+                Map.of("workItemRef", dependencyRef,
+                        "dependentWiRef", unique("WI"),
+                        "status", "DONE"))))
+                .isInstanceOf(InvalidInterfaceRequestException.class)
+                .hasMessageContaining("Conflicting");
+
+        assertThat(eventCount("WORK_ITEM_STATUS_CHANGED", externalRef)).isZero();
+        assertThat(waitingStatus(fixture.waitingId())).isEqualTo("ACTIVE");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"DONE", "CANCELLED"})
     void matchingEventDoesNotChangeTerminalWorkItem(String terminalStatus) {
@@ -487,6 +560,29 @@ class DispatcherIntegrationTest {
                 .param("workItemId", fixture.workItemId())
                 .query(Long.class)
                 .single()).isEqualTo(1);
+    }
+
+    @Test
+    void inactiveAssignedAgentDoesNotRollBackTheEventOrResolvedWait() {
+        Fixture fixture = waitingFixture("SUPPLIER_REPLY", "{\"supplier_id\":132}", "WAITING");
+        jdbc.sql("UPDATE agents SET is_active=FALSE WHERE agent_id=:agentId")
+                .param("agentId", fixture.agentId())
+                .update();
+        String externalRef = unique("msg");
+
+        EventDispatchResponse result = dispatcher.ingest(new CreateEventRequest(
+                "SUPPLIER_EMAIL_RECEIVED", externalRef, fixture.caseRef(), null,
+                Map.of("supplierId", 132)));
+
+        assertThat(result.satisfiedWaiting()).containsExactly(fixture.waitingRef());
+        assertThat(result.readyWorkItems()).containsExactly(fixture.workItemRef());
+        assertThat(result.scheduledRuns()).isEmpty();
+        assertThat(result.failedRuns()).isEmpty();
+        assertThat(eventCount("SUPPLIER_EMAIL_RECEIVED", externalRef)).isEqualTo(1);
+        assertThat(waitingStatus(fixture.waitingId())).isEqualTo("SATISFIED");
+        assertThat(workItemStatus(fixture.workItemId())).isEqualTo("READY");
+        assertThat(openAttentionCount(
+                fixture.workItemId(), "MISSING_HUMAN_CONTEXT")).isEqualTo(1);
     }
 
     @Test

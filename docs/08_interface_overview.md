@@ -1,7 +1,7 @@
 # Mulino Coreano — 인터페이스 메커니즘 (Interface Mechanism)
 
 > 본 문서는 "챗봇이 붙은 ERP"가 아니라, **인간과 AI 에이전트가 동일한 Case·Work Item·증거·결정·ERP 상태 위에서 여러 표면(채널)으로 상호작용하는 지속성 있는 비즈니스 조직**을 정의한다.
-> 스키마 구현: `database/ddl/07_case_management.sql` ~ `09_case_fks.sql` (Flyway V8~V15)
+> 스키마 구현: `database/ddl/07_case_management.sql` ~ `09_case_fks.sql`, `database/seed/interface.sql` (Flyway V8~V17)
 > 업무 흐름과의 관계: `docs/02_flow.md` (SSOT), 스키마 상세: `docs/03_erd.md`
 
 ---
@@ -18,6 +18,8 @@
 
 ACT에서 인간은 **원하는 결과(outcome)** 를 말한다. 어떤 ERP 트랜잭션을 수행할지가 아니다.
 `GET /api/v1/monitor`는 기한이 도래한 `SCHEDULED_TIME` 또는 종료된 `DEPENDENCY_DONE` 대기가 있을 때만 `DISPATCH_SWEEP_TRIGGERED`(`source=MONITOR`) Event를 기록한다. 실행 가능한 대기가 없는 조회는 상태만 반환하며 합성 Event를 만들지 않는다. 관리·테스트용 `POST /api/v1/dispatch`는 호출 자체를 `DISPATCH_REQUESTED`(`source=MANUAL`)로 항상 기록한다.
+
+`casesAtRisk`는 종료되지 않은 Case 중 미완료 Work Item의 기한이 지났거나 열린 `MATERIAL_EXCEPTION`이 있는 Case 수다. 두 신호가 있어도 Case당 한 번만 집계한다. 기한 내 정상적인 공급사 대기는 위험으로 세지 않으며, 대기 업무 수는 `workItemsWaiting`으로 별도 제공한다.
 
 ---
 
@@ -233,7 +235,7 @@ Event는 불변 사실이다. 애플리케이션과 무관하게 DB 트리거가
 
 ## 13. 구현 현황 (코드 참조)
 
-이 문서의 개념은 다음 코드로 실행 가능하다.
+이 문서는 S1~S6의 목표 아키텍처와 이번 PR의 구현 범위를 함께 기록한다. 현재 실행 가능한 범위는 다음과 같다.
 
 | 표면(채널) | 구현 |
 |---|---|
@@ -246,15 +248,36 @@ Event 요청은 알 수 없는 Case/Work Item, 서로 다른 Case의 조합, 해
 
 현재 API는 내부/신뢰 네트워크용 구현 단계다. L1 인증·거버넌스 인터셉터와 읽기 actor 감사는 아직 연결되지 않았으므로 비신뢰 네트워크에 직접 공개하지 않는다. 이 제한은 승인 Event의 DB 재검증과 별개의 배포 경계다.
 
+### 목표 아키텍처와 현재 구현의 경계
+
+| 원래 설계의 의도 | 이번 PR에서 실행 가능한 범위 | 후속 구현 |
+|---|---|---|
+| ASK로 업무 상태 질의 | 제품명/SKU 기준 완제품 재고 조회, Case 생성 없음 | 임의 자연어 ERP 질의·리포트·설명 capability |
+| ACT로 목표와 책임 생성 | Case·초기 Work Item·활성 Orchestrator 참여 기록 | LLM을 통한 목표 분해, Work Item 쓰기 및 완료·재대기 API |
+| 이벤트로 대기 업무 재개 | 6종 조건 판정, 감사 Event, READY 전이, Run 스케줄 기록 | 실제 Claude/Codex executor, Run 완료/중단·복구 소비자 |
+| 실행마다 6계층 컨텍스트 재구성 | Case의 책임·배정·대기·증거·Claim·결정 참조를 단일 DB 스냅샷으로 조립 | ERP capability 확장과 데이터 기반 정책 인덱스 |
+| 채널 간 동일 Case 공유 | REST와 로컬 stdio MCP 조회·목표 생성 | Slack·이메일 인입/Send/승인 어댑터, 원격 MCP 전송 |
+| 인간 판단과 범위 있는 답변 | Attention 조회, 이미 완료된 DB 결정의 승인 이벤트 검증 | Attention 답변·Decision 생성 API 및 승인 UI |
+| 검증된 업무 종결과 거버넌스 | 저장 테이블과 기존 승인 결과 검증 | 결정론적/반론 기반 검증기, Change Request 적용, L1 인증·거버넌스 인터셉터 |
+| MONITOR 운영 통제면 | 상태 집계·열린 Attention·기한/의존 대기 재판정 | 실제 대시보드, 능동 감시·알림 정책 |
+
+`RUNNING`은 실행 예약 레코드다. 이 PR만으로 LLM이 호출되거나 업무가 자율 종결되지는 않는다. 외부 executor가 Run을 소비하고 종료할 때까지 동일 Work Item의 추가 Run은 차단된다. Attention 목록을 읽는 행위도 인간의 답변이나 승인을 기록하지 않는다.
+
 ### 로컬 실행
 
 ```bash
-# 1. DB
-createdb mulino_coreano && for f in database/ddl/*.sql; do psql -d mulino_coreano -f "$f"; done
+# 1. PostgreSQL 18에 빈 DB를 만든다. Flyway가 스키마와 기본 인터페이스 등록을 적용한다.
+createdb mulino_coreano
 
-# 2. Backend (Flyway는 V1–V15 적용 후 시작 가정)
-cd backend && ./gradlew bootRun    # http://localhost:8080
+# 2. DB_URL / DB_USERNAME / DB_PASSWORD를 로컬 환경에 설정한다.
+# DB 계정은 초기 마이그레이션을 수행할 권한이 있어야 한다.
+cd backend
+./gradlew bootRun    # http://localhost:8080
 
-# 3. MCP 커넥터 (ChatGPT / Claude Desktop)
-cd mcp-server && npm install && npm start
+# 3. 별도 터미널에서 저장소 루트 기준으로 로컬 stdio MCP 커넥터 실행
+cd mcp-server
+npm ci
+npm start
 ```
+
+독립 DDL 검증에는 `database/ddl/00~09`를 번호 순서로 적용하고 `database/seed/interface.sql`을 적용한다. 이 경로로 만든 DB에 Flyway를 그대로 실행하면 비어 있지 않은 미관리 스키마 오류가 발생한다. 백엔드 실행용 빈 DB는 Flyway 경로 하나로 초기화한다. stdio 서버를 직접 실행하는 로컬 MCP 클라이언트는 지원하지만, 원격 ChatGPT 커넥터에 필요한 HTTP 전송은 아직 제공하지 않는다.

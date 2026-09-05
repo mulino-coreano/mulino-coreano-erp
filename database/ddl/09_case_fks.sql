@@ -58,11 +58,13 @@ ALTER TABLE claim_evidence
 ALTER TABLE decisions
     ADD CONSTRAINT fk_decisions_case FOREIGN KEY (case_id) REFERENCES cases(case_id),
     ADD CONSTRAINT fk_decisions_work_item FOREIGN KEY (work_item_id) REFERENCES work_items(work_item_id),
+    ADD CONSTRAINT fk_decisions_work_item_case FOREIGN KEY (work_item_id, case_id) REFERENCES work_items(work_item_id, case_id),
     ADD CONSTRAINT fk_decisions_user FOREIGN KEY (decided_by_user_id) REFERENCES users(user_id),
     ADD CONSTRAINT fk_decisions_channel FOREIGN KEY (source_channel_id) REFERENCES channels(channel_id);
 
 ALTER TABLE attention_requests
     ADD CONSTRAINT fk_ar_case FOREIGN KEY (case_id) REFERENCES cases(case_id),
     ADD CONSTRAINT fk_ar_work_item FOREIGN KEY (work_item_id) REFERENCES work_items(work_item_id),
+    ADD CONSTRAINT fk_ar_work_item_case FOREIGN KEY (work_item_id, case_id) REFERENCES work_items(work_item_id, case_id),
     ADD CONSTRAINT fk_ar_agent FOREIGN KEY (requested_by_agent_id) REFERENCES agents(agent_id),
     ADD CONSTRAINT fk_ar_user FOREIGN KEY (resolved_by_user_id) REFERENCES users(user_id);

@@ -28,13 +28,17 @@ public class WaitingConditionMatcher {
     }
 
     private boolean supplierReply(Map<String, Object> conditionPayload, DispatchEvent event) {
+        String[] supplierKeys = { "supplier_id", "supplierId" };
+        String[] purchaseOrderKeys = { "po_ref", "poRef" };
         return hasEventType(event, "SUPPLIER_EMAIL_RECEIVED")
+                && aliasesAreCoherent(conditionPayload, supplierKeys)
+                && aliasesAreCoherent(event.payload(), supplierKeys)
+                && aliasesAreCoherent(conditionPayload, purchaseOrderKeys)
+                && aliasesAreCoherent(event.payload(), purchaseOrderKeys)
                 && (sameValue(conditionPayload, event.payload(),
-                        new String[] { "supplier_id", "supplierId" },
-                        new String[] { "supplier_id", "supplierId" })
+                        supplierKeys, supplierKeys)
                 || sameValue(conditionPayload, event.payload(),
-                        new String[] { "po_ref", "poRef" },
-                        new String[] { "po_ref", "poRef" }));
+                        purchaseOrderKeys, purchaseOrderKeys));
     }
 
     private boolean emailSent(Map<String, Object> conditionPayload, DispatchEvent event) {
@@ -47,6 +51,10 @@ public class WaitingConditionMatcher {
         boolean hasCaseId = hasAnyKey(conditionPayload, caseIdKeys);
         boolean hasWorkItemId = hasAnyKey(conditionPayload, workItemIdKeys);
         return (hasCaseId || hasWorkItemId)
+                && aliasesAreCoherent(conditionPayload, caseIdKeys)
+                && aliasesAreCoherent(event.payload(), caseIdKeys)
+                && aliasesAreCoherent(conditionPayload, workItemIdKeys)
+                && aliasesAreCoherent(event.payload(), workItemIdKeys)
                 && (!hasCaseId || sameValue(conditionPayload, event.payload(),
                         caseIdKeys, caseIdKeys))
                 && (!hasWorkItemId || sameValue(conditionPayload, event.payload(),
@@ -58,28 +66,40 @@ public class WaitingConditionMatcher {
             return false;
         }
 
-        boolean attentionIdentityMatches = sameValue(conditionPayload, event.payload(),
-                new String[] { "attention_request_id", "attentionRequestId" },
-                new String[] { "attention_request_id", "attentionRequestId" });
-        boolean governanceIdentityMatches = sameValue(conditionPayload, event.payload(),
-                new String[] { "approval_id", "approvalId", "governance_action_id", "governanceActionId" },
-                new String[] { "approval_id", "approvalId", "governance_action_id", "governanceActionId" });
+        String[] attentionKeys = { "attention_request_id", "attentionRequestId" };
+        String[] governanceKeys = {
+                "approval_id", "approvalId", "governance_action_id", "governanceActionId"
+        };
+        String[] decisionKeys = { "expected_decision", "expectedDecision", "decision" };
+        if (!aliasesAreCoherent(conditionPayload, attentionKeys)
+                || !aliasesAreCoherent(event.payload(), attentionKeys)
+                || !aliasesAreCoherent(conditionPayload, governanceKeys)
+                || !aliasesAreCoherent(event.payload(), governanceKeys)
+                || !aliasesAreCoherent(conditionPayload, decisionKeys)
+                || !aliasesAreCoherent(event.payload(), decisionKeys)) {
+            return false;
+        }
+
+        boolean attentionIdentityMatches = sameValue(
+                conditionPayload, event.payload(), attentionKeys, attentionKeys);
+        boolean governanceIdentityMatches = sameValue(
+                conditionPayload, event.payload(), governanceKeys, governanceKeys);
         if (!attentionIdentityMatches && !governanceIdentityMatches) {
             return false;
         }
 
-        String[] decisionKeys = { "expected_decision", "expectedDecision", "decision" };
         return !hasAnyKey(conditionPayload, decisionKeys)
                 || sameValue(conditionPayload, event.payload(), decisionKeys,
                         new String[] { "decision", "expected_decision", "expectedDecision" });
     }
 
     private boolean scheduledTime(Map<String, Object> conditionPayload, Instant now) {
-        if (now == null) {
+        String[] dueAtKeys = { "due_at", "dueAt" };
+        if (now == null || !aliasesAreCoherent(conditionPayload, dueAtKeys)) {
             return false;
         }
 
-        Object dueAtValue = firstValue(conditionPayload, "due_at", "dueAt");
+        Object dueAtValue = firstValue(conditionPayload, dueAtKeys);
         Instant dueAt;
         if (dueAtValue instanceof Instant instant) {
             dueAt = instant;
@@ -96,14 +116,18 @@ public class WaitingConditionMatcher {
     }
 
     private boolean externalData(Map<String, Object> conditionPayload, DispatchEvent event) {
+        String[] sourceKeys = { "expected_source", "expectedSource" };
+        String[] eventSourceKeys = { "source", "expected_source", "expectedSource" };
+        String[] eventTypeKeys = { "event_type", "eventType" };
         if (!hasThirdPartyReceivedType(event)
+                || !aliasesAreCoherent(conditionPayload, sourceKeys)
+                || !aliasesAreCoherent(event.payload(), eventSourceKeys)
+                || !aliasesAreCoherent(conditionPayload, eventTypeKeys)
                 || !sameValue(conditionPayload, event.payload(),
-                        new String[] { "expected_source", "expectedSource" },
-                        new String[] { "source", "expected_source", "expectedSource" })) {
+                        sourceKeys, eventSourceKeys)) {
             return false;
         }
 
-        String[] eventTypeKeys = { "event_type", "eventType" };
         return !hasAnyKey(conditionPayload, eventTypeKeys)
                 || Objects.equals(firstValue(conditionPayload, eventTypeKeys), event.eventType());
     }
@@ -115,11 +139,20 @@ public class WaitingConditionMatcher {
             return false;
         }
 
-        Object status = firstValue(event.payload(), "status", "work_item_status", "workItemStatus");
+        String[] statusKeys = { "status", "work_item_status", "workItemStatus" };
+        String[] dependencyKeys = { "dependent_wi_ref", "dependentWiRef" };
+        String[] eventDependencyKeys = {
+                "dependent_wi_ref", "dependentWiRef", "work_item_ref", "workItemRef"
+        };
+        if (!aliasesAreCoherent(event.payload(), statusKeys)
+                || !aliasesAreCoherent(conditionPayload, dependencyKeys)
+                || !aliasesAreCoherent(event.payload(), eventDependencyKeys)) {
+            return false;
+        }
+        Object status = firstValue(event.payload(), statusKeys);
         boolean terminal = Objects.equals(status, "DONE") || Objects.equals(status, "CANCELLED");
         return terminal && sameValue(conditionPayload, event.payload(),
-                new String[] { "dependent_wi_ref", "dependentWiRef" },
-                new String[] { "dependent_wi_ref", "dependentWiRef", "work_item_ref", "workItemRef" });
+                dependencyKeys, eventDependencyKeys);
     }
 
     private boolean hasEventType(DispatchEvent event, String expectedType) {
@@ -145,14 +178,41 @@ public class WaitingConditionMatcher {
         if (conditionValue == null || eventValue == null) {
             return false;
         }
-        if (conditionValue instanceof Number left && eventValue instanceof Number right) {
+        return valuesAreEquivalent(conditionValue, eventValue);
+    }
+
+    private boolean aliasesAreCoherent(Map<String, Object> payload, String... keys) {
+        if (payload == null) {
+            return true;
+        }
+        Object canonical = null;
+        boolean found = false;
+        for (String key : keys) {
+            if (!payload.containsKey(key)) {
+                continue;
+            }
+            Object value = payload.get(key);
+            if (value == null) {
+                return false;
+            }
+            if (found && !valuesAreEquivalent(canonical, value)) {
+                return false;
+            }
+            canonical = value;
+            found = true;
+        }
+        return true;
+    }
+
+    private boolean valuesAreEquivalent(Object leftValue, Object rightValue) {
+        if (leftValue instanceof Number left && rightValue instanceof Number right) {
             try {
                 return new BigDecimal(left.toString()).compareTo(new BigDecimal(right.toString())) == 0;
             } catch (NumberFormatException ignored) {
                 return false;
             }
         }
-        return Objects.equals(conditionValue, eventValue);
+        return Objects.equals(leftValue, rightValue);
     }
 
     private Object firstValue(Map<String, Object> payload, String... keys) {

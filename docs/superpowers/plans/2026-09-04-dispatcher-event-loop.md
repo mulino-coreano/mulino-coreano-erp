@@ -316,3 +316,32 @@ Run: `cd backend && ./gradlew clean test --no-daemon`
 - [x] **Step 4: Implement truthful dispatch/audit projection and failure outcomes**
 - [x] **Step 5: Implement validated claim/evidence linking required by spec §2-3**
 - [x] **Step 6: Run Dispatcher/API tests and the full suite**
+
+---
+
+### Task 11: PR #18 원래 계획 대조 검토와 수정 (2026-09-05)
+
+**검토 기준:** S1~S6 인터페이스 설계 대화, `docs/08_interface_overview.md`, `docs/09_dispatcher_spec.md`, 위 Task 1~10. 실제 LLM executor와 L1 인증·거버넌스/승인 채널은 명시된 후속 경계를 유지한다.
+
+| 발견한 불일치 | 수정 및 검증 근거 |
+|---|---|
+| ACT 참조번호가 행 개수에 의존해 삭제·동시 요청에 충돌 | 충돌 가능성이 낮은 독립 참조번호; `InterfaceIntakeIntegrationTest.publicReferencesDoNotDependOnCurrentTableCardinality` |
+| ASK/MONITOR 인텐트로 Case 생성, 잘못된 입력의 500, 담당 없는 초기 의무 | ACT 전용 검증·기본 Orchestrator/채널 V17·활성 담당 잠금; `InterfaceIntakeIntegrationTest` |
+| ASK가 질문을 무시하고 제한된 재고 위치 수를 전체 제품 수로 표시 | 명시적 제품명/SKU 검색과 전체/반환 위치 수·한도 표시; `InterfaceQueryIntegrationTest` |
+| 승인 이벤트의 호출자 scope가 실제 승인 대상을 바꿈 | 매핑 없는 ERP 승인은 전역 ID 라우팅, Case 지정·Claim/Evidence를 통한 범위 축소 거부; `DispatcherIntegrationTest` |
+| 상충하는 식별자 별칭이 잘못된 대기를 해소하거나 이벤트 키를 소비 | 조건은 일치하지 않음, 의존 이벤트는 기록 전 거부; `WaitingConditionMatcherTest`, `DispatcherIntegrationTest` |
+| 담당 비활성화가 유효한 수신 사실까지 롤백 | Event·대기 해소 보존, 담당 복구 Attention, 생성 중 agent 잠금; `DispatcherIntegrationTest`, `DispatcherConcurrencyIntegrationTest` |
+| 재개 컨텍스트에 책임·인간·Claim 상태/반증·결정 범위·Run 출처 누락 | 단일 SELECT에서 참조 인덱스 보강; `ContextSnapshotCompletenessIntegrationTest` |
+| 같은 참여자 중복과 교차 Case Decision/Attention 허용 | V16 NULL 안전 UNIQUE·복합 FK; `SchemaReviewIntegrationTest` |
+| 정상적인 WAITING Case를 전부 위험으로 집계 | 미완료 업무 기한 초과 또는 열린 중대 예외만 Case당 한 번 집계; `InterfaceMonitorIntegrationTest` |
+| MCP 응답 정지·인자 없는 조회가 정상 처리되지 않음 | 본문까지 적용되는 시간 제한·불확실한 쓰기 결과 표시·선택 인자/상태 검증; `mcp-server/test/server.test.js` |
+| 문서가 S1~S6 전체 실행 가능으로 읽히고 새 스키마를 누락 | 구현/후속 경계 명시, 업무 흐름·13개 테이블 ERD·초기화 안내 정합화 |
+
+- [x] 신규 회귀 테스트가 수정 전 동작에서 예상한 이유로 실패함을 확인했다.
+- [x] agent `FOR SHARE`만 제거한 독립 사본에서 동시 비활성화 회귀 테스트가 실패함을 확인했다.
+- [x] PostgreSQL 18의 기존 V15 DB를 V17로 업그레이드했다.
+- [x] 별도 빈 PostgreSQL 18 DB에서 `./gradlew clean test bootJar --no-daemon`을 실행했다: 176개 테스트, 실패·오류·건너뜀 0.
+- [x] `npm ci`, `npm test`, `node --check src/index.js`를 실행했다: MCP 테스트 4개 통과.
+- [x] 독립 DDL 00~09 + 인터페이스 seed와 Flyway의 제약 423개·컬럼 365개·인덱스 101개·트리거 5개·ENUM 값 118개 및 기본 등록이 일치함을 확인했다.
+- [x] 실행 JAR의 HTTP API에 실제 stdio MCP 클라이언트를 연결해 도구 5종, 검색, Case/담당/초기 의무, Run 예약, 잘못된 인텐트 거부를 확인했다.
+- [x] 독립 리뷰에서 추가된 위험 집계·Run 기반 Claim 출처 지적을 수정하고 전체 검증에 포함했다.

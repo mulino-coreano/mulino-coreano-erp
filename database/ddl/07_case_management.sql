@@ -67,7 +67,8 @@ CREATE TABLE case_participants (
         (actor_type = 'AGENT' AND agent_id IS NOT NULL AND user_id IS NULL)
         OR (actor_type = 'USER' AND user_id IS NOT NULL AND agent_id IS NULL)
     ),
-    CONSTRAINT uk_case_participant UNIQUE (case_id, actor_type, agent_id, user_id)
+    CONSTRAINT uk_case_participant UNIQUE NULLS NOT DISTINCT
+        (case_id, actor_type, agent_id, user_id)
 );
 
 -- -----------------------------------------------------------------------------

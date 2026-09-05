@@ -106,6 +106,7 @@ Dispatcher는 다음 두 경로에서 실행된다.
 - 실행 자체는 기존 `createRun()` 계약을 재사용하고, `trigger_event_id`에 이벤트를 기록해 "이 Run은 이 이벤트 때문에 시작됐다"를 감사 가능하게 한다.
 - Work Item Run은 잠근 WI가 `READY`이고, 사용자 배정이 없으며, 요청한 에이전트가 현재 배정된 활성 에이전트와 일치할 때만 생성한다. 런타임은 `CLAUDE` 또는 `CODEX`만 허용한다.
 - 대기 해소 시 에이전트와 사용자 모두 미배정인 WI는 `READY` 상태와 함께 `MISSING_HUMAN_CONTEXT` attention을 생성한다. 사용자에게 직접 배정된 WI는 Run 없이 `READY`가 정상이다.
+- 배정 에이전트가 비활성화된 경우에도 수신 Event와 대기 해소·READY 전이는 보존한다. 실행을 예약하지 않고 중복 없는 `MISSING_HUMAN_CONTEXT` attention을 열어 담당 복구를 요청한다.
 - 컨텍스트 재구성에 최종 실패한 Run은 `FAILED`로 종료하고 응답의 `failedRuns`에만 포함한다. Dispatcher는 해당 WI에 중복되지 않는 `MATERIAL_EXCEPTION` attention을 열어 운영자에게 복구 필요성을 노출한다.
 
 > **최소 구현 범위**: "이벤트를 받아 → 충족되는 대기 조건을 SATISFIED로 → WI를 READY로 → Run 생성 요청"까지를 하나의 트랜잭션으로 구현한다. Run의 실제 LLM 실행 호출(Claude/Codex)은 기존 스택에 위임.
@@ -177,6 +178,8 @@ Event(event_id)
 - 두 FK는 스키마(V9 `resolved_by_event_id`, `trigger_event_id` nullable)에 이미 예약돼 있고, V11(FK)에서 연결된다.
 - **불변성**: Event는 한 번 쓰면 `UPDATE`, `DELETE`, `TRUNCATE`할 수 없다. Event/Run의 `(work_item_id, case_id)`는 composite FK로 같은 Case임을 DB가 강제한다.
 - **승인 출처**: 승인 Event는 권위 있는 DB 결정에서 Case/WI와 인간 `actor_type=USER`, `user_id`를 도출한다. 호출자가 보낸 결정 문자열은 권한 근거가 아니다.
+- **ERP 리소스 승인 범위**: `CASE`/`WORK_ITEM` 리소스는 DB에서 scope를 해소한다. `PURCHASE_ORDER` 등 Case 매핑이 없는 L1 리소스는 전역 승인 Event로만 수신하고, 각 대기의 승인 ID로 대상을 찾는다. 호출자의 Case/WI 지정이나 Claim/Evidence를 통한 임의 scope 축소는 거부한다.
+- **식별자 별칭**: snake_case/camelCase 등 허용된 별칭을 함께 제공하면 값이 모두 일치해야 한다. 상충하는 대기 조건은 매칭하지 않고, 상충하는 의존 이벤트 source는 Event 기록 전에 거부한다.
 - **조회 의미**: Case 필터는 직접 scope뿐 아니라 해소된 wait/triggered Run의 간접 연관 Event도 반환하지만, 전역 Event의 `caseRef`를 필터 값으로 재작성하지 않는다.
 
 ### 멱등성
@@ -244,6 +247,11 @@ Dispatcher 판정은 **결정론적**이어야 하며, 같은 이벤트를 두 �
 | T12 | Claim과 Evidence가 다른 Case | Event 및 `claim_evidence` 모두 기록하지 않고 거절 |
 | T13 | 컨텍스트 재구성 최종 실패 | `scheduledRuns` 제외, `failedRuns` 포함, `MATERIAL_EXCEPTION` attention 생성 |
 | T14 | Event 직접 SQL 변조/교차 Case scope | DB 제약으로 UPDATE/DELETE/TRUNCATE 및 불일치 INSERT 거절 |
+| T15 | Case 매핑 없는 ERP 승인에 호출자 scope 지정 | 400, Event 기록 없음; scope 없는 승인 ID 라우팅은 정상 |
+| T16 | 승인·이메일 조건 또는 의존 이벤트의 별칭 충돌 | 잘못된 대기 해소 및 Event 멱등 키 소비 없음 |
+| T17 | 회신 도착 전 담당 에이전트 비활성화 | Event·SATISFIED·READY 보존, Run 없음, 담당 복구 attention |
+| T18 | 다중 담당·인간 참여·반증된 Claim이 있는 Case | 컨텍스트에 책임·역할·대기·증거 출처·Claim 상태·지지/반증·결정 범위 보존 |
+| T19 | 참여자 중복, 다른 Case의 Decision/Attention | DB 제약으로 거부; 독립 DDL과 Flyway 동일 |
 
 ---
 
@@ -254,3 +262,11 @@ Dispatcher 판정은 **결정론적**이어야 하며, 같은 이벤트를 두 �
 3. Run 생성 시 단일 SQL 컨텍스트 재구성, 재시도, 실패 감사를 구현했다.
 4. V15에서 교차 Case 참조와 Event 불변성을 DB 수준으로 보강했다.
 5. 다음 경계는 실제 LLM executor와 L1 인증/거버넌스 인터셉터다. 이 PR의 `RUNNING` 행은 실행 스케줄 레코드이며, executor가 이를 소비해 `COMPLETED`/`FAILED`로 종결해야 한다.
+
+### PR #18 원래 계획 대조 후 보강
+
+- 컨텍스트의 `obligation`은 Case 내 Work Item 참조 목록을 유지하되 제목·책임자·기한·활성 대기·의존 참조를 포함한다. Run의 `work_item_id`와 결합해 현재 책임과 병렬 업무를 구별한다.
+- `organizational`은 에이전트와 인간 참여자의 역할을 포함한다. `epistemic`은 `evidence`, `claims`, `decisions` 배열을 가진 객체이며, 증거 출처/관측 시각, Claim 상태·지지/반증, 인간 결정의 적용 범위를 구분한다. 이전 Run 감사 스냅샷은 수정하지 않는다.
+- Claim은 직접 주장 actor뿐 아니라 `asserted_by_run_id`의 Run 참조를 포함한다. 직접 actor가 없고 Run으로만 출처가 기록된 Claim은 해당 Run의 에이전트로 책임을 해소한다.
+- V16은 중복 참여자와 교차 Case Decision/Attention을 차단한다. 기존 데이터에 모순이 있으면 명시적인 오류로 마이그레이션을 중단하며 이력을 자동 삭제하지 않는다. 운영자가 원인을 확인하고 정정한 후 다시 적용한다.
+- V17은 초기 Orchestrator와 채널 기본값을 등록한다. 기존 비활성 에이전트를 자동 재활성화하지 않는다. ACT 입력 검증과 참조번호 충돌 방지, 명시적 재고 검색, MCP 오류 처리는 인터페이스 계층에서 검증한다.
