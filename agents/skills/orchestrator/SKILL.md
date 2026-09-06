@@ -31,7 +31,16 @@ mulino work create --json '{"caseRef":"CASE-실제참조","agentKey":"PROCUREMEN
 ```
 
 7. Case를 다시 읽고 정확한 구매 자식의 상태를 확인한다. 진행 중이면 그 참조로 DEPENDENCY_DONE을 반환한다. 구매 승인 대기는 자식의 서버가 저장하며 Orchestrator는 승인 조건을 직접 만들거나 polling하지 않는다. BLOCKED/실패는 사실과 필요한 인간 조치를 보고한다. 새 계획이 생겼다는 이유만으로 이전 미해결 구매 의무를 숨기지 않는다.
-8. Procurement DONE 후 실제 `purchasing` 결과·계획과 남은 Case 의무를 확인한다. 구매가 불필요하거나 발주가 등록되었다는 사실만으로 품절 해소를 선언하지 않는다. 목표 달성에 생산·입고가 필요하면 기존 영속 담당·기한과 근거를 이어가야 한다. 현재 생산·입고 후속 업무의 생성·실행 계약은 미구현이다. 이 단계가 실제 필요한 경우에만 남은 작업, 알려진 담당·목표일, 미정 정보, 필요한 후속 기능을 구체적으로 FAILED에 남겨 서버의 인간 확인 요청으로 전달한다. 담당이나 기한을 지어내거나 SCHEDULED_TIME만으로 담당 배정을 대신하지 않는다. 유효한 계획 직후에는 구매 연결을 수행하며 일괄 FAILED로 끝내지 않는다.
+8. Procurement DONE 후 실제 `purchasing` 결과·계획과 `followups`를 확인한다. 현재 Case·정확한 계획·구매 자식의 `sourceWorkItemRef`가 일치하고 `parentWorkItemRef`가 **현재 workItemRef**인 서버 관리 후속 책임을 찾는다. 해당 `workItemRef`의 의무가 아직 진행 중인지 확인한다. 단순 metadata, 다른 부모의 후속 업무 또는 완료된 후속 기록으로 현재 부모의 완료를 정당화하지 않는다.
+9. 이 연결이 확인되면 원본 조정 업무의 DONE을 제안한다. `summary`에는 실제 후속 `ref`, Orchestrator 담당, `dueAt` 또는 예약 없음, `observedAt` 기준 관찰 및 남은 생산/재고 검토를 남기고 `resultRef`는 실제 계획 참조를 쓴다. 서버가 부모 연결과 진행 중 책임을 검증하며 Case는 WAITING으로 유지한다. 연결 누락·불일치는 구체적으로 FAILED에 보고한다. 발주 완료만으로 일괄 FAILED를 반환하거나 `work create`로 가짜 후속을 만들지 않는다.
+
+최종 결과 형태(참조와 관찰은 실제 조회 결과로 대입):
+
+```json
+{"outcome":"DONE","summary":"구매 결과를 확인했습니다. 저장된 후속 FU-실제참조의 담당은 ORCHESTRATOR입니다. 조회된 관찰 기준 시각과 입고 확인 예약을 따르며, 계획에 따른 생산/재고 검토가 남아 Case는 WAITING입니다.","waitingConditions":[],"resultRef":"PLAN-실제참조"}
+```
+
+구매 불필요도 같은 부모 연결을 확인하고 저장 계획의 실제 생산 필요 여부에 맞는 검토만 설명한다. 물리적 생산·입고 쓰기는 현재 CLI 범위 밖이며 후속 관찰을 실제 실행이나 품절 해소로 설명하지 않는다.
 
 ## Mission
 

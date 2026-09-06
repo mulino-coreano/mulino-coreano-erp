@@ -381,3 +381,41 @@ test("human write boundary values match Java integer, signed long and text limit
   assert.equal(calls[0].body.reason.length, 4000); assert.equal(calls[1].body.answer.length, 8000);
   assert.ok(calls.every(call => call.path.includes("9223372036854775807")));
 });
+
+test("followup observations and answered attention preserve waiting responsibility and exact evidence", async () => {
+  const followup = { ref: "FU-1", caseRef: "CASE-1", planRef: "PLAN-1", sourceWorkItemRef: "WI-2", workItemRef: "WI-3", parentWorkItemRef: "WI-1", agentKey: "ORCHESTRATOR", serverManaged: true, observationStatus: "RECEIPT_EXCEPTION", dueAt: "2026-10-06T00:00:00+09:00", observedAt: "2026-10-06T01:00:00+09:00", attentionRequestId: "9007199254740993", attentionStatus: "PENDING", observation: { receivedQuantity: "123456789012.123456" } };
+  const overview = { case: { caseRef: "CASE-1" }, summary: { state: "WAITING", remainingWorkCount: 1 }, followups: [followup], remainingObligations: ["입고 확인 및 계획에 따른 생산/재고 검토"] };
+  const calls = [];
+  const apiServer = http.createServer(async (req, res) => {
+    let body = ""; for await (const chunk of req) body += chunk;
+    calls.push({ method: req.method, path: req.url, body: body ? JSON.parse(body) : null });
+    res.setHeader("Content-Type", "application/json");
+    if (req.method === "POST") {
+      followup.attentionStatus = "ANSWERED";
+      return res.end(JSON.stringify({ attentionRequestId: followup.attentionRequestId, status: "ANSWERED", version: 2, scope: "THIS_ACTION", answer: "부분 입고 확인, 잔량 확인 계속", resume: { status: "SERVER_MANAGED" } }));
+    }
+    res.end(JSON.stringify(overview).replaceAll('"9007199254740993"', '9007199254740993').replaceAll('"123456789012.123456"', '123456789012.123456'));
+  });
+  const base = await listen(apiServer); resources.push(() => closeServer(apiServer));
+  const client = await connectClient({ MULINO_API_BASE: base + "/api/v1" });
+  const before = await client.callTool({ name: "get_case", arguments: { caseRef: "CASE-1" } });
+  assert.deepEqual(before.structuredContent, overview);
+  for (const text of ["WAITING", "조정 담당", followup.dueAt, followup.observedAt, "입고 예외 확인 필요", "PENDING", "현재 재고 회복이나 Case 종결의 증거가 아닙니다"]) assert.ok(before.content[0].text.includes(text), text);
+  const answer = await client.callTool({ name: "answer_attention", arguments: { attentionRequestId: followup.attentionRequestId, expectedVersion: 1, scope: "THIS_ACTION", answer: "부분 입고 확인, 잔량 확인 계속", requestKey: "followup-answer" } });
+  assert.equal(answer.structuredContent.resume.status, "SERVER_MANAGED");
+  assert.equal(answer.structuredContent.scope, "THIS_ACTION");
+  assert.match(answer.content[0].text, /새 모델 실행은 예약하지 않으며/);
+  assert.match(answer.content[0].text, /답변은 후속 업무를 완료하지 않습니다/);
+  const after = await client.callTool({ name: "get_case", arguments: { caseRef: "CASE-1" } });
+  assert.deepEqual(after.structuredContent, overview);
+  assert.equal(after.structuredContent.summary.state, "WAITING");
+  assert.equal(after.structuredContent.followups[0].attentionStatus, "ANSWERED");
+  assert.match(after.content[0].text, /남은 검토:/);
+  followup.observationStatus = "PRODUCTION_REVIEW"; followup.dueAt = null;
+  const received = await client.callTool({ name: "get_case", arguments: { caseRef: "CASE-1" } });
+  assert.equal(received.structuredContent.summary.state, "WAITING");
+  assert.match(received.content[0].text, /확인 시각: 예약 없음/);
+  assert.match(received.content[0].text, /생산\/재고 검토 필요/);
+  assert.deepEqual(calls.map(c => c.method), ["GET", "POST", "GET", "GET"]);
+  assert.deepEqual(calls[1].body, { answer: "부분 입고 확인, 잔량 확인 계속", expectedVersion: 1, scope: "THIS_ACTION" });
+});
