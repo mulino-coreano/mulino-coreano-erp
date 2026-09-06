@@ -30,11 +30,19 @@ class AgentWorkIntegrationTest {
     @Autowired RunExecutionService execution;
     @Autowired DispatcherService dispatcher;
     @Autowired ObjectMapper mapper;
+    @Autowired ExecutionContextRepository executionContexts;
+    @Autowired com.mulinocoreano.backend.planning.CanonicalJson canonicalJson;
 
     @Test void childCreationIsCaseBoundRoleLimitedAndIdempotent() throws Exception {
         var claim=queueAndClaim();
-        Map<String,Object> payload=Map.of("caseRef",claim.caseRef(),"agentKey","SUPPLY_CHAIN","title","Calculate demand");
+        Map<String,Object> payload=Map.of("caseRef",claim.caseRef(),"agentKey","SUPPLY_CHAIN","title","Calculate demand",
+                "metadata",Map.of("parentWorkItemRef","WI-FORGED","createdByRunRef","RUN-FORGED","note","preserved"));
         String result=create(claim,payload,"child-key",200);
+        var childMetadata=mapper.readTree(jdbc.sql("SELECT metadata::text FROM work_items WHERE work_item_ref=:ref")
+                .param("ref",mapper.readTree(result).path("workItemRef").asText()).query(String.class).single());
+        assertThat(childMetadata.path("parentWorkItemRef").asText()).isEqualTo(claim.workItemRef());
+        assertThat(childMetadata.path("createdByRunRef").asText()).isEqualTo(claim.runRef());
+        assertThat(childMetadata.path("note").asText()).isEqualTo("preserved");
         assertThat(mapper.readTree(create(claim,payload,"child-key",200))).isEqualTo(mapper.readTree(result));
         create(claim,Map.of("caseRef",claim.caseRef(),"agentKey","SUPPLY_CHAIN","title","Changed"),"child-key",409);
         create(claim,Map.of("caseRef",claim.caseRef(),"agentKey","ORCHESTRATOR","title","Escalate"),"bad-role",400);
@@ -103,6 +111,48 @@ class AgentWorkIntegrationTest {
     @Test void workerAuthenticationDoesNotEnterAgentChain() throws Exception {
         mvc.perform(post("/api/v1/agent/work-items").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test void currentPurchasingKeepsLastTenUnappliedApprovalsAndExactStoredEvidence() {
+        var claim=queueAndClaim();
+        long caseId=jdbc.sql("SELECT case_id FROM cases WHERE case_ref=:ref").param("ref",claim.caseRef()).query(Long.class).single();
+        long workId=jdbc.sql("SELECT work_item_id FROM work_items WHERE work_item_ref=:ref").param("ref",claim.workItemRef()).query(Long.class).single();
+        assertThat(canonicalJson.readTree(executionContexts.caseMetadata(caseId)).isObject()).isTrue();
+        assertThat(executionContexts.recentPurchasing(caseId)).isEmpty();
+        assertThat(executionContexts.latestPlan(caseId)).isEmpty();
+        long warehouse=jdbc.sql("INSERT INTO warehouses(name,type) VALUES('Context fixture','AMBIENT') RETURNING warehouse_id").query(Long.class).single();
+        long user=jdbc.sql("INSERT INTO users(name,email,role) VALUES('Context fixture',:email,'MANAGER') RETURNING user_id")
+                .param("email",UUID.randomUUID()+"@example.test").query(Long.class).single();
+        jdbc.sql("INSERT INTO planning_cases(case_id,warehouse_id) VALUES(:case,:warehouse)").param("case",caseId).param("warehouse",warehouse).update();
+        String evidence="{\"amount\":0.12345678901234567890123456789,\"id\":9007199254740993}";
+        long firstApproval=9007199254740993L;
+        for(int version=1;version<=12;version++) {
+            long plan=jdbc.sql("""
+                    INSERT INTO replenishment_plans(plan_ref,case_id,warehouse_id,version,as_of,horizon_days,target_date,source_snapshot,result,source_hash,plan_hash,created_by_work_item_id)
+                    VALUES(:ref,:case,:warehouse,:version,CURRENT_DATE,30,CURRENT_DATE+29,CAST(:evidence AS jsonb),CAST(:evidence AS jsonb),:hash,:hash,:work)
+                    RETURNING replenishment_plan_id
+                    """).param("ref","PLAN-"+UUID.randomUUID()).param("case",caseId).param("warehouse",warehouse)
+                    .param("version",version).param("evidence",evidence).param("hash","0".repeat(64)).param("work",workId).query(Long.class).single();
+            jdbc.sql("""
+                    INSERT INTO governance_actions(governance_action_id,requested_by,action_type,resource_type,resource_id,payload,required_role,
+                        case_id,work_item_id,replenishment_plan_id,proposed_by_agent_id,proposal_version,proposal_hash)
+                    SELECT :id,:user,'PURCHASE_PROPOSAL','REPLENISHMENT_PLAN',:plan,'{}'::jsonb,'MANAGER',:case,:work,:plan,agent_id,:version,:hash
+                    FROM agents WHERE agent_key='PROCUREMENT'
+                    """).param("id",firstApproval+version).param("user",user).param("plan",plan).param("case",caseId)
+                    .param("work",workId).param("version",version).param("hash","0".repeat(64)).update();
+        }
+        var approvals=executionContexts.recentPurchasing(caseId).stream().map(canonicalJson::readTree).toList();
+        assertThat(approvals).hasSize(10);
+        for(int index=0;index<10;index++) {
+            assertThat(approvals.get(index).path("approvalId").longValue()).isEqualTo(firstApproval+12-index);
+            assertThat(approvals.get(index).path("version").intValue()).isEqualTo(12-index);
+            assertThat(approvals.get(index).path("applicationId").isNull()).isTrue();
+            assertThat(approvals.get(index).path("purchaseOrderIds").isEmpty()).isTrue();
+        }
+        var latest=executionContexts.latestPlan(caseId).orElseThrow();
+        assertThat(latest.version()).isEqualTo(12);
+        assertThat(canonicalJson.readTree(latest.source())).isEqualTo(canonicalJson.readTree(evidence));
+        assertThat(canonicalJson.readTree(latest.result())).isEqualTo(canonicalJson.readTree(evidence));
     }
 
     private String create(RunExecutionService.Claim claim,Map<String,Object> payload,String key,int code) throws Exception {
