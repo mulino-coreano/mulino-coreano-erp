@@ -383,7 +383,7 @@ test("human write boundary values match Java integer, signed long and text limit
 });
 
 test("followup observations and answered attention preserve waiting responsibility and exact evidence", async () => {
-  const followup = { ref: "FU-1", caseRef: "CASE-1", planRef: "PLAN-1", sourceWorkItemRef: "WI-2", workItemRef: "WI-3", parentWorkItemRef: "WI-1", agentKey: "ORCHESTRATOR", serverManaged: true, observationStatus: "RECEIPT_EXCEPTION", dueAt: "2026-10-06T00:00:00+09:00", observedAt: "2026-10-06T01:00:00+09:00", attentionRequestId: "9007199254740993", attentionStatus: "PENDING", observation: { sourceOutcome: "APPLIED", productionRequired: true, remainingObligation: "PRODUCTION_AND_STOCK_REVIEW", lines: [{ purchaseOrderItemId: "9007199254740993", orderedQuantity: "123456789012.123456", usableQuantity: "1.123456", expectedDeliveryDate: "2026-10-05", status: "PARTIAL_RECEIPT", receipts: [] }] } };
+  const followup = { ref: "FU-1", caseRef: "CASE-1", planRef: "PLAN-1", sourceWorkItemRef: "WI-2", workItemRef: "WI-3", parentWorkItemRef: "WI-1", agentKey: "ORCHESTRATOR", serverManaged: true, observationStatus: "RECEIPT_REVIEW_REQUIRED", dueAt: "2026-10-06T00:00:00+09:00", observedAt: "2026-10-06T01:00:00+09:00", attentionRequestId: "9007199254740993", attentionStatus: "PENDING", observation: { status: "RECEIPT_REVIEW_REQUIRED", dueAt: "2026-10-06T00:00:00+09:00", sourceOutcome: "APPLIED", productionRequired: true, remainingObligation: "PRODUCTION_AND_STOCK_REVIEW", lines: [{ purchaseOrderItemId: "9007199254740993", orderedQuantity: "123456789012.123456", usableQuantity: "1.123456", expectedDeliveryDate: "2026-10-05", status: "PARTIAL_RECEIPT", receipts: [] }] } };
   const overview = { case: { caseRef: "CASE-1" }, summary: { state: "WAITING", remainingWorkCount: 1 }, followups: [followup], remainingObligations: ["입고 확인 및 계획에 따른 생산/재고 검토"] };
   const calls = [];
   const apiServer = http.createServer(async (req, res) => {
@@ -411,15 +411,30 @@ test("followup observations and answered attention preserve waiting responsibili
   assert.equal(after.structuredContent.summary.state, "WAITING");
   assert.equal(after.structuredContent.followups[0].attentionStatus, "ANSWERED");
   assert.match(after.content[0].text, /남은 검토:/);
-  followup.observationStatus = "PRODUCTION_REVIEW"; followup.dueAt = null;
-  followup.observation = { sourceOutcome: "NO_PURCHASE_REQUIRED", productionRequired: false, remainingObligation: "STOCK_REVIEW", lines: [] };
+  followup.observationStatus = "PRODUCTION_REVIEW_REQUIRED"; followup.dueAt = null;
+  followup.observation = { status: "PRODUCTION_REVIEW_REQUIRED", dueAt: null, sourceOutcome: "APPLIED", productionRequired: true, remainingObligation: "PRODUCTION_AND_STOCK_REVIEW", lines: [{ purchaseOrderItemId: "9007199254740993", orderedQuantity: "123456789012.123456", usableQuantity: "123456789012.123456", expectedDeliveryDate: "2026-10-05", status: "RECEIVED", receipts: [{ inboundId: "9007199254740993", quantity: "123456789012.123456", status: "RECEIVED", identityMatches: true, usable: true, lots: [{ id: "9007199254740993", quantity: "123456789012.123456", identityMatches: true, remainingQuantity: "123456789012.123456" }] }] }] };
   const received = await client.callTool({ name: "get_case", arguments: { caseRef: "CASE-1" } });
+  assert.deepEqual(received.structuredContent, overview);
   assert.equal(received.structuredContent.summary.state, "WAITING");
   assert.match(received.content[0].text, /확인 시각: 예약 없음/);
-  assert.match(received.content[0].text, /생산\/재고 검토 필요/);
-  assert.match(received.content[0].text, /계획상 생산: 불필요 \/ 남은 검토: 재고 확인/);
+  assert.match(received.content[0].text, /관찰: 생산\/재고 검토 필요/);
+  assert.match(received.content[0].text, /계획상 생산: 필요 \/ 남은 검토: 생산 이행 및 재고 확인/);
+  // Independent projection fixture: a no-purchase plan with no production requirement.
+  const stockOnly = { ...followup, ref: "FU-2", planRef: "PLAN-2", observationStatus: "STOCK_REVIEW_REQUIRED", observation: { status: "STOCK_REVIEW_REQUIRED", dueAt: null, sourceOutcome: "NO_PURCHASE_REQUIRED", productionRequired: false, remainingObligation: "STOCK_REVIEW", lines: [] } };
+  overview.followups = [stockOnly];
+  const stock = await client.callTool({ name: "get_case", arguments: { caseRef: "CASE-1" } });
+  assert.deepEqual(stock.structuredContent, overview);
+  assert.equal(stock.structuredContent.summary.state, "WAITING");
+  assert.match(stock.content[0].text, /관찰: 재고 검토 필요/);
+  assert.match(stock.content[0].text, /계획상 생산: 불필요 \/ 남은 검토: 재고 확인/);
+  assert.match(stock.content[0].text, /확인 시각: 예약 없음/);
+  assert.doesNotMatch(stock.content[0].text, /관찰: 생산\/재고 검토 필요/);
+  overview.followups = [{ ...followup, observationStatus: "AWAITING_RECEIPT", observedAt: "2026-10-05T01:00:00+09:00", dueAt: "2026-10-06T00:00:00+09:00", observation: { ...followup.observation, status: "AWAITING_RECEIPT", dueAt: "2026-10-06T00:00:00+09:00", lines: [{ purchaseOrderItemId: "9007199254740993", orderedQuantity: "123456789012.123456", usableQuantity: "0", expectedDeliveryDate: "2026-10-05", status: "NOT_DUE", receipts: [] }] } }];
+  const awaiting = await client.callTool({ name: "get_case", arguments: { caseRef: "CASE-1" } });
+  assert.deepEqual(awaiting.structuredContent, overview);
+  assert.match(awaiting.content[0].text, /관찰: 입고 확인 대기/);
   assert.match(before.content[0].text, /부분 입고/);
   assert.match(before.content[0].text, /123456789012\.123456/);
-  assert.deepEqual(calls.map(c => c.method), ["GET", "POST", "GET", "GET"]);
+  assert.deepEqual(calls.map(c => c.method), ["GET", "POST", "GET", "GET", "GET", "GET"]);
   assert.deepEqual(calls[1].body, { answer: "부분 입고 확인, 잔량 확인 계속", expectedVersion: 1, scope: "THIS_ACTION" });
 });

@@ -41,7 +41,7 @@ export function approvalText(data) {
     + (proposal ? `창고: ${show(proposal.warehouseId)} / 목표일: ${show(proposal.targetDate)}\n${(proposal.orders ?? []).map(order => `공급사: ${show(order.supplierName)} (${show(order.supplierId)}), 통화 ${show(order.currency)}, 납기 ${show(order.expectedDeliveryDate)}\n${(order.lines ?? []).map(lineText).join("\n")}\n공급사 합계: ${show(order.totalKrw)}원`).join("\n")}\n총액: ${show(proposal.totalKrw)}원` : "제안 근거 미제공")
     + `\n최종 결정: ${show(data.decision)}\n발주 ID: ${show(data.purchaseOrderIds)}\n다음 행동: 대기 중이면 표시된 버전·해시와 구매 내용을 확인한 인간의 명시적 승인 또는 차단 선택이 필요합니다. 생산·입고의 이행 여부는 별도로 확인해야 합니다.`;
 }
-const followupStatus = { AWAITING_RECEIPT: "입고 확인 대기", RECEIPT_EXCEPTION: "입고 예외 확인 필요", PRODUCTION_REVIEW: "생산/재고 검토 필요" };
+const followupStatus = { AWAITING_RECEIPT: "입고 확인 대기", RECEIPT_REVIEW_REQUIRED: "입고 예외 확인 필요", PRODUCTION_REVIEW_REQUIRED: "생산/재고 검토 필요", STOCK_REVIEW_REQUIRED: "재고 검토 필요" };
 const receiptStatus = { RECEIVED: "입고 확인", RECEIPT_MISMATCH_OR_HOLD: "입고 불일치·보류 확인", DELIVERY_DATE_MISSING: "납기 미제공", NOT_DUE: "납기 전", PARTIAL_RECEIPT: "부분 입고", MISSING_RECEIPT: "입고 미확인" };
 function followupText(f) {
   const observation = f.observation ?? {};
