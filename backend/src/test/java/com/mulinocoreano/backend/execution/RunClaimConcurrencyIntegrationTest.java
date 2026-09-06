@@ -18,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(properties={"spring.flyway.schemas=run_claim_concurrency_it","spring.flyway.clean-disabled=false","spring.datasource.hikari.schema=run_claim_concurrency_it"})
 class RunClaimConcurrencyIntegrationTest {
     @Autowired JdbcClient jdbc;
+    @Autowired org.jooq.DSLContext dsl;
     @Autowired RunService runs;
     @Autowired RunExecutionService execution;
     @Autowired PlatformTransactionManager manager;
@@ -65,8 +66,8 @@ class RunClaimConcurrencyIntegrationTest {
     }
     @Test void capabilityRequiresTransactionAndExpiresAfterCommittedFinish() {
         fixture();var claim=execution.claim("worker").orElseThrow();
-        var leases=new RunLeaseRepository(jdbc);
-        var caps=new DatabaseRunCapabilityAccess(jdbc,leases);
+        var leases=new RunLeaseRepository(dsl);
+        var caps=new DatabaseRunCapabilityAccess(leases);
         org.assertj.core.api.Assertions.assertThatThrownBy(()->caps.requireLocked(claim.capabilityToken(),"SUPPLY_CHAIN",claim.caseRef())).isInstanceOf(IllegalStateException.class);
         new TransactionTemplate(manager).executeWithoutResult(s -> caps.requireLocked(claim.capabilityToken(),"SUPPLY_CHAIN",claim.caseRef()));
         execution.finish(claim.runRef(),"worker",claim.leaseToken(),"WAITING","Review later",List.of(new RunExecutionService.Wait("SCHEDULED_TIME",java.util.Map.of("dueAt",java.time.Instant.now().plusSeconds(100).toString()),"Review later")));
