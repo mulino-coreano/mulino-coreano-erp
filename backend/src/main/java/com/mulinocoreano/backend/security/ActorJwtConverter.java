@@ -49,7 +49,10 @@ public class ActorJwtConverter implements Converter<Jwt, AbstractAuthenticationT
         if (scopes.contains("work:write") && Set.of("OPERATOR", "MANAGER").contains(user.role())) {
             capabilities.add("work:write");
         }
-        // procurement:decide는 실제 결정 API/검증을 구현하는 단계까지 capability로 노출하지 않는다.
+        // 구매 결정은 토큰 scope와 현재 DB의 MANAGER 역할이 모두 필요하다.
+        if (scopes.contains("procurement:decide") && "MANAGER".equals(user.role())) {
+            capabilities.add("procurement:decide");
+        }
         return new ActorAuthenticationToken(new HumanActor(issuer, subject, user.userId(), user.name(), user.role(), capabilities));
     }
 

@@ -74,7 +74,7 @@ class JwtSecurityIntegrationTest {
                 .andExpect(jsonPath("$.actorType").value("HUMAN"))
                 .andExpect(jsonPath("$.userId").value(userId))
                 .andExpect(jsonPath("$.role").value("MANAGER"))
-                .andExpect(jsonPath("$.capabilities", containsInAnyOrder("erp:read", "work:write")));
+                .andExpect(jsonPath("$.capabilities", containsInAnyOrder("erp:read", "work:write", "procurement:decide")));
     }
 
     @Test
@@ -225,7 +225,7 @@ class JwtSecurityIntegrationTest {
 
     @Test
     void unknownWriteRoutesFailClosedForManagers() throws Exception {
-        mvc.perform(post("/api/v1/approvals/1/decision").header("Authorization", bearer(claims -> {}))
+        mvc.perform(post("/api/v1/unknown-write-route").header("Authorization", bearer(claims -> {}))
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isForbidden());
     }
