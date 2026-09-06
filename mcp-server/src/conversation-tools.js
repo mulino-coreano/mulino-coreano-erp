@@ -42,8 +42,13 @@ export function approvalText(data) {
     + `\n최종 결정: ${show(data.decision)}\n발주 ID: ${show(data.purchaseOrderIds)}\n다음 행동: 대기 중이면 표시된 버전·해시와 구매 내용을 확인한 인간의 명시적 승인 또는 차단 선택이 필요합니다. 생산·입고의 이행 여부는 별도로 확인해야 합니다.`;
 }
 const followupStatus = { AWAITING_RECEIPT: "입고 확인 대기", RECEIPT_EXCEPTION: "입고 예외 확인 필요", PRODUCTION_REVIEW: "생산/재고 검토 필요" };
+const receiptStatus = { RECEIVED: "입고 확인", RECEIPT_MISMATCH_OR_HOLD: "입고 불일치·보류 확인", DELIVERY_DATE_MISSING: "납기 미제공", NOT_DUE: "납기 전", PARTIAL_RECEIPT: "부분 입고", MISSING_RECEIPT: "입고 미확인" };
 function followupText(f) {
-  return `${show(f.ref)} / 계획 ${show(f.planRef)} / 담당 ${f.agentKey === "ORCHESTRATOR" ? "조정 담당 (ORCHESTRATOR)" : show(f.agentKey)} / 업무 ${show(f.workItemRef)}\n  확인 시각: ${f.dueAt == null ? "예약 없음" : show(f.dueAt)} / 관찰 기준 시각: ${show(f.observedAt)}\n  관찰: ${followupStatus[f.observationStatus] ?? show(f.observationStatus)}\n  주의 요청: ${show(f.attentionRequestId)} / ${show(f.attentionStatus)}\n  남은 검토: 입고 관찰 이후에도 계획에 따른 생산/재고 확인이 필요합니다.`;
+  const observation = f.observation ?? {};
+  const remaining = observation.remainingObligation === "STOCK_REVIEW" ? "재고 확인" : observation.remainingObligation === "PRODUCTION_AND_STOCK_REVIEW" ? "생산 이행 및 재고 확인" : "계획에 따른 생산/재고 확인";
+  const production = observation.productionRequired === true ? "필요" : observation.productionRequired === false ? "불필요" : "미제공";
+  const receipts = (observation.lines ?? []).map(line => `발주 상세 ${show(line.purchaseOrderItemId)}: ${receiptStatus[line.status] ?? show(line.status)} / 주문 수량 ${show(line.orderedQuantity)} / 확인된 사용 가능 수량 ${show(line.usableQuantity)} / 납기 ${show(line.expectedDeliveryDate)}`).join("\n  ");
+  return `${show(f.ref)} / 계획 ${show(f.planRef)} / 담당 ${f.agentKey === "ORCHESTRATOR" ? "조정 담당 (ORCHESTRATOR)" : show(f.agentKey)} / 업무 ${show(f.workItemRef)}\n  확인 시각: ${f.dueAt == null ? "예약 없음" : show(f.dueAt)} / 관찰 기준 시각: ${show(f.observedAt)}\n  관찰: ${followupStatus[f.observationStatus] ?? show(f.observationStatus)}\n  주의 요청: ${show(f.attentionRequestId)} / ${show(f.attentionStatus)}\n  계획상 생산: ${production} / 남은 검토: ${remaining}\n  ${receipts || "발주 입고 상세 없음"}`;
 }
 function resumeText(resume) {
   if (resume?.status === "SERVER_MANAGED") return "서버의 후속 확인이 계속됩니다. 새 모델 실행은 예약하지 않으며 답변은 후속 업무를 완료하지 않습니다.";
