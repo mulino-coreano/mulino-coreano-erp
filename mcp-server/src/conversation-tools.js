@@ -10,7 +10,10 @@ const keySchema = { type: "string", minLength: 1, maxLength: 200,
 const schema = (properties, required = Object.keys(properties)) => ({ type: "object", properties, required, additionalProperties: false });
 const read = (name, description, field, path, format, id = false) => ({ name, description,
   inputSchema: schema({ [field]: id ? identifierSchema : refSchema }), scope: "erp:read", path, format,
-  validate(args) { if (id) requireIdentifier(args[field], field); else requireText(args[field], field, 100); },
+  validate(args) { if (id) requireIdentifier(args[field], field); else {
+    requireText(args[field], field, 100);
+    if ([".", ".."].includes(args[field])) throw new Error(`${field}에는 경로의 점 구간을 사용할 수 없습니다.`);
+  } },
 });
 export function requireIdentifier(value, field) {
   if (!(typeof value === "number" ? Number.isSafeInteger(value) && value > 0

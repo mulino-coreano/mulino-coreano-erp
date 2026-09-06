@@ -356,6 +356,13 @@ test("human tools reject invalid IDs, bounds, scopes, hashes and forged authorit
     for (const [name, field] of [["get_approval", "approvalId"], ["get_purchase_order", "purchaseOrderId"]]) assert.equal((await client.callTool({ name, arguments: { [field]: id } })).isError, true);
   }
   for (const args of [{ q: " " }, { q: "x".repeat(201) }, { productSku: "x".repeat(51) }, { userId: 1 }]) assert.equal((await client.callTool({ name: "list_cases", arguments: args })).isError, true);
+  for (const [name, field] of [["get_case", "caseRef"], ["get_plan", "planRef"]]) {
+    for (const ref of [".", ".."]) {
+      const result = await client.callTool({ name, arguments: { [field]: ref } });
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /점 구간/);
+    }
+  }
   assert.equal(count, 0);
 });
 
