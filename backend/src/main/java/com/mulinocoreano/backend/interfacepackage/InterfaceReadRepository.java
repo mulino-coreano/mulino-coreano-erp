@@ -1,6 +1,7 @@
 package com.mulinocoreano.backend.interfacepackage;
 
 import static com.mulinocoreano.backend.generated.Tables.AGENTS;
+import static com.mulinocoreano.backend.generated.Tables.REPLENISHMENT_FOLLOWUPS;
 import static com.mulinocoreano.backend.generated.Tables.ATTENTION_REQUESTS;
 import static com.mulinocoreano.backend.generated.Tables.CASES;
 import static com.mulinocoreano.backend.generated.Tables.PRODUCTS;
@@ -13,6 +14,8 @@ import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.currentLocalDateTime;
 import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.notExists;
+import static org.jooq.impl.DSL.currentOffsetDateTime;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.noCondition;
@@ -189,7 +192,12 @@ public class InterfaceReadRepository {
                                 .from(w)
                                 .where(w.CASE_ID.eq(c.CASE_ID))
                                 .and(w.STATUS.notIn(WorkItemStatus.DONE, WorkItemStatus.CANCELLED))
-                                .and(w.DUE_AT.lt(currentLocalDateTime())));
+                                .and(notExists(selectOne().from(REPLENISHMENT_FOLLOWUPS)
+                                        .where(REPLENISHMENT_FOLLOWUPS.WORK_ITEM_ID.eq(w.WORK_ITEM_ID))))
+                                .and(w.DUE_AT.lt(currentLocalDateTime())))
+                        .or(exists(selectOne().from(REPLENISHMENT_FOLLOWUPS)
+                                .where(REPLENISHMENT_FOLLOWUPS.CASE_ID.eq(c.CASE_ID))
+                                .and(REPLENISHMENT_FOLLOWUPS.DUE_AT.lt(currentOffsetDateTime()))));
         var exception =
                 exists(
                         selectOne()

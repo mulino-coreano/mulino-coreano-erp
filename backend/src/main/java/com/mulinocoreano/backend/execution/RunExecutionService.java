@@ -1,5 +1,7 @@
 package com.mulinocoreano.backend.execution;
 
+import com.mulinocoreano.backend.followup.ReplenishmentFollowupService;
+import com.mulinocoreano.backend.followup.ReplenishmentFollowupRepository;
 import com.mulinocoreano.backend.interfacepackage.CreateEventRequest;
 import com.mulinocoreano.backend.interfacepackage.CreateRunRequest;
 import com.mulinocoreano.backend.interfacepackage.DispatcherService;
@@ -25,6 +27,8 @@ import java.util.UUID;
 
 @Service
 public class RunExecutionService {
+    private final ReplenishmentFollowupService followups;
+    private final ReplenishmentFollowupRepository followupRepository;
     private final RunExecutionRepository repository;
     private final RunLeaseRepository leases;
     private final ExecutionContextBuilder contexts;
@@ -42,7 +46,11 @@ public class RunExecutionService {
             DispatcherService dispatcher,
             ObjectMapper mapper,
             PlatformTransactionManager transactionManager,
-            ObjectProvider<ProcurementCompletionVerifier> procurementCompletion) {
+            ObjectProvider<ProcurementCompletionVerifier> procurementCompletion,
+            ReplenishmentFollowupService followups,
+            ReplenishmentFollowupRepository followupRepository) {
+        this.followups = followups;
+        this.followupRepository = followupRepository;
         this.repository = repository;
         this.leases = leases;
         this.contexts = contexts;
@@ -74,6 +82,11 @@ public class RunExecutionService {
         var candidates = repository.lockNextQueuedCandidates();
         if (candidates.isEmpty()) return Optional.empty();
         var row = leases.lock(candidates.getFirst());
+        if (followupRepository.isManagedWork(row.workId())) {
+            repository.abortQueued(row.id());
+            recordFinish(row, "ABORTED", "Server-managed follow-up cannot execute a model Run");
+            return Optional.empty();
+        }
         if (!row.currentAssignment() || !"READY".equals(row.workStatus())) {
             abortQueued(row, "Run assignment is no longer active or current");
             return Optional.empty();
@@ -214,7 +227,11 @@ public class RunExecutionService {
         if ("WAITING".equals(outcome) && !trustedApproval) waits = normalizeWaiting(row, waits);
         else if (trustedApproval && !"WAITING".equals(outcome)) throw invalidResult();
         else if (!"WAITING".equals(outcome) && !waits.isEmpty()) throw invalidResult();
-        if ("DONE".equals(outcome)) validateCompletion(row);
+        if ("DONE".equals(outcome)) {
+            validateCompletion(row);
+            if ("PROCUREMENT".equals(row.agentKey()))
+                followups.ensureForVerifiedCompletion(row.caseId(), row.workId());
+        }
         leases.requireLive(leases.lock(row.id()));
         String runStatus = Set.of("DONE", "WAITING").contains(outcome) ? "COMPLETED" : outcome;
         // Release the active Run before storing waits or dispatching terminal dependency events.
@@ -248,7 +265,8 @@ public class RunExecutionService {
             if (!latestReady) throw completionNotVerified();
         } else if ("ORCHESTRATOR".equals(row.agentKey())) {
             boolean responsible =
-                    repository.hasResponsibleChild(row.caseId(), row.workId(), row.workRef());
+                    followupRepository.hasResponsibility(row.workId(), row.caseId())
+                            || repository.hasResponsibleChild(row.caseId(), row.workId(), row.workRef());
             if (!responsible) throw completionNotVerified();
         } else if ("PROCUREMENT".equals(row.agentKey())) {
             var verifier = procurementCompletion.getIfAvailable();

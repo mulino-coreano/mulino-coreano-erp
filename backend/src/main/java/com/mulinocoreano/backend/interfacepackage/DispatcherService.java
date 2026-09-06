@@ -2,6 +2,8 @@ package com.mulinocoreano.backend.interfacepackage;
 
 import static com.mulinocoreano.backend.interfacepackage.DispatcherRepository.*;
 
+import com.mulinocoreano.backend.followup.ReplenishmentFollowupService;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +29,7 @@ public class DispatcherService {
     private static final String MANUAL_DISPATCH_EVENT = "DISPATCH_REQUESTED";
     private static final String MONITOR_DISPATCH_EVENT = "DISPATCH_SWEEP_TRIGGERED";
 
+    private final ReplenishmentFollowupService followups;
     private final DispatcherRepository repository;
     private final ObjectMapper objectMapper;
     private final WaitingConditionMatcher matcher;
@@ -36,7 +39,9 @@ public class DispatcherService {
             DispatcherRepository repository,
             ObjectMapper objectMapper,
             WaitingConditionMatcher matcher,
-            RunService runService) {
+            RunService runService,
+            ReplenishmentFollowupService followups) {
+        this.followups = followups;
         this.repository = repository;
         this.objectMapper = objectMapper;
         this.matcher = matcher;
@@ -89,6 +94,7 @@ public class DispatcherService {
 
     @Transactional
     public EventDispatchResponse dispatchScheduled() {
+        followups.sweepDue();
         Instant requestedAt = Instant.now();
         Map<String, Object> payload = scheduledPayload(requestedAt, "MANUAL");
         return recordScheduledDispatch(MANUAL_DISPATCH_EVENT, "dispatch", payload);
@@ -96,6 +102,7 @@ public class DispatcherService {
 
     @Transactional
     public Optional<EventDispatchResponse> dispatchScheduledIfActionable() {
+        List<Long> followupEvents = followups.sweepDue();
         Instant requestedAt = Instant.now();
         Map<String, Object> payload = scheduledPayload(requestedAt, "MONITOR");
         EventScope allCases = new EventScope(null, null, null, null);
@@ -115,7 +122,9 @@ public class DispatcherService {
                                             requestedAt);
                                 });
         if (!actionable) {
-            return Optional.empty();
+            return followupEvents.isEmpty()
+                    ? Optional.empty()
+                    : Optional.of(emptyResponse(followupEvents.getLast()));
         }
         return Optional.of(
                 recordScheduledDispatch(MONITOR_DISPATCH_EVENT, "dispatch-sweep", payload));

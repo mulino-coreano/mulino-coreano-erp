@@ -1,5 +1,6 @@
 package com.mulinocoreano.backend.execution;
 
+import com.mulinocoreano.backend.followup.ReplenishmentFollowupRepository;
 import com.mulinocoreano.backend.interfacepackage.ContextSnapshotService;
 import com.mulinocoreano.backend.planning.CanonicalJson;
 import com.mulinocoreano.backend.planning.PlanningSnapshotRepository;
@@ -15,6 +16,7 @@ import java.util.Map;
 /** Reconstructs current facts without replacing the original Run or plan audit snapshots. */
 @Component
 public class ExecutionContextBuilder {
+    private final ReplenishmentFollowupRepository followups;
     private final ContextSnapshotService contexts;
     private final PlanningSnapshotRepository snapshots;
     private final ExecutionContextRepository repository;
@@ -26,7 +28,9 @@ public class ExecutionContextBuilder {
             PlanningSnapshotRepository snapshots,
             ExecutionContextRepository repository,
             CanonicalJson json,
-            @Qualifier("planningClock") Clock clock) {
+            @Qualifier("planningClock") Clock clock,
+            ReplenishmentFollowupRepository followups) {
+        this.followups = followups;
         this.contexts = contexts;
         this.snapshots = snapshots;
         this.repository = repository;
@@ -37,6 +41,7 @@ public class ExecutionContextBuilder {
     public Map<String, Object> build(String caseRef, long caseId) {
         var context = new LinkedHashMap<String, Object>(contexts.build(caseRef));
         context.put("caseRef", caseRef);
+        context.put("followups", followups.forCase(caseId));
         context.put("caseMetadata", json.readTree(repository.caseMetadata(caseId)));
         context.put(
                 "purchasing",

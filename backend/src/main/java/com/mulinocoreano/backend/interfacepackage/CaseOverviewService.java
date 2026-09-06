@@ -1,5 +1,6 @@
 package com.mulinocoreano.backend.interfacepackage;
 
+import com.mulinocoreano.backend.followup.ReplenishmentFollowupRepository;
 import com.mulinocoreano.backend.generated.enums.CaseStatus;
 
 import org.springframework.stereotype.Service;
@@ -10,10 +11,15 @@ import java.util.*;
 
 @Service
 public class CaseOverviewService {
+    private final ReplenishmentFollowupRepository followups;
     private final InterfaceQueries queries;
     private final CaseOverviewRepository repository;
 
-    public CaseOverviewService(InterfaceQueries queries, CaseOverviewRepository repository) {
+    public CaseOverviewService(
+            InterfaceQueries queries,
+            CaseOverviewRepository repository,
+            ReplenishmentFollowupRepository followups) {
+        this.followups = followups;
         this.queries = queries;
         this.repository = repository;
     }
@@ -39,6 +45,7 @@ public class CaseOverviewService {
         result.put("workItems", work);
         result.put("attention", attention);
         result.put("plans", repository.plans(c.caseId()));
+        result.put("followups", followups.forCase(c.caseId()));
         result.put("approvals", repository.approvals(c.caseId()));
         result.put("decisions", repository.decisions(c.caseId()));
         result.put("evidence", repository.evidence(c.caseId()));

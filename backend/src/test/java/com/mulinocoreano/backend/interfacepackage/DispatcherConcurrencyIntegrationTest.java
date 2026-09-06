@@ -1,6 +1,7 @@
 package com.mulinocoreano.backend.interfacepackage;
 
 import org.junit.jupiter.api.Test;
+import com.mulinocoreano.backend.followup.ReplenishmentFollowupService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -28,6 +29,9 @@ class DispatcherConcurrencyIntegrationTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    ReplenishmentFollowupService followups;
 
     @Autowired
     DispatcherRepository dispatcherRepository;
@@ -58,7 +62,7 @@ class DispatcherConcurrencyIntegrationTest {
                 scheduling, objectMapper, contextSnapshotService,
                 schedulingReached, continueScheduling);
         DispatcherService dispatcher = new DispatcherService(
-                dispatcherRepository, objectMapper, new WaitingConditionMatcher(), pausingRunService);
+                dispatcherRepository, objectMapper, new WaitingConditionMatcher(), pausingRunService, followups);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {

@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.mulinocoreano.backend.interfacepackage.*;
+import com.mulinocoreano.backend.followup.*;
 import com.mulinocoreano.backend.security.WithTestActor;
 
 import org.flywaydb.core.Flyway;
@@ -53,6 +54,10 @@ class PurchaseExecutionIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired Flyway flyway;
     @MockitoBean ProcurementCompletionVerifier verifier;
+    // This suite isolates the role verifier contract; real follow-up creation is covered by
+    // PurchaseWorkflowIntegrationTest with actual plans and purchase applications.
+    @MockitoBean ReplenishmentFollowupService followups;
+    @Autowired ReplenishmentFollowupRepository followupRepository;
     private TransactionTemplate tx;
 
     @BeforeEach
@@ -288,7 +293,7 @@ class PurchaseExecutionIntegrationTest {
                         mapper,
                         manager,
                         new StaticListableBeanFactory()
-                                .getBeanProvider(ProcurementCompletionVerifier.class));
+                                .getBeanProvider(ProcurementCompletionVerifier.class), followups, followupRepository);
         assertThatThrownBy(
                         () ->
                                 tx.execute(

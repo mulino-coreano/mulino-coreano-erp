@@ -1,6 +1,7 @@
 package com.mulinocoreano.backend.interfacepackage;
 
 import static com.mulinocoreano.backend.generated.Tables.*;
+import static org.jooq.impl.DSL.selectOne;
 
 import com.mulinocoreano.backend.generated.enums.*;
 
@@ -19,6 +20,12 @@ public class AttentionAnswerRepository {
 
     public AttentionAnswerRepository(DSLContext dsl) {
         this.dsl = dsl;
+    }
+
+    public boolean isManagedWork(long workId) {
+        return dsl.fetchExists(
+                selectOne().from(REPLENISHMENT_FOLLOWUPS)
+                        .where(REPLENISHMENT_FOLLOWUPS.WORK_ITEM_ID.eq(workId)));
     }
 
     public boolean lockHuman(long id) {

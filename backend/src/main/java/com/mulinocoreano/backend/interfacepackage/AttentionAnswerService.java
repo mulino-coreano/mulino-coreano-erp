@@ -132,6 +132,8 @@ public class AttentionAnswerService {
 
     private Object resume(Record a, Record work, String caseRef, long event) {
         if (work == null) return Map.of("status", "NO_WORK_ITEM");
+        if (repository.isManagedWork(work.get(WORK_ITEMS.WORK_ITEM_ID)))
+            return Map.of("status", "SERVER_MANAGED");
         if (work.get(WORK_ITEMS.STATUS) != WorkItemStatus.BLOCKED)
             return Map.of("status", work.get(WORK_ITEMS.STATUS).getLiteral());
         if (repository.hasOpenAttention(

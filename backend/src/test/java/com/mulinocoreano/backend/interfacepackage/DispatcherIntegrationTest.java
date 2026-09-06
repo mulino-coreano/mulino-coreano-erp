@@ -1,6 +1,7 @@
 package com.mulinocoreano.backend.interfacepackage;
 
 import org.junit.jupiter.api.Test;
+import com.mulinocoreano.backend.followup.ReplenishmentFollowupService;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +33,9 @@ class DispatcherIntegrationTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    ReplenishmentFollowupService followups;
 
     @Autowired
     DispatcherRepository dispatcherRepository;
@@ -118,7 +122,7 @@ class DispatcherIntegrationTest {
         };
         RunService failingRunService = new RunService(scheduling, objectMapper, failingContext);
         DispatcherService failingDispatcher = new DispatcherService(
-                dispatcherRepository, objectMapper, new WaitingConditionMatcher(), failingRunService);
+                dispatcherRepository, objectMapper, new WaitingConditionMatcher(), failingRunService, followups);
 
         EventDispatchResponse result = failingDispatcher.ingest(new CreateEventRequest(
                 "SUPPLIER_EMAIL_RECEIVED", unique("msg"), fixture.caseRef(), null,

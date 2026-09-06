@@ -49,6 +49,10 @@ class PurchaseWorkflowIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
     @Autowired RunService runs;
+    @Autowired DispatcherService dispatcher;
+    @Autowired CaseOverviewService overviews;
+    @Autowired AttentionAnswerService answers;
+    @Autowired InterfaceReadRepository interfaceReads;
     @Autowired RunExecutionService execution;
     @MockitoSpyBean PlanPersistenceService plans;
     @Autowired AgentQueryService agentQueries;
@@ -317,6 +321,7 @@ class PurchaseWorkflowIntegrationTest {
                         .param("user", operatorId)
                         .query(Long.class)
                         .single();
+        work("WI-ORCH", "ORCHESTRATOR");
         long sc = work("WI-SUPPLY", "SUPPLY_CHAIN");
         runs.createRun(
                 new CreateRunRequest("SUPPLY_CHAIN", "CASE-PURCHASE", "WI-SUPPLY", "CODEX"), null);
@@ -330,6 +335,8 @@ class PurchaseWorkflowIntegrationTest {
         execution.finish(
                 supply.runRef(), "supply-worker", supply.leaseToken(), "DONE", "계획 저장 확인", null);
         workId = work("WI-PURCHASE", "PROCUREMENT");
+        jdbc.sql("UPDATE work_items SET metadata=coalesce(metadata,'{}'::jsonb) || '{\"parentWorkItemRef\":\"WI-ORCH\"}'::jsonb WHERE work_item_id=:id")
+                .param("id", workId).update();
         runs.createRun(
                 new CreateRunRequest("PROCUREMENT", "CASE-PURCHASE", "WI-PURCHASE", "CODEX"), null);
         claim = execution.claim("purchase-worker").orElseThrow();
@@ -396,6 +403,8 @@ class PurchaseWorkflowIntegrationTest {
                                 .query(Long.class)
                                 .single())
                 .isEqualTo(1);
+        jdbc.sql("UPDATE work_items SET status='WAITING' WHERE work_item_ref='WI-ORCH'").update();
+        jdbc.sql("INSERT INTO waiting_conditions(waiting_ref,work_item_id,condition_type,condition_payload,reason) SELECT 'WAIT-PARENT',work_item_id,'DEPENDENCY_DONE','{\"dependentWiRef\":\"WI-PURCHASE\"}','구매 완료 대기' FROM work_items WHERE work_item_ref='WI-ORCH'").update();
         assertThat(
                         execution
                                 .finish(
@@ -412,7 +421,20 @@ class PurchaseWorkflowIntegrationTest {
                                 .param("id", caseId)
                                 .query(String.class)
                                 .single())
-                .isNotIn("RESOLVED", "CLOSED");
+                .isEqualTo("WAITING");
+        assertThat(count("replenishment_followups")).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT parent_work_item_id=(SELECT work_item_id FROM work_items WHERE work_item_ref='WI-ORCH') FROM replenishment_followups").query(Boolean.class).single()).isTrue();
+        assertThat(execution.finish(next.runRef(), "verify-worker", next.leaseToken(),
+                "DONE", "중복 완료 확인", null).alreadyFinished()).isTrue();
+        assertThat(count("replenishment_followups")).isEqualTo(1);
+        assertThat(mapper.valueToTree(overviews.overview("CASE-PURCHASE")).path("followups")).hasSize(1);
+        assertThat(jdbc.sql("SELECT status::text FROM waiting_conditions WHERE waiting_ref='WAIT-PARENT'").query(String.class).single()).isEqualTo("SATISFIED");
+        var parent = execution.claim("parent-worker").orElseThrow();
+        assertThat(mapper.valueToTree(parent.context()).path("followups")).hasSize(1);
+        assertThat(execution.finish(parent.runRef(), "parent-worker", parent.leaseToken(),
+                "DONE", "서버 후속 책임 확인", null).outcome()).isEqualTo("DONE");
+        assertThat(jdbc.sql("SELECT status::text FROM cases WHERE case_id=:id").param("id", caseId)
+                .query(String.class).single()).isEqualTo("WAITING");
     }
 
     @Test
@@ -669,6 +691,11 @@ CREATE TRIGGER fail_second_purchase_line AFTER INSERT ON purchase_order_items
                 null);
         JsonNode result = propose();
         assertThat(result.path("status").asText()).isEqualTo("NO_PURCHASE_REQUIRED");
+        assertThat(count("replenishment_followups")).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT due_at IS NULL AND purchase_application_id IS NULL FROM replenishment_followups")
+                .query(Boolean.class).single()).isTrue();
+        assertThat(jdbc.sql("SELECT status::text FROM cases WHERE case_id=:id").param("id", caseId)
+                .query(String.class).single()).isEqualTo("WAITING");
         assertThat(count("governance_actions")).isZero();
         assertThat(count("purchase_applications")).isZero();
         assertThat(count("purchase_orders")).isEqualTo(originalOrders);
@@ -677,6 +704,102 @@ CREATE TRIGGER fail_second_purchase_line AFTER INSERT ON purchase_order_items
                                 .heartbeat(claim.runRef(), "purchase-worker", claim.leaseToken())
                                 .outcome())
                 .isEqualTo("DONE");
+    }
+
+    @Test
+    void serverManagedWorkCannotBypassDispatchQueueClaimOrAttentionAnswer() throws Exception {
+        completePurchase();
+        long managed = jdbc.sql("SELECT work_item_id FROM replenishment_followups").query(Long.class).single();
+        String ref = jdbc.sql("SELECT work_item_ref FROM work_items WHERE work_item_id=:id")
+                .param("id", managed).query(String.class).single();
+        jdbc.sql("INSERT INTO waiting_conditions(waiting_ref,work_item_id,condition_type,condition_payload,reason) VALUES('WAIT-BYPASS',:id,'SCHEDULED_TIME','{\"dueAt\":\"2020-01-01T00:00:00Z\"}','우회 금지')")
+                .param("id", managed).update();
+        long events = count("events");
+        assertThat(dispatcher.dispatchScheduledIfActionable()).isEmpty();
+        assertThat(count("events")).isEqualTo(events);
+        assertThat(dispatcher.dispatchScheduled().scheduledRuns()).isEmpty();
+        assertThat(jdbc.sql("SELECT status::text FROM waiting_conditions WHERE waiting_ref='WAIT-BYPASS'")
+                .query(String.class).single()).isEqualTo("ACTIVE");
+        jdbc.sql("UPDATE work_items SET status='READY' WHERE work_item_id=:id").param("id", managed).update();
+        assertThatThrownBy(() -> runs.createRun(new CreateRunRequest("ORCHESTRATOR", "CASE-PURCHASE", ref, "CODEX"), null))
+                .hasMessageContaining("SERVER_MANAGED_WORK_ITEM");
+        jdbc.sql("UPDATE work_items SET status='WAITING' WHERE work_item_id=:id").param("id", managed).update();
+        jdbc.sql("INSERT INTO runs(run_ref,agent_id,case_id,work_item_id,runtime,status) SELECT 'RUN-ROGUE',assigned_agent_id,case_id,work_item_id,'CODEX','QUEUED' FROM work_items WHERE work_item_id=:id")
+                .param("id", managed).update();
+        assertThat(execution.claim("rogue-worker")).isEmpty();
+        assertThat(jdbc.sql("SELECT status::text FROM runs WHERE run_ref='RUN-ROGUE'").query(String.class).single()).isEqualTo("ABORTED");
+        assertThat(jdbc.sql("SELECT status::text FROM work_items WHERE work_item_id=:id").param("id", managed).query(String.class).single()).isEqualTo("WAITING");
+        long attention = jdbc.sql("INSERT INTO attention_requests(case_id,work_item_id,reason_type,title,question,consequence) VALUES(:case,:work,'MISSING_HUMAN_CONTEXT','후속 확인','확인 내용?','책임 유지') RETURNING attention_request_id")
+                .param("case", caseId).param("work", managed).query(Long.class).single();
+        var actor = new HumanActor("https://fixture.example/", "operator", operatorId, "운영자", "OPERATOR", Set.of("work:write"));
+        var receipt = answers.answer(attention, new AttentionAnswerRequest("현장 확인 중", 1, AttentionAnswerRequest.Scope.THIS_CASE), actor, "answer-managed");
+        assertThat(receipt.path("resume").path("status").asText()).isEqualTo("SERVER_MANAGED");
+        assertThat(jdbc.sql("SELECT count(*) FROM runs WHERE work_item_id=:id AND status IN ('QUEUED','RUNNING')").param("id", managed).query(Long.class).single()).isZero();
+    }
+
+    @Test
+    void failedFollowupCreationRollsBackVerifiedDoneAndCanRetry() throws Exception {
+        var next = approvePurchase();
+        jdbc.sql("CREATE FUNCTION fail_followup() RETURNS TRIGGER AS $$ BEGIN RAISE EXCEPTION 'followup failure'; END; $$ LANGUAGE plpgsql; CREATE TRIGGER fail_followup BEFORE INSERT ON replenishment_followups FOR EACH ROW EXECUTE FUNCTION fail_followup()")
+                .update();
+        long events = count("events");
+        assertThatThrownBy(() -> execution.finish(next.runRef(), "verify-fu", next.leaseToken(), "DONE", "확인", null))
+                .hasMessageContaining("followup failure");
+        assertThat(count("replenishment_followups")).isZero();
+        assertThat(count("events")).isEqualTo(events);
+        assertThat(jdbc.sql("SELECT status::text FROM runs WHERE run_ref=:ref").param("ref", next.runRef()).query(String.class).single()).isEqualTo("RUNNING");
+        assertThat(jdbc.sql("SELECT status::text FROM work_items WHERE work_item_id=:id").param("id", workId).query(String.class).single()).isEqualTo("IN_PROGRESS");
+        jdbc.sql("DROP TRIGGER fail_followup ON replenishment_followups; DROP FUNCTION fail_followup()").update();
+        execution.finish(next.runRef(), "verify-fu", next.leaseToken(), "DONE", "재시도 확인", null);
+        assertThat(count("replenishment_followups")).isEqualTo(1);
+    }
+
+    @Test
+    void changedFollowupPollReferencesItsOwnEventAndUnchangedPollIsQuiet() throws Exception {
+        completePurchase();
+        jdbc.sql("UPDATE purchase_order_items SET expected_delivery_date=DATE '2026-09-03' WHERE purchase_order_id IN (SELECT purchase_order_id FROM purchase_orders WHERE purchase_application_id IS NOT NULL)").update();
+        jdbc.sql("UPDATE replenishment_followups SET due_at=TIMESTAMPTZ '2026-09-03T15:00:00Z'").update();
+        long events = count("events");
+        var changed = dispatcher.dispatchScheduledIfActionable().orElseThrow();
+        assertThat(changed.scheduledRuns()).isEmpty();
+        assertThat(jdbc.sql("SELECT work_item_id=(SELECT work_item_id FROM replenishment_followups) FROM events WHERE event_id=:id")
+                .param("id", changed.eventId()).query(Boolean.class).single()).isTrue();
+        assertThat(count("events")).isEqualTo(events + 1);
+        assertThat(dispatcher.dispatchScheduledIfActionable()).isEmpty();
+        assertThat(count("events")).isEqualTo(events + 1);
+    }
+
+    @Test
+    void followupMetadataCannotGrantAnUnrelatedParentCompletion() throws Exception {
+        completePurchase();
+        work("WI-OTHER-ORCH", "ORCHESTRATOR");
+        jdbc.sql("UPDATE work_items SET metadata=coalesce(metadata,'{}'::jsonb) || '{\"parentWorkItemRef\":\"WI-OTHER-ORCH\"}'::jsonb WHERE work_item_id IN (SELECT work_item_id FROM replenishment_followups)").update();
+        runs.createRun(new CreateRunRequest("ORCHESTRATOR", "CASE-PURCHASE", "WI-OTHER-ORCH", "CODEX"), null);
+        var other = execution.claim("other-parent").orElseThrow();
+        assertThatThrownBy(() -> execution.finish(other.runRef(), "other-parent", other.leaseToken(), "DONE", "잘못된 책임", null))
+                .hasMessageContaining("COMPLETION_NOT_VERIFIED");
+    }
+
+    @Test
+    void monitorUsesTypedDeadlineEvenWhenLegacyDeadlineDisagrees() throws Exception {
+        completePurchase();
+        jdbc.sql("UPDATE replenishment_followups SET due_at=clock_timestamp()+interval '1 day'").update();
+        jdbc.sql("UPDATE work_items SET due_at=TIMESTAMP '2020-01-01 00:00:00' WHERE work_item_id IN (SELECT work_item_id FROM replenishment_followups)").update();
+        assertThat(interfaceReads.counts().casesAtRisk()).isZero();
+        jdbc.sql("UPDATE work_items SET due_at=NULL WHERE work_item_id IN (SELECT work_item_id FROM replenishment_followups)").update();
+        jdbc.sql("UPDATE replenishment_followups SET due_at=clock_timestamp()-interval '1 second'").update();
+        assertThat(interfaceReads.counts().casesAtRisk()).isEqualTo(1);
+    }
+
+    private RunExecutionService.Claim approvePurchase() throws Exception {
+        var proposal = propose();
+        decide(proposal.path("approvalId").asLong(), decisionBody(proposal, "APPROVE"), "approve-fu", managerId, "MANAGER", 200);
+        return execution.claim("verify-fu").orElseThrow();
+    }
+
+    private void completePurchase() throws Exception {
+        var next = approvePurchase();
+        execution.finish(next.runRef(), "verify-fu", next.leaseToken(), "DONE", "발주 확인", null);
     }
 
     private int decisionStatus(long id, String body, String key) throws Exception {

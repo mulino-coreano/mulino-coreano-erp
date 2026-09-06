@@ -230,7 +230,9 @@ public class DispatcherRepository {
                 wc.STATUS
                         .eq(WaitingStatus.ACTIVE)
                         .and(wc.RESOLVED_BY_EVENT_ID.isNull())
-                        .and(wi.STATUS.eq(WorkItemStatus.WAITING));
+                        .and(wi.STATUS.eq(WorkItemStatus.WAITING))
+                        .and(notExists(selectOne().from(REPLENISHMENT_FOLLOWUPS)
+                                .where(REPLENISHMENT_FOLLOWUPS.WORK_ITEM_ID.eq(wi.WORK_ITEM_ID))));
         // Dependency events intentionally find waiting items across all Cases.
         if (dependencyEvent)
             filter =

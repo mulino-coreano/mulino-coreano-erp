@@ -227,6 +227,8 @@ public class RunExecutionRepository {
                         .from(WORK_ITEMS)
                         .where(WORK_ITEMS.CASE_ID.eq(caseId))
                         .and(WORK_ITEMS.WORK_ITEM_ID.ne(workId))
+                        .and(notExists(selectOne().from(REPLENISHMENT_FOLLOWUPS)
+                                .where(REPLENISHMENT_FOLLOWUPS.WORK_ITEM_ID.eq(WORK_ITEMS.WORK_ITEM_ID))))
                         .and(
                                 jsonbGetAttributeAsText(WORK_ITEMS.METADATA, "parentWorkItemRef")
                                         .eq(ref))
