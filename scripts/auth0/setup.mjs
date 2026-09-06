@@ -6,8 +6,8 @@ import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
 const HUMAN_SCOPES = ['erp:read', 'work:write', 'procurement:decide'];
-// Stage 1 exposes existing read/write tools; procurement:decide is provisioned for a later stage.
-const DEPLOYED_MCP_SCOPES = ['erp:read', 'work:write', 'offline_access'];
+// Deployed human conversation tools require read, work and purchase-decision scopes.
+const DEPLOYED_MCP_SCOPES = [...HUMAN_SCOPES, 'offline_access'];
 const TENANT_SETTINGS = {
   resource_parameter_profile: 'compatibility',
   client_id_metadata_document_supported: true,

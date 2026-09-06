@@ -65,7 +65,7 @@ API는 audience, OBO client는 `resource_server_identifier`, worker는 `mulino_r
 
 종료 코드는 `0`(오프라인 계획 생성 또는 설정/metadata 점검 통과), `2`(실행은 끝났지만 준비 조건 미충족), `1`(설정·API·파일 오류)이다. 적용 후 원격 설정을 다시 GET하여 반영 여부를 확인한다. `--apply`가 `2`로 종료되어도 원격 설정은 일부 또는 모두 반영됐을 수 있다. JSON의 `actions`, `remainingActions`, `checks`를 함께 확인한다.
 
-검사는 issuer discovery, HTTPS OAuth/JWKS endpoint, Authorization Code 및 PKCE S256 광고, CIMD·authorization response issuer 지원, 공개 `/.well-known/oauth-protected-resource/mcp`의 resource/issuer/scopes, 제공된 각 CIMD 문서, resource compatibility 및 tenant 객체 설정을 확인한다. 현재 1단계 MCP가 공개하는 필수 scope는 `erp:read`, `work:write`, `offline_access`다. Auth0에는 이후 승인 기능을 위한 `procurement:decide`도 미리 준비하지만 현재 공개 metadata에 이를 요구하지 않는다. redirect를 따라가지 않으며 공개 metadata에는 Management API token을 보내지 않는다. OBO가 discovery에 표준 필드로 광고된다고 가정하지 않는다.
+검사는 issuer discovery, HTTPS OAuth/JWKS endpoint, Authorization Code 및 PKCE S256 광고, CIMD·authorization response issuer 지원, 공개 `/.well-known/oauth-protected-resource/mcp`의 resource/issuer/scopes, 제공된 각 CIMD 문서, resource compatibility 및 tenant 객체 설정을 확인한다. 현재 인간 대화 MCP가 공개하는 필수 scope는 `erp:read`, `work:write`, `procurement:decide`, `offline_access`다. 구매 결정 도구의 `procurement:decide`가 공개 metadata에 없으면 Auth0에 해당 권한이 준비되어 있어도 `ready=false`로 판정한다. redirect를 따라가지 않으며 공개 metadata에는 Management API token을 보내지 않는다. OBO가 discovery에 표준 필드로 광고된다고 가정하지 않는다.
 
 갱신 준비를 위해 MCP API에만 `allow_offline_access=true`를 적용하고 읽어서 확인한다. `offline_access`는 OAuth 갱신 요청용 scope이므로 ERP 업무 permission 목록에 추가하지 않는다. issuer discovery의 `grant_types_supported`, 각 CIMD 문서의 `grant_types`, Auth0에 실제 등록된 각 CIMD client의 `grant_types`가 `refresh_token`을 포함하는지 모두 검사한다. 빠진 조건이 있으면 다른 설정을 적용하더라도 `ready=false`이며 종료 코드는 `2`다. JSON의 실패 항목과 `manualSteps`에 따라 제공자 문서 지원 여부를 확인하고 Auth0에서 CIMD 문서를 검토·동기화한다. 제공자가 갱신을 지원하지 않으면 갱신 미지원 상태를 그대로 남긴다. 등록 앱의 허용 grant를 문서와 무관하게 강제로 늘리지 않는다.
 
@@ -79,7 +79,7 @@ API는 audience, OBO client는 `resource_server_identifier`, worker는 `mulino_r
 
 ## 검증과 공식 자료
 
-`setup.test.mjs`는 로컬 loopback HTTP 서버로 Auth0 Management API 및 공개 metadata 응답을 재현한다. 테스트는 실제 계정·token·네트워크 설정을 읽거나 변경하지 않는다. 조회 전용 실행, idempotency, 실패·응답 유실 후 재실행, 0600 파일 및 덮어쓰기 방지, 비밀값 비노출, 잘못된 issuer/PKCE/CIMD, 공개 resource 불일치, pagination, 응답 배열 순서 변경, 설정 반영 누락과 CLI 출력을 검증한다. 갱신 회귀 테스트는 기존 API의 offline access 복구와 재실행, issuer·공개 metadata·호스팅 CIMD·등록 앱 중 갱신 지원이 빠진 경우의 미완료 판정을 검증한다. 실제 tenant와 ChatGPT/Codex 연결은 이 자동 테스트 범위에 포함되지 않는다.
+`setup.test.mjs`는 로컬 loopback HTTP 서버로 Auth0 Management API 및 공개 metadata 응답을 재현한다. 테스트는 실제 계정·token·네트워크 설정을 읽거나 변경하지 않는다. 조회 전용 실행, idempotency, 실패·응답 유실 후 재실행, 0600 파일 및 덮어쓰기 방지, 비밀값 비노출, 잘못된 issuer/PKCE/CIMD, 공개 resource 불일치·구매 결정 scope 누락, pagination, 응답 배열 순서 변경, 설정 반영 누락과 CLI 출력을 검증한다. 갱신 회귀 테스트는 기존 API의 offline access 복구와 재실행, issuer·공개 metadata·호스팅 CIMD·등록 앱 중 갱신 지원이 빠진 경우의 미완료 판정을 검증한다. 실제 tenant와 ChatGPT/Codex 연결은 이 자동 테스트 범위에 포함되지 않는다.
 
 구현 필드는 다음 공식 문서를 기준으로 확인했다(2026-09-05).
 

@@ -40,7 +40,7 @@ async function fixture(t) {
     });
     if (url.pathname === '/.well-known/oauth-protected-resource/mcp') return send(200, {
       resource: 'https://mcp.example/mcp', authorization_servers: ['https://tenant.example/'],
-      scopes_supported: ['erp:read', 'work:write', 'offline_access'], bearer_methods_supported: ['header'],
+      scopes_supported: ['erp:read', 'work:write', 'procurement:decide', 'offline_access'], bearer_methods_supported: ['header'],
       ...state.resourceOverrides,
     });
     if (url.pathname.startsWith('/cimd/')) return send(200, {
@@ -326,7 +326,7 @@ test('missing public offline_access scope or authorization server refresh suppor
   const f = await fixture(t);
   const options = { ...f.options, apply: true, credentialsDir: f.directory };
   await runSetup(baseEnv, options);
-  f.state.resourceOverrides = { scopes_supported: ['erp:read', 'work:write'] };
+  f.state.resourceOverrides = { scopes_supported: ['erp:read', 'work:write', 'procurement:decide'] };
   const missingScope = await runSetup(baseEnv, f.options);
   assert.equal(missingScope.ready, false);
   assert.ok(missingScope.checks.some(c => c.name === 'MCP protected resource' && !c.ok));
@@ -335,4 +335,17 @@ test('missing public offline_access scope or authorization server refresh suppor
   const missingGrant = await runSetup(baseEnv, f.options);
   assert.equal(missingGrant.ready, false);
   assert.ok(missingGrant.checks.some(c => c.name === 'Refresh token grant' && !c.ok));
+});
+
+
+test('missing deployed procurement decision scope prevents readiness', async t => {
+  const f = await fixture(t);
+  const configured = await runSetup(baseEnv, { ...f.options, apply: true, credentialsDir: f.directory });
+  assert.equal(configured.ready, true);
+  f.state.resourceOverrides = { scopes_supported: ['erp:read', 'work:write', 'offline_access'] };
+  f.state.requests.length = 0;
+  const result = await runSetup(baseEnv, f.options);
+  assert.equal(result.ready, false);
+  assert.ok(result.checks.some(c => c.name === 'MCP protected resource' && !c.ok));
+  assert.ok(f.state.requests.every(r => r.method === 'GET'));
 });
