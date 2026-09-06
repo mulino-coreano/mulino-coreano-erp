@@ -674,3 +674,10 @@ erDiagram
 - 상세 납기를 가용 공급 계산에 우선 사용하고, 목적지가 다른 발주는 해당 창고의 공급으로 계산하지 않는다. 발주 적용과 기본 단위 입고·LOT 추적 관계를 유지한다.
 - `work_items.procurement_plan_id`/`procurement_outcome`은 서버 소유 완료 근거다. 일반 metadata를 완료 근거로 사용하지 않는다.
 - 계획 입력 테이블의 INSERT·UPDATE·DELETE·TRUNCATE는 공통 source guard를 먼저 획득한다. 승인 시 최신 입력을 비교하는 동안 새 입력 행이 끼어들지 않도록 직렬화한다.
+
+
+## 11. 일반 확인 요청의 답변 버전
+
+V24/DDL16은 `attention_requests.version`의 과거 NULL을 1로 채우고 NOT NULL을 적용한다. 성공한 UPDATE마다 기존 값에 1을 더하며 NULL·0·음수 입력은 먼저 거부한다. 질문 수정 후 예전 버전으로 제출한 답변을 구분하기 위한 값이다.
+
+일반 답변은 기존 `decisions`의 새 행과 `metadata.sourceAttentionId`, 인간 작성자·범위, `ATTENTION_ANSWER_RECORDED` 이벤트로 연결한다. 신규 테이블이나 LOT 추적 FK는 추가하지 않는다. 구매 연결 Attention 및 AUTHORITY_REQUIRED 요청은 일반 답변 API로 처리하지 않으며, 구매 결정·발주 적용의 기존 관계를 유지한다.

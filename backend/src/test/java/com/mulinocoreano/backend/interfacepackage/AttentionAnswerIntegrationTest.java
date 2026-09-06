@@ -37,6 +37,7 @@ class AttentionAnswerIntegrationTest {
     @Autowired Flyway flyway;
     @Autowired JdbcClient jdbc;
     @Autowired AttentionAnswerService service;
+    @Autowired CaseOverviewService overviews;
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
     @MockitoSpyBean RunService runs;
@@ -121,6 +122,10 @@ class AttentionAnswerIntegrationTest {
         assertThat(first.path("resolvedByUserId").asLong()).isEqualTo(user);
         assertThat(first.path("workItemRef").asText()).isEqualTo("WI-ANSWER");
         assertThat(first.path("resume").path("status").asText()).isEqualTo("QUEUED");
+        JsonNode view = mapper.valueToTree(overviews.overview("CASE-ANSWER"));
+        JsonNode decision = view.path("decisions").get(0);
+        assertThat(decision.path("decisionId").asLong()).isEqualTo(first.path("decisionId").asLong());
+        assertThat(decision.path("sourceAttentionId").asText()).isEqualTo(Long.toString(attention));
         assertThat(answer("same")).isEqualTo(first);
         assertThat(count("decisions")).isEqualTo(1);
         assertThat(count("runs")).isEqualTo(1);

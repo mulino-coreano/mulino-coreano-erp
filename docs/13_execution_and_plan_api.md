@@ -12,6 +12,16 @@
 
 MCP `create_case`는 키를 생성하거나 호출자가 준 `requestKey`를 유지하며, 실패 응답에도 유효한 키를 반환한다. 자동 재시도는 하지 않는다. 업무가 예약되었다는 사실과 실제 모델이 실행 중이라는 사실을 구분한다.
 
+## 대화 조회와 일반 답변
+
+`GET /cases`는 `status`, `q`(제목·목표·참조의 문자 그대로 검색), `productSku`를 조합한다. 기존 Case 필드에 요약과 다음 행동을 더하고 최대 100건을 정해진 순서로 반환한다. `GET /cases/{ref}/overview`는 인간·에이전트 담당, 모든 활성 대기, Attention 버전, 계획·승인·발주 참조, 근거·주장·결정과 남은 의무를 함께 조회한다. 이벤트 이력만 100건으로 제한하고 `totalCount`/`truncated`를 표시한다. 조회가 Case나 Run을 만들지는 않는다.
+
+MCP에는 `get_case`, `get_plan`, `get_approval`, `get_purchase_order`, `decide_purchase`, `answer_attention`을 추가했다. 읽기는 `erp:read`, 일반 답변은 `work:write`, 구매 결정은 `procurement:decide`를 사용한다. 구매 내용·버전·hash에 대한 인간의 명시적 선택을 요구하며 도구 정의나 OAuth 로그인만으로 실제 클라이언트의 확인 절차를 증명하지 않는다.
+
+`POST /attention/{id}/answer`는 활성 OPERATOR/MANAGER와 멱등 키, `answer`, `expectedVersion`, `scope`가 필요하다. 범위는 THIS_ACTION/THIS_CASE뿐이다. V24는 질문을 포함한 행 수정마다 버전을 증가시켜 오래된 답변을 거부한다. 구매에 연결됐거나 AUTHORITY_REQUIRED인 요청은 이 경로로 답할 수 없다.
+
+답변·인간 결정·참여자·이벤트와 필요한 실행 예약을 함께 저장한다. READ COMMITTED에서 Work Item → Case → Attention을 잠근 뒤 버전과 미해결 조건을 읽는다. 해당 업무 또는 Case 전체의 다른 OPEN Attention, 활성 대기, 기존 Run이 없어야 BLOCKED 에이전트 업무를 재개한다. 대기를 삭제하거나 승인됐다고 해석하지 않는다. 재개할 수 없으면 실제 사유를 응답하고, 실행 예약 실패는 답변까지 롤백한다. 같은 사용자·키·본문은 원래 결과를 반환하며 다른 내용·오래된 버전은 409다.
+
 ## 계획 버전 저장
 
 | 경로 | 권한과 동작 |
@@ -120,8 +130,9 @@ claim은 비밀값을 한 번 발급하는 제어 프로토콜이므로 원래 �
 
 ## 검증과 마이그레이션
 
-- PostgreSQL 18의 전체 Backend `test bootJar`: 472개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다. heartbeat의 전체 실행 기한 제한과 600초 초과 시 자동 재시도 금지도 검증한다. 저장소 전환 후 근거 타입·격리 수준·최근 구매 순서·과거 NULL 이벤트 재호출의 충돌 처리도 포함한다.
-- Node 실행기 48개, MCP 19개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
+- PostgreSQL 18의 전체 Backend `test bootJar`: 488개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다. heartbeat의 전체 실행 기한 제한과 600초 초과 시 자동 재시도 금지도 검증한다. 저장소 전환 후 근거 타입·격리 수준·최근 구매 순서·과거 NULL 이벤트 재호출의 충돌 처리도 포함한다.
+- Node 실행기 48개, MCP 25개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
+- 전체 검사 뒤 인간 overview에 원 질문 참조를 추가하고 답변→상세 연결 관련 16개 테스트와 `bootJar`를 다시 확인했다. MCP 25개와 Auth0 준비 도구 19개 테스트도 통과했다.
 - V20은 QUEUED enum을 먼저 추가하고 V21에서 lease·멱등 데이터와 인덱스를 사용한다. V22는 최신 계산 결과의 원본 업무 연결을 강제한다.
 - 기존 RUNNING 예약 기록은 ABORTED로 정리하고 원래 snapshot을 보존한다. 이미 종료되었거나 실제 대기 중인 의무를 강제로 깨우지 않는다.
 - 독립 DDL 00~15·seed와 Flyway 경로를 별도 PostgreSQL 18 DB에서 검증했다. 외부 Auth0/ChatGPT/Codex 로그인, 실제 모델 실행, 대화 승인 연결과 전체 시연 인수는 아직 남아 있다.

@@ -287,7 +287,9 @@ public class CaseOverviewRepository {
                                         d.SCOPE,
                                         d.DECIDED_BY_USER_ID,
                                         USERS.NAME.as("user_name"),
-                                        d.DECIDED_AT)
+                                        d.DECIDED_AT,
+                                        jsonbGetAttributeAsText(d.METADATA, "sourceAttentionId")
+                                                .as("source_attention_id"))
                                 .from(d)
                                 .join(USERS)
                                 .on(USERS.USER_ID.eq(d.DECIDED_BY_USER_ID))

@@ -1,6 +1,6 @@
 # 국내 생산 재보충 데모 구현 계획
 
-> 상태: 2·3단계 구현 완료, 4단계 로컬 서버·Node 실행기와 최소 Zig CLI·Codex 이미지 구현. 구매 제안·MANAGER 결정·발주 반영 백엔드는 구현했으며 코드 정리 중이다. 구매 CLI/MCP 연결, 후속 의무, 실제 Auth0/두 클라이언트 로그인·모델 실행과 전체 인수는 미완료 · 2026-09-06
+> 상태: 2·3단계 구현 완료, 4단계 로컬 서버·Node 실행기와 최소 Zig CLI·Codex 이미지 구현. 구매 제안·MANAGER 결정·발주 반영 백엔드는 구현했으며 코드 정리 중이다. 구매 CLI와 인간 MCP 도구를 연결했다. 후속 의무, 실제 Auth0/두 클라이언트 로그인·모델 실행과 전체 인수는 미완료 · 2026-09-06
 > 아래 검증 단위별로 진행하고 현재 AGENTS.md의 작업·단계·통합 규칙을 따른다. 전체 데모의 완료와 로컬 구현 완료를 구분하며, 최신 검증 결과는 [실행·계획 API 안내](../../13_execution_and_plan_api.md)를 따른다.
 
 **목표:** ChatGPT 또는 Codex에서 맡긴 완제품 보충 목표를 주문 이력·다단계 BOM·공급 조건으로 분석하고, Auth0로 로그인한 MANAGER가 대화에서 승인하면 원재료 발주를 한 번 반영하고 결과를 검증한다.
@@ -59,20 +59,20 @@ OAuth는 개별 발주에 대한 사람의 확인을 증명하지 않는다. 인
 |---|---|---|
 | `GET /me` | 인간 사용자 신원·ERP 역할·허용 capability 반환 | 구현 |
 | `POST /cases` | optional replenishment={productSkus, warehouseId, targetDate} 해소, 인간 요청자·초기 업무·QUEUED Run 원자적 저장. 같은 목표·범위의 활성 Case만 재사용 | 구현; 잘못되거나 모호한 구조화 범위는 접수 전에 거부 |
-| `GET /cases` 확장 | q/productSku/status 검색 및 요약·다음 조치 | 목록·status 필터 구현; 확장 검색·요약 후속 |
-| `GET /cases/{ref}/overview` | 목표·범위·담당·모든 활성 대기·계획·근거·결정·이력·남은 의무 | 후속 |
+| `GET /cases` 확장 | q/productSku/status 검색 및 요약·다음 조치 | q·SKU·status 검색과 요약 구현 |
+| `GET /cases/{ref}/overview` | 목표·범위·담당·모든 활성 대기·계획·근거·결정·이력·남은 의무 | 로컬 구현; 실제 채널 전환 시험 후속 |
 | `POST /cases/{ref}/plans` | SUPPLY_CHAIN capability로 계산. 인간의 창고·품목·목표일을 지켜 불변 계획·실제 snapshot·버전·hash 저장 | 구현 |
 | `GET /plans/{ref}` | ERP 조회 권한으로 저장된 계획·근거·제외 사유 확인 | 구현 |
 | `GET /agent/cases/{ref}`, `/agent/plans/{ref}` | 유효한 capability의 같은 Case 맥락·계획 조회 | 구현 |
 | `POST /plans/{ref}/purchase-proposal` | procurement가 검증된 계획의 승인 요청 생성. ERP 발주 행은 만들지 않음 | 백엔드·CLI 구현 |
-| `GET /approvals/{id}` | 공급처별 발주 내용·총액·근거·요청 이유·version/hash | 백엔드 구현; MCP 연결 후속 |
-| `POST /approvals/{id}/decision` | MANAGER의 APPROVE/BLOCK, 대상 version/hash·사유. 승인과 발주 반영 원자적 실행 | 백엔드 구현; 대화 결정 UX 후속 |
-| `POST /attention/{id}/answer` | answer·expectedVersion·THIS_ACTION/THIS_CASE. 구매 승인을 대신할 수 없음 | 후속 |
-| `GET /purchase-orders/{id}` | 발주·상세·원 승인·계획·감사 연결 | 백엔드·agent CLI 구현; MCP 연결 후속 |
+| `GET /approvals/{id}` | 공급처별 발주 내용·총액·근거·요청 이유·version/hash | 백엔드·MCP 구현 |
+| `POST /approvals/{id}/decision` | MANAGER의 APPROVE/BLOCK, 대상 version/hash·사유. 승인과 발주 반영 원자적 실행 | 백엔드·MCP 구현; 실제 확인 UX 시험 후속 |
+| `POST /attention/{id}/answer` | answer·expectedVersion·THIS_ACTION/THIS_CASE. 구매 승인을 대신할 수 없음 | V24와 답변·재개 구현 |
+| `GET /purchase-orders/{id}` | 발주·상세·원 승인·계획·감사 연결 | 백엔드·agent CLI·MCP 구현 |
 | `/internal/runs/claim`, `/heartbeat`, `/finish`, `/retry` | 지정 worker M2M의 lease 제어. 공개 MCP에는 노출하지 않음 | 로컬 구현·검증 |
 | `/agent/work-items`, `/agent/work-items/{ref}/transition` | scoped 업무 생성·상태 전이·대기 저장. 임의 내부 상태 PATCH 없음 | 구현 |
 
-MCP는 기존 5개 도구에 `whoami`를 추가한 상태다. `create_case`는 구조화된 범위와 재사용 가능한 요청 키를 전달한다. `get_case`, `get_plan`, `get_approval`, `decide_purchase`, `answer_attention`, `get_purchase_order`와 `list_cases` 확장 검색은 후속이다. 사람에게 계산 API나 Run 조작을 직접 요구하지 않는다.
+MCP는 기존 조회·접수 도구와 `whoami`에 인간 대화 도구 6개를 추가한 상태다. `create_case`는 구조화된 범위와 재사용 가능한 요청 키를 전달한다. `get_case`, `get_plan`, `get_approval`, `decide_purchase`, `answer_attention`, `get_purchase_order`와 `list_cases` 확장 검색을 구현했다. 실제 두 클라이언트의 확인 UX와 채널 전환은 후속이다. 사람에게 계산 API나 Run 조작을 직접 요구하지 않는다.
 
 `decide_purchase`는 readOnlyHint=false로 표시하고 명시적 결정·대상 버전·hash를 입력으로 받는다. 도구 결과는 업무 요약과 참조를 제공하고 토큰·lease·모델 로그는 노출하지 않는다. `monitor_status`는 순수 조회로 변경하고 readOnlyHint=true를 사용한다. 재판정은 허용된 worker의 dispatch API로 분리한다. 이는 인증 구현 과정에서 확정한 접근 경계다.
 
@@ -225,8 +225,8 @@ ACT 접수 → Orchestrator 실행 예약
 
 **책임 영역:** Case overview query, MCP tool registry/한국어 응답, 클라이언트 연결 설정.
 
-- [ ] overview와 검색을 구현한다. 인간 담당과 에이전트 담당을 모두 표시하고 모든 활성 대기 사유·근거·판단 범위·타임라인을 반환한다.
-- [ ] MCP 추가 도구를 연결하고 읽기/쓰기 annotation, Auth0 security metadata, 오류·재인증 응답을 맞춘다. 직원에게 WI/Run 명령을 요구하지 않는다.
+- [x] overview와 검색을 구현한다. 인간 담당과 에이전트 담당을 모두 표시하고 모든 활성 대기 사유·근거·판단 범위·타임라인을 반환한다.
+- [x] MCP 추가 도구를 연결하고 읽기/쓰기 annotation, Auth0 security metadata, 오류·재인증 응답을 맞춘다. 직원에게 WI/Run 명령을 요구하지 않는다.
 - [ ] 발주안에는 필요한 인간 권한, 추천 내용, 계산 근거, 미조치 영향과 남은 불확실성을 표시한다. 설명에서 재고 현재값과 예정 공급을 구분한다.
 - [ ] ChatGPT에서 접수 → Codex의 새 대화에서 찾기·검토·승인 → ChatGPT에서 결과 확인을 시연한다. 반대 방향도 시험한다. 결정 도구의 확인을 기억하거나 자동 승인하도록 설정하지 않는다.
 - [ ] 일반 Attention 답변은 THIS_ACTION/THIS_CASE 범위만 지원하고, 승인 도구 우회가 불가능한지 검사한다. 발주 완료 후 남은 생산·입고 책임과 기한을 보여준다.
@@ -293,3 +293,11 @@ ACT 접수 → Orchestrator 실행 예약
 - Orchestrator·Supply Chain 지침의 빠진 명령·영속 대기·최종 JSON을 시나리오 시험으로 확인하고 수정했다. 참고 지침 시험이며 실제 모델 업무 수행 인수는 아니다.
 - 서버 맥락과 Node 전달 경로의 소수·큰 정수 정밀도를 보존한다. 실제 예시 계획 claim 크기도 현재 제한 안에서 확인했다.
 - [CLI·런타임 안내](../../14_cli_and_runtime.md)에 재현 방법과 검증 범위를 기록했다. 실제 로그인·native subagent 업무 수행, 구매 명령·승인·반영은 계속 남아 있다.
+
+
+### 인간 대화 도구와 일반 답변의 로컬 연결
+
+- Case overview/search와 MCP 조회·구매 결정·일반 답변 도구를 연결했다. 실제 Auth0/두 클라이언트 확인 절차가 완료됐다는 뜻은 아니다.
+- V24/DDL16은 Attention의 질문 변경과 답변 버전을 관리한다. 일반 답변은 구매 승인을 대체하지 않으며, 다른 대기·주의 요청·실행이 없는 해당 BLOCKED 업무만 재개한다.
+- 답변의 Decision.sourceAttentionId 연결을 agent 맥락과 인간 overview에서 보존한다. 이것은 `decisions.metadata`에 기록되는 참조이며 신규 ERP 테이블이 아니다.
+- 생산·입고 후속 의무를 생성·추적하는 기능과 실제 모델·클라이언트 전체 시연이 남아 있어 7·8단계 전체를 완료로 표시하지 않는다. 최신 검사 결과는 실행·계획 API 안내를 따른다.

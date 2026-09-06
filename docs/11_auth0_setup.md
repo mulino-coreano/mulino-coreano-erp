@@ -53,9 +53,9 @@ OBO client 시크릿과 worker M2M 시크릿은 모델 입력·도구 결과에 
 | 요청 | 필요한 신원과 권한 |
 |---|---|
 | `/me`, 업무·재고·Attention 조회 | 활성 ERP 인간 사용자와 `erp:read` |
-| Case 생성 | OPERATOR 또는 MANAGER와 `work:write` |
+| Case 생성·일반 Attention 답변 | OPERATOR 또는 MANAGER와 `work:write` |
 | 이벤트 인입·수동 dispatch·Run 예약 | 허용된 worker M2M client와 `worker:dispatch` |
-| 발주 승인·반려 | 후속 단계의 MANAGER 결정 API에서 처리, 아직 이 인증 단계의 기능이 아님 |
+| 발주 승인·반려 | 활성 MANAGER와 `procurement:decide`, 정확한 제안 version/hash·사유 |
 
 `/me`는 서비스 신원도 구분해서 반환할 수 있다. 서비스 토큰에 인간과 같은 subject/role 문자열을 넣어 인간 권한으로 처리되게 해서는 안 된다.
 
@@ -69,7 +69,7 @@ OBO client 시크릿과 worker M2M 시크릿은 모델 입력·도구 결과에 
 - 두 클라이언트에서 `whoami`로 같은 ERP 사용자·역할을 확인한다. VIEWER의 Case 생성은 거절되어야 하고 MANAGER/OPERATOR의 생성은 성공해야 한다.
 - 토큰 만료·다른 audience·미등록 계정·비활성 사용자·역할 변경·OBO 실패를 확인한다. 인증 오류에 access token이나 upstream 응답 원문이 노출되어서는 안 된다.
 
-OAuth 로그인은 개별 발주 승인을 대신하지 않는다. 발주 결정 도구를 구현한 뒤에는 정확한 제안 버전과 사람의 명시적 확인을 별도로 시험한다.
+OAuth 로그인은 개별 발주 승인을 대신하지 않는다. 발주 결정 MCP 도구는 구현했지만, 실제 두 클라이언트에서 정확한 제안 버전과 사람의 명시적 확인을 받는 UX는 별도로 시험해야 한다. 준비 검사는 공개 MCP metadata의 `procurement:decide`를 필수 scope로 확인한다.
 
 ## 6. 검증 결과 기록
 
