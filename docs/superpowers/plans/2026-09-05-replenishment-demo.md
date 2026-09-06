@@ -235,11 +235,13 @@ ACT 접수 → Orchestrator 실행 예약
 
 ### 8단계 — 전체 검증과 인수 문서
 
-- [ ] disposable PostgreSQL 18에서 `./gradlew clean test bootJar --no-daemon`, MCP·runner의 `npm test`, CLI의 `zig build test`와 모의 HTTP smoke test를 실행한다.
-- [ ] 통합 테스트는 예측된 정확한 수량·금액·PO 개수를 fixture의 기대값과 비교한다. 모의 모델 테스트와 실제 모델 시험 결과를 별도 표기한다.
-- [ ] 승인 전 PO 0건, 승인 후 정확한 묶음, 반복 요청 후 동일 결과, 반려 후 PO 0건, 변경안 재승인, 재시작 후 재개, 오류 시 성공 미표시를 실제 DB로 검증한다.
+아래 체크는 로컬 검증 및 문서 산출의 완료만 뜻한다. 백엔드 519개·로컬 E2E 2개의 근거는 [실행 API 안내](../../13_execution_and_plan_api.md), 시험과 실제 계정의 경계는 [실행서](../../15_demo_runbook.md)에 기록했다. 실제 모델·두 클라이언트 인수가 남아 있으므로 8단계 전체는 미완료다.
+
+- [x] disposable PostgreSQL 18에서 `./gradlew clean test bootJar --no-daemon`, MCP·runner의 `npm test`, CLI의 `zig build test`와 모의 HTTP smoke test를 실행한다.
+- [x] 통합 테스트는 예측된 정확한 수량·금액·PO 개수를 fixture의 기대값과 비교한다. 모의 모델 테스트와 실제 모델 시험 결과를 별도 표기한다.
+- [x] 승인 전 PO 0건, 승인 후 정확한 묶음, 반복 요청 후 동일 결과, 반려 후 PO 0건, 변경안 재승인, 재시작 후 재개, 오류 시 성공 미표시를 실제 DB로 검증한다.
 - [x] 발주 업무 DONE·상위 Case WAITING·후속 담당/대기 존재를 검사한다. 이미 끝난 업무 재실행과 반려안의 자동 재요청을 막는다.
-- [ ] Auth0·터널·DB·backend·runner·CLI·MCP 준비 검사와 실행/종료 가이드를 작성한다. 비밀은 gitignored 환경 설정으로만 제공하고 문서에는 변수명과 발급 절차만 남긴다.
+- [x] Auth0·터널·DB·backend·runner·CLI·MCP 준비 검사와 실행/종료 가이드를 작성한다. 비밀은 gitignored 환경 설정으로만 제공하고 문서에는 변수명과 발급 절차만 남긴다.
 - [ ] 요구사항의 구매 예시를 원재료 기준으로 수정하고 구현 현황·흐름도·ERD·디스패처·MCP/CLI 문서를 갱신한다. 기능/UX별 실제 시험 근거를 연결한다.
 - [ ] 각 검증 단위별 PR은 저장소의 한국어 PR 템플릿 4개 섹션과 3개 체크 항목을 사용한다. 계획 밖 품질·생산·출고 기능을 함께 구현하지 않는다.
 
