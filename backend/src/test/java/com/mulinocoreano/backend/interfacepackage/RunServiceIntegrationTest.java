@@ -21,6 +21,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 @SpringBootTest
 @Transactional
 class RunServiceIntegrationTest {
+    @Autowired RunSchedulingRepository scheduling;
+
 
     @Autowired
     RunService runService;
@@ -111,7 +113,7 @@ class RunServiceIntegrationTest {
                 throw new IllegalStateException("forced reconstruction failure");
             }
         };
-        RunService failingRunService = new RunService(jdbc, objectMapper, failingBuilder);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingBuilder);
 
         RunDto failed = failingRunService.createRun(request(fixture), null);
 
@@ -253,7 +255,7 @@ class RunServiceIntegrationTest {
                 throw new IllegalArgumentException("context source unavailable");
             }
         };
-        RunService failingRunService = new RunService(jdbc, objectMapper, failingBuilder);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingBuilder);
 
         RunDto failed = failingRunService.createRun(request(fixture), null);
 
@@ -288,7 +290,7 @@ class RunServiceIntegrationTest {
                 return super.build(caseRef);
             }
         };
-        RunService retryingRunService = new RunService(jdbc, objectMapper, failsOnce);
+        RunService retryingRunService = new RunService(scheduling, objectMapper, failsOnce);
         AtomicReference<RunDto> result = new AtomicReference<>();
 
         assertThatCode(() -> result.set(retryingRunService.createRun(request(fixture), null)))
@@ -435,7 +437,7 @@ class RunServiceIntegrationTest {
                 throw new IllegalStateException(message);
             }
         };
-        return new RunService(jdbc, objectMapper, failingBuilder)
+        return new RunService(scheduling, objectMapper, failingBuilder)
                 .createRun(request(fixture), null);
     }
 

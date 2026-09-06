@@ -23,6 +23,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 @Transactional
 class DispatcherIntegrationTest {
+    @Autowired RunSchedulingRepository scheduling;
+
 
     @Autowired
     DispatcherService dispatcher;
@@ -110,7 +112,7 @@ class DispatcherIntegrationTest {
                 throw new IllegalStateException("context source unavailable");
             }
         };
-        RunService failingRunService = new RunService(jdbc, objectMapper, failingContext);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingContext);
         DispatcherService failingDispatcher = new DispatcherService(
                 jdbc, objectMapper, new WaitingConditionMatcher(), failingRunService);
 

@@ -86,6 +86,8 @@ flowchart LR
 
 Run 임대의 조회·잠금은 `RunLeaseRepository`가 생성된 타입으로 수행한다. capability 인증은 저장소 조회 뒤 현재 배정·Case·역할·만료를 판정한다. Work Item → Run → Case → Agent 잠금 순서, DB 시계 기준 lease/600초 제한과 종료 후 권한 폐기는 유지한다.
 
+Run 예약의 조회·저장·savepoint는 `RunSchedulingRepository`로 분리했다. `RunService`는 요청·배정 검증과 컨텍스트 재구성·실패 처리를 담당한다. 활성 Run의 부분 유일 인덱스와 충돌 무시 조건, 재구성 시도별 savepoint, 이전 근거의 `stale` 표시는 유지한다.
+
 `backend`에서 `./gradlew generateJooq`를 실행하면 Testcontainers가 임시 PostgreSQL 18.6을 시작하고 Flyway 전체 마이그레이션을 적용한 뒤 Java 타입을 만든다. Docker가 필요하며 실제 애플리케이션 DB 설정이나 자격증명을 사용하지 않는다. 생성 코드는 `build/generated/sources/jooq`에만 있고 커밋하지 않는다. `compileJava`가 이 작업에 의존하며, 마이그레이션·생성기 변경 시 다시 생성한다. 변경이 없으면 Gradle의 최신 상태 검사를 사용한다.
 
 Spring이 제공하는 DSLContext로 기존 JDBC 트랜잭션에 참여한다. 쿼리의 스키마는 연결의 search_path를 따르므로 테스트 전용 스키마도 격리된다. 타입 생성은 컬럼·값의 타입 오류를 더 일찍 드러내며, 업무 조건과 동시성의 정확성은 별도 통합 테스트로 검증한다. [jOOQ 코드 생성](https://www.jooq.org/doc/latest/manual/code-generation/)과 [Spring 통합](https://docs.spring.io/spring-boot/reference/data/sql.html)을 따른다.
