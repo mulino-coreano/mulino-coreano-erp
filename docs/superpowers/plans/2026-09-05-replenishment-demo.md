@@ -1,7 +1,7 @@
 # 국내 생산 재보충 데모 구현 계획
 
-> 상태: 2·3단계 구현 완료, 4단계 로컬 서버·Node 실행기 구현 완료 · 최소 Zig CLI·Codex 이미지 추가, 실제 Auth0/두 클라이언트 로그인·모델 실행 인수와 구매 승인·적용은 미완료 · 2026-09-05
-> 구현 담당자는 `superpowers:executing-plans`를 사용하여 아래 검증 단위별로 진행한다. 전체 데모의 완료와 로컬 구현 완료를 구분하며, 최신 검증 결과는 [실행·계획 API 안내](../../13_execution_and_plan_api.md)를 따른다.
+> 상태: 2·3단계 구현 완료, 4단계 로컬 서버·Node 실행기와 최소 Zig CLI·Codex 이미지 구현. 구매 제안·MANAGER 결정·발주 반영 백엔드는 구현했으며 코드 정리 중이다. 구매 CLI/MCP 연결, 후속 의무, 실제 Auth0/두 클라이언트 로그인·모델 실행과 전체 인수는 미완료 · 2026-09-06
+> 아래 검증 단위별로 진행하고 현재 AGENTS.md의 작업·단계·통합 규칙을 따른다. 전체 데모의 완료와 로컬 구현 완료를 구분하며, 최신 검증 결과는 [실행·계획 API 안내](../../13_execution_and_plan_api.md)를 따른다.
 
 **목표:** ChatGPT 또는 Codex에서 맡긴 완제품 보충 목표를 주문 이력·다단계 BOM·공급 조건으로 분석하고, Auth0로 로그인한 MANAGER가 대화에서 승인하면 원재료 발주를 한 번 반영하고 결과를 검증한다.
 
@@ -64,11 +64,11 @@ OAuth는 개별 발주에 대한 사람의 확인을 증명하지 않는다. 인
 | `POST /cases/{ref}/plans` | SUPPLY_CHAIN capability로 계산. 인간의 창고·품목·목표일을 지켜 불변 계획·실제 snapshot·버전·hash 저장 | 구현 |
 | `GET /plans/{ref}` | ERP 조회 권한으로 저장된 계획·근거·제외 사유 확인 | 구현 |
 | `GET /agent/cases/{ref}`, `/agent/plans/{ref}` | 유효한 capability의 같은 Case 맥락·계획 조회 | 구현 |
-| `POST /plans/{ref}/purchase-proposal` | procurement가 검증된 계획의 승인 요청 생성. ERP 발주 행은 만들지 않음 | 후속 |
-| `GET /approvals/{id}` | 공급처별 발주 내용·총액·근거·요청 이유·version/hash | 후속 |
-| `POST /approvals/{id}/decision` | MANAGER의 APPROVE/BLOCK, 대상 version/hash·사유. 승인과 발주 반영 원자적 실행 | 후속 |
+| `POST /plans/{ref}/purchase-proposal` | procurement가 검증된 계획의 승인 요청 생성. ERP 발주 행은 만들지 않음 | 백엔드 구현; CLI 연결 후속 |
+| `GET /approvals/{id}` | 공급처별 발주 내용·총액·근거·요청 이유·version/hash | 백엔드 구현; MCP 연결 후속 |
+| `POST /approvals/{id}/decision` | MANAGER의 APPROVE/BLOCK, 대상 version/hash·사유. 승인과 발주 반영 원자적 실행 | 백엔드 구현; 대화 결정 UX 후속 |
 | `POST /attention/{id}/answer` | answer·expectedVersion·THIS_ACTION/THIS_CASE. 구매 승인을 대신할 수 없음 | 후속 |
-| `GET /purchase-orders/{id}` | 발주·상세·원 승인·계획·감사 연결 | 후속 |
+| `GET /purchase-orders/{id}` | 발주·상세·원 승인·계획·감사 연결 | 백엔드 구현; CLI/MCP 연결 후속 |
 | `/internal/runs/claim`, `/heartbeat`, `/finish`, `/retry` | 지정 worker M2M의 lease 제어. 공개 MCP에는 노출하지 않음 | 로컬 구현·검증 |
 | `/agent/work-items`, `/agent/work-items/{ref}/transition` | scoped 업무 생성·상태 전이·대기 저장. 임의 내부 상태 PATCH 없음 | 구현 |
 
@@ -79,13 +79,13 @@ MCP는 기존 5개 도구에 `whoami`를 추가한 상태다. `create_case`는 �
 ### 데이터와 호환성
 
 - V1–V17은 수정하지 않고 이후 Flyway migration을 추가한다. 독립 DDL과 ERD도 같은 최종 구조로 갱신한다.
-- 추가 모델: external_identities, bom_versions/bom_components, supplier_material_terms, planning_policies, replenishment_plans, request_idempotency는 구현했다. purchase_applications와 구매 승인 연결은 6단계에서 추가한다. 계산 상세는 불변 plan JSONB로 보존하며 ERP 엔터티를 복제하지 않는다.
+- 추가 모델: external_identities, bom_versions/bom_components, supplier_material_terms, planning_policies, replenishment_plans, request_idempotency는 구현했다. purchase_applications와 구매 승인 연결은 V23/DDL15에 추가했다. 계산 상세는 불변 plan JSONB로 보존하며 ERP 엔터티를 복제하지 않는다.
 - BOM component는 하위 product 또는 raw material 중 정확히 하나를 참조한다. 제품별 활성 버전·배치 산출량·생산 리드타임과 성분별 소요량을 저장한다. 순환과 겹치는 유효 버전을 거부한다.
 - 공급 조건은 원재료별 여러 supplier, 구매단위·기본단위 환산율, 가격·KRW, MOQ·주문 배수, 납기 일수, 유효기간, 필요한 인증 유형을 저장한다. 기존 raw_materials.supplier_id는 기본 공급처로 유지하되 구매 가능 공급처를 제한하는 단일 기준으로 사용하지 않는다.
 - 분수 단위 처리를 위해 계산과 DTO는 BigDecimal을 사용하고 관련 구매·입고·LOT·생산 투입·재고·수주·출고 수량은 NUMERIC(18,6)으로 일관되게 확장한다. 기존 양수·잔여량 범위 제약과 FK는 유지한다. 가격 정밀도도 NUMERIC(18,6), 최종 KRW 약정금액은 원 단위 HALF_UP으로 정한다.
 - production_lots에 거점 창고 참조를 추가한다. 기존 생산 기록의 창고가 하나일 때만 backfill하고 여러 창고로 해석되는 LOT은 준비 검사에서 보고한다. 추측으로 위치를 선택하지 않는다.
-- 6단계에서 governance_actions에 Case·Work Item·제안 버전·제안 agent 연결을 추가한다. requested_by는 목표를 맡긴 실제 인간으로 유지하고 제안 agent를 별도 기록한다. 생성 전 resource는 REPLENISHMENT_PLAN을 참조하며 가짜 purchase_order_id를 사용하지 않는다.
-- 6단계에서 purchase_applications의 governance_action_id를 UNIQUE로 두어 한 승인에 의한 공급처별 발주 묶음을 한 번만 생성한다.
+- V23에서 governance_actions에 Case·Work Item·제안 버전·제안 agent 연결을 추가했다. requested_by는 목표를 맡긴 실제 인간으로 유지하고 제안 agent를 별도 기록한다. 생성 전 resource는 REPLENISHMENT_PLAN을 참조하며 가짜 purchase_order_id를 사용하지 않는다.
+- V23에서 purchase_applications의 governance_action_id를 UNIQUE로 두어 한 승인에 의한 공급처별 발주 묶음을 한 번만 생성한다.
 - V20~V21에 QUEUED·claimed_at·lease owner/hash·lease expiry·attempt와 멱등 응답 저장을 추가했다. 활성 Run 유일성은 QUEUED/RUNNING 전체에 적용하며 worker별 활성 lease도 하나로 제한한다. 과거 RUNNING 예약은 ABORTED로 보존하고 이미 종료되었거나 대기 중인 의무를 강제로 깨우지 않는다.
 - V22는 서버 소유 planning_attempt_sequence·latest_planning_outcome·latest_planning_plan_id로 최신 계산 결과를 기록한다. 같은 Case·원본 Work Item의 최신 READY 계획만 완료 근거가 되며, Attention-only 실패나 과거 응답 재생이 이전 성공을 최신 결과로 오인시키지 않는다.
 
