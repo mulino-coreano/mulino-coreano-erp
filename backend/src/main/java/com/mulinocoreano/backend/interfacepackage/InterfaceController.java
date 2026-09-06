@@ -20,16 +20,19 @@ public class InterfaceController {
     private final InterfaceQueries queries;
     private final RunService runs;
     private final DispatcherService dispatcher;
+    private final CaseOverviewService overview;
 
     public InterfaceController(
             CaseIntakeService intake,
             InterfaceQueries queries,
             RunService runs,
-            DispatcherService dispatcher) {
+            DispatcherService dispatcher,
+            CaseOverviewService overview) {
         this.intake = intake;
         this.queries = queries;
         this.runs = runs;
         this.dispatcher = dispatcher;
+        this.overview = overview;
     }
 
     // ------------------------------------------------------------ ASK
@@ -47,8 +50,16 @@ public class InterfaceController {
     }
 
     @GetMapping("/cases")
-    public List<CaseDto> listCases(@RequestParam(required = false) String status) {
-        return queries.listCases(status);
+    public List<CaseSearchDto> listCases(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String productSku) {
+        return overview.search(q, productSku, status);
+    }
+
+    @GetMapping("/cases/{caseRef}/overview")
+    public Map<String, Object> overview(@PathVariable String caseRef) {
+        return overview.overview(caseRef);
     }
 
     @GetMapping("/cases/{caseRef}")
