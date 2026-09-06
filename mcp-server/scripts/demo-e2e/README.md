@@ -36,7 +36,7 @@ DB URL은 명시적 loopback 주소와 `mulino_demo_e2e` 이름이어야 한다.
 
 ## 프로세스 재시작과 변경 승인안
 
-정상 승인 경로도 `prepare`(기존 승인 대기)와 `resume`(인간 결정·역할 재개)를 **별도 Node 프로세스**로 실행한다. 재시작마다 새 MCP 서버·SDK 세션·Runner·토큰 클라이언트를 만들며 Case·계획·승인 참조는 MCP `list_cases` SKU 검색과 `get_case`로 DB에서 복구한다. 이전 프로세스의 변수나 Run capability를 재사용하지 않는다. Spring 서버/DB 자체 재시작이나 lease 중간 충돌 복구를 증명하는 시험은 아니다.
+정상 승인 경로도 `prepare`(기존 승인 대기)와 `resume`(인간 결정·역할 재개)를 **별도 Node 프로세스**로 실행한다. 재시작마다 새 MCP 서버·SDK 세션·Runner·토큰 클라이언트를 만들며 Case·계획·승인 참조는 MCP `list_cases` SKU 검색과 `get_case`로 DB에서 복구한다. 이전 프로세스의 변수나 Run capability를 재사용하지 않는다. 추가로 승인 대기 직후 첫 번째 ordered 시험이 `@DirtiesContext(AFTER_METHOD)`로 실제 Spring application context·Tomcat HTTP listener·DB pool을 종료한다. 두 번째 시험은 같은 DB/schema를 초기화하지 않고 새 context와 다른 HTTP port를 시작한다. 기존 Case·Work Item·계획 해시·승인 해시·Run 참조/상태가 모두 보존되었는지 비교한 뒤 새 MCP/Runner 프로세스로 승인을 재개한다. 완료된 공급망 Run은 한 건 그대로이고 발주도 한 번만 생성된다. 임시 HTTPS JWKS 제공자는 두 context 동안 유지하고 전체 시험 종료 시 TLS 기본값 복원 및 키 정리를 수행한다. 이는 정상 application-context 재시작 검증이며 DB 서버/OS 재시작, 강제 프로세스 종료, 실행 중 lease 충돌·장애 복구까지 검증하는 시험은 아니다.
 
 별도의 초기화된 시나리오는 승인 대기 중 시험 fixture가 밀가루 계약 가격을 1,200원에서 1,300원으로 변경한다. 이전 승인 시도는 EXPIRED로 저장되고 발주·후속 업무는 생성되지 않는다. 인간 답변 전에 실제 Runner가 취소된 구매 의존성으로 재개된 부모를 처리하여 ABORTED/BLOCKED 상태로 멈춘다. 방침 Attention은 검증된 같은 Case 안의 미완료 Orchestrator 부모에 연결되어 추가 실행 질문을 중복 생성하지 않는다. 인간은 이 단일 Attention에 기존 계획을 명시한 재계산 지시를 THIS_CASE로 답한다. 답변은 QUEUED를 반환하고 새 프로세스의 부모가 저장된 `epistemic.decisions.decision_id`를 읽어 해당 결정에 한정된 수정 공급망 업무를 배정한다. 이는 새 구매 승인이 아니다. 유효한 부모가 없는 경우 Case 수준 Attention의 NO_WORK_ITEM을 실행 예약으로 취급하지 않는다.
 

@@ -24,6 +24,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("demo-e2e")
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
     "spring.flyway.schemas=demo_e2e", "spring.flyway.clean-disabled=false",
     "spring.flyway.init-sqls=CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public",
@@ -66,28 +67,51 @@ class DemoE2eTest {
     }
     static final java.util.concurrent.atomic.AtomicReference<Instant> businessNow = new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2026-09-05T00:00:00Z"));
     @TestConfiguration static class Time {
+        @Bean("demoContextIdentity") String contextIdentity() { return UUID.randomUUID().toString(); }
         @Bean("planningClock") @Primary Clock clock() { return new Clock() { public ZoneId getZone(){ return ZoneId.of("Asia/Seoul"); } public Clock withZone(ZoneId zone){ return Clock.fixed(instant(),zone); } public Instant instant(){return businessNow.get();} }; }
     }
     @LocalServerPort int port;
     @Autowired JdbcClient jdbc;
     @Autowired Flyway flyway;
     @Autowired ObjectMapper mapper;
-    @Test void actualHttpMcpRunnerCliPurchaseAcceptance() throws Exception {
+    @Autowired @org.springframework.beans.factory.annotation.Qualifier("demoContextIdentity") String contextIdentity;
+    static String previousContextIdentity;
+    static int previousPort;
+    static List<String> pendingReferences;
+
+    @Test @Order(1)
+    @org.springframework.test.annotation.DirtiesContext(methodMode = org.springframework.test.annotation.DirtiesContext.MethodMode.AFTER_METHOD)
+    void preparePendingApprovalThenStopTheRealApplicationContext() throws Exception {
         assertThat(jdbc.sql("SHOW server_version").query(String.class).single()).startsWith("18.");
         assertThat(flyway.getConfiguration().getSchemas()).containsExactly("demo_e2e");
         resetFixture();
-        long warehouse = jdbc.sql("SELECT warehouse_id FROM warehouses WHERE plant_id='DEMO-KR-01'").query(Long.class).single();
-        var products = jdbc.sql("SELECT product_id FROM products WHERE sku IN ('DEMO-AMR','DEMO-BSC') ORDER BY product_id").query(Long.class).list();
-        Path config = temp.resolve("scenario.json");
-        Files.writeString(config, mapper.writeValueAsString(Map.of("api", "http://127.0.0.1:"+port+"/api/v1", "privateJwk", key.toJSONObject(), "warehouseId", warehouse, "productIds", products)));
         Path root = Path.of("..").toAbsolutePath().normalize();
-        assertThat(Files.isExecutable(root.resolve("agents/cli/zig-out/bin/mulino"))).as("Run zig build in agents/cli first").isTrue();
+        Path config = scenarioConfig();
         launch(root, config, "block");
         assertThat(jdbc.sql("SELECT count(*) FROM purchase_orders WHERE purchase_application_id IS NOT NULL").query(Long.class).single()).isZero();
         assertThat(jdbc.sql("SELECT count(*) FROM replenishment_followups").query(Long.class).single()).isZero();
         resetFixture();
         launch(root, config, "prepare");
+        pendingReferences = persistedReferences();
+        previousContextIdentity = contextIdentity;
+        previousPort = port;
+        assertThat(supplyRunCount()).isEqualTo(1);
+        System.out.println("DEMO_E2E_BACKEND_STOP_WITH_PENDING_APPROVAL: port=" + port);
+    }
+
+    @Test @Order(2)
+    void restartTheRealApplicationAndResumePersistedApproval() throws Exception {
+        assertThat(previousContextIdentity).as("Preparation must complete before restart acceptance").isNotNull();
+        assertThat(contextIdentity).isNotEqualTo(previousContextIdentity);
+        assertThat(port).as("A newly started HTTP listener").isNotEqualTo(previousPort);
+        // No fixture reset, SQL write or status reconstruction between stop and recovery.
+        assertThat(persistedReferences()).containsExactlyElementsOf(pendingReferences);
+        Path root = Path.of("..").toAbsolutePath().normalize();
+        Path config = scenarioConfig();
         launch(root, config, "resume");
+        assertThat(supplyRunCount()).as("The completed supply calculation was not rerun").isEqualTo(1);
+        assertThat(jdbc.sql("SELECT count(*) FROM purchase_orders WHERE purchase_application_id IS NOT NULL").query(Long.class).single()).isEqualTo(1);
+        System.out.println("DEMO_E2E_BACKEND_RESTART_PASS: oldPort=" + previousPort + ", newPort=" + port);
         assertThat(jdbc.sql("SELECT sum(i.quantity*i.unit_price) FROM purchase_order_items i JOIN purchase_orders p USING(purchase_order_id) WHERE p.purchase_application_id IS NOT NULL").query(java.math.BigDecimal.class).single()).isEqualByComparingTo("16500");
         resetFixture();
         launch(root, config, "prepare");
@@ -108,6 +132,32 @@ class DemoE2eTest {
         assertThat(jdbc.sql("SELECT count(*) FROM replenishment_followups").query(Long.class).single()).isEqualTo(1);
         assertThat(jdbc.sql("SELECT count(*) FROM runs r JOIN replenishment_followups f ON f.work_item_id=r.work_item_id").query(Long.class).single()).isZero();
     }
+    Path scenarioConfig() throws Exception {
+        long warehouse = jdbc.sql("SELECT warehouse_id FROM warehouses WHERE plant_id='DEMO-KR-01'").query(Long.class).single();
+        var products = jdbc.sql("SELECT product_id FROM products WHERE sku IN ('DEMO-AMR','DEMO-BSC') ORDER BY product_id").query(Long.class).list();
+        Path root = Path.of("..").toAbsolutePath().normalize();
+        assertThat(Files.isExecutable(root.resolve("agents/cli/zig-out/bin/mulino"))).as("Run zig build in agents/cli first").isTrue();
+        Path config = temp.resolve("scenario.json");
+        Files.writeString(config, mapper.writeValueAsString(Map.of("api", "http://127.0.0.1:"+port+"/api/v1", "privateJwk", key.toJSONObject(), "warehouseId", warehouse, "productIds", products)));
+        return config;
+    }
+
+    List<String> persistedReferences() {
+        return jdbc.sql("""
+                SELECT ref FROM (
+                  SELECT 'case:' || case_ref || ':' || status AS ref FROM cases
+                  UNION ALL SELECT 'work:' || work_item_ref || ':' || status FROM work_items
+                  UNION ALL SELECT 'plan:' || plan_ref || ':' || plan_hash FROM replenishment_plans
+                  UNION ALL SELECT 'approval:' || governance_action_id || ':' || proposal_hash || ':' || status FROM governance_actions
+                  UNION ALL SELECT 'run:' || run_ref || ':' || status FROM runs
+                ) refs ORDER BY ref
+                """).query(String.class).list();
+    }
+
+    long supplyRunCount() {
+        return jdbc.sql("SELECT count(*) FROM runs JOIN agents USING(agent_id) WHERE agent_key='SUPPLY_CHAIN'").query(Long.class).single();
+    }
+
     void resetFixture() throws Exception {
         assertThat(flyway.getConfiguration().getSchemas()).containsExactly("demo_e2e");
         flyway.clean(); flyway.migrate(); ReplenishmentDemoFixture.load(jdbc);
