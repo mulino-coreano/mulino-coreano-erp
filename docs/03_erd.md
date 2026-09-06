@@ -648,3 +648,29 @@ erDiagram
 - `work_items.planning_attempt_sequence`, `latest_planning_outcome`, `latest_planning_plan_id`: 최신 계산 시도의 서버 소유 상태다. DATA_ERROR는 계획 ID가 없고 READY/NEEDS_ATTENTION은 같은 Case·원본 업무의 계획을 참조해야 한다. 과거 응답 재생은 이 값을 되돌리지 않는다.
 
 마이그레이션은 기존 RUNNING 예약을 ABORTED로 정리하되 기록된 context와 기존 대기/종결 의무를 보존한다. 원본 업무가 없는 과거 계획을 임의의 업무 완료 근거로 승격하지 않는다. 자세한 API와 대기·복구 계약은 [실행 연결 안내](13_execution_and_plan_api.md)를 따른다.
+
+## 10. 구매 승인과 발주 적용
+
+V23/DDL15는 `purchase_applications`와 기존 승인·발주 테이블의 연결을 추가한다. 신규 구매 제안은 계획당 하나이며 payload·버전·hash·요청자·제안 agent를 변경할 수 없다. 최종 결정과 적용도 각각 하나만 저장한다.
+
+```mermaid
+erDiagram
+    cases ||--o{ governance_actions : case_id
+    work_items ||--o{ governance_actions : work_item_id
+    replenishment_plans ||--o| governance_actions : replenishment_plan_id
+    agents ||--o{ governance_actions : proposed_by_agent_id
+    governance_actions ||--o{ attention_requests : governance_action_id
+    governance_actions ||--o{ governance_decisions : governance_action_id
+    governance_actions ||--o| purchase_applications : governance_action_id
+    governance_decisions ||--o| purchase_applications : governance_decision_id
+    purchase_applications ||--o{ purchase_orders : purchase_application_id
+    warehouses ||--o{ purchase_orders : warehouse_id
+    supplier_material_terms ||--o{ purchase_order_items : supplier_material_term_id
+```
+
+- 연결된 제안·Attention·적용은 같은 Case/Work Item/계획을 참조한다. 최종 결정은 append-only이고 적용은 UPDATE·DELETE·TRUNCATE를 허용하지 않는다. 기존 미연결 다단계 승인 기록은 유지한다.
+- 발주 상세의 `quantity`/`received_quantity`는 기본 단위다. 구매 수량·구매 단가·구매/기본 단위·환산율·원 단위 금액·상세 납기·공급 조건을 별도 저장한다. 기존 행의 새 필드는 추측해서 채우지 않는다.
+- 기본 단가 `unit_price`만 NUMERIC(24,9)로 확장한다. 구매 수량·단가는 NUMERIC(18,6), `line_amount`는 NUMERIC(30,0)이다. 기본 수량/단가 환산은 정확히 일치해야 하며 원 단위 금액에만 HALF_UP을 적용한다.
+- 상세 납기를 가용 공급 계산에 우선 사용하고, 목적지가 다른 발주는 해당 창고의 공급으로 계산하지 않는다. 발주 적용과 기본 단위 입고·LOT 추적 관계를 유지한다.
+- `work_items.procurement_plan_id`/`procurement_outcome`은 서버 소유 완료 근거다. 일반 metadata를 완료 근거로 사용하지 않는다.
+- 계획 입력 테이블의 INSERT·UPDATE·DELETE·TRUNCATE는 공통 source guard를 먼저 획득한다. 승인 시 최신 입력을 비교하는 동안 새 입력 행이 끼어들지 않도록 직렬화한다.

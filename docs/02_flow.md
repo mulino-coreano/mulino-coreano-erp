@@ -261,7 +261,13 @@ flowchart TD
 - `waiting_conditions.resolved_by_event_id`와 `runs.trigger_event_id`가 재개 원인을 보존한다. 증거와 Claim의 지지/반증 관계는 검증된 동일 Case 안에 기록한다.
 - `decisions`와 `attention_requests`가 Work Item을 참조하면 같은 Case여야 한다. 인간 답변의 `answer_scope`/결정의 `scope`는 컨텍스트에 보존하며 자동으로 전사 정책으로 확대하지 않는다.
 - Work Item의 `metadata.businessRef`는 ERP 행을 가리키는 인덱스다. 운영 Case의 생성이나 승인 Event 수신이 발주·입고·리콜 등 ERP 쓰기 권한을 대신하지 않는다. 해당 변경은 위 거버넌스 승인 매트릭스를 그대로 따른다.
-- Run의 QUEUED/lease·완료·대기·실패 API와 Node 실행기, 최소 Zig CLI·Codex 이미지를 구현했다. 실제 로그인·모델 업무 수행, 인간 답변/승인 채널과 ERP 변경 capability는 후속이다. 명령·이미지 검증은 [실행 이미지 안내](14_cli_and_runtime.md)를 따른다.
+- Run의 QUEUED/lease·완료·대기·실패 API와 Node 실행기, 최소 Zig CLI·Codex 이미지를 구현했다. 구매 제안·MANAGER 결정·원자적 발주 반영 REST 경로도 추가했다. 실제 로그인·모델 업무 수행, 인간 대화의 승인 도구 연결과 그 외 ERP 변경 capability는 후속이다. 명령·이미지 검증은 [실행 이미지 안내](14_cli_and_runtime.md)를 따른다.
+
+### 구매 승인 구현 경로
+
+공급망이 저장한 최신 계획을 Procurement가 재검증하여 구매안을 만든다. 이 단계는 발주 행을 만들지 않으며, 승인 Attention과 APPROVAL 대기를 저장하고 현재 Run을 종료한다. MANAGER의 버전·hash·사유가 있는 결정에서 현재 입력을 다시 확인한 후 공급처별 발주·상세·최종 결정·적용·감사·재개 이벤트를 한 트랜잭션으로 저장한다.
+
+반려 또는 입력 변경은 발주 없이 해당 구매 업무를 종결하고 재판단 요청을 남긴다. 구매가 불필요하면 가짜 승인이나 발주를 생성하지 않는다. 구매 수량과 기본 단위 수량, 상세 납기를 구분하며 새 발주의 창고를 명시한다. 생성 후 실제 발주 행과 승인 내용을 비교해야 구매 업무를 완료할 수 있다. 생산·입고가 남은 상위 Case는 자동 종결하지 않는다. 관계는 [ERD §10](03_erd.md#10-구매-승인과-발주-적용), API는 [실행 연결 안내](13_execution_and_plan_api.md)를 따른다.
 
 ### 외부 신원과 조회 경계
 

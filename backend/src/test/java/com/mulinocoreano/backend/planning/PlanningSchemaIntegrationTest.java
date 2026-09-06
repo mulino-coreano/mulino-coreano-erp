@@ -44,7 +44,9 @@ class PlanningSchemaIntegrationTest {
                 .isEqualByComparingTo("0.123456");
         rejects("UPDATE stock SET quantity=-0.000001 WHERE product_id=" + product);
         assertThat(jdbc.sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('purchase_order_items','inbound','raw_material_lots','production_lots','production_ingredients','stock','order_items','outbound','outbound_lots') AND column_name IN ('quantity','remaining_quantity','received_quantity','quantity_used','lot_quantity','unit_price') AND numeric_precision=18 AND numeric_scale=6")
-                .query(Integer.class).single()).isEqualTo(13);
+                .query(Integer.class).single()).isEqualTo(12);
+        assertThat(jdbc.sql("SELECT numeric_precision=24 AND numeric_scale=9 FROM information_schema.columns WHERE table_schema='public' AND table_name='purchase_order_items' AND column_name='unit_price'")
+                .query(Boolean.class).single()).isTrue();
     }
 
     @Test

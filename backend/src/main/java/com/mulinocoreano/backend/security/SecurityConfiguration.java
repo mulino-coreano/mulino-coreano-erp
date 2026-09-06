@@ -27,13 +27,14 @@ public class SecurityConfiguration {
 
     @Bean @Order(1)
     SecurityFilterChain agentSecurity(HttpSecurity http, DatabaseRunCapabilityAccess capabilities) throws Exception {
-        return http.securityMatcher("/api/v1/agent/**", "/api/v1/cases/*/plans")
+        return http.securityMatcher("/api/v1/agent/**", "/api/v1/cases/*/plans", "/api/v1/plans/*/purchase-proposal")
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable())
                 .addFilterBefore(new RunCapabilityFilter(capabilities), AnonymousAuthenticationFilter.class)
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers(HttpMethod.POST, "/api/v1/cases/*/plans").hasAuthority("agent:SUPPLY_CHAIN")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/plans/*/purchase-proposal").hasAuthority("agent:PROCUREMENT")
                         .requestMatchers(HttpMethod.POST, "/api/v1/agent/work-items").hasAuthority("agent:ORCHESTRATOR")
                         .requestMatchers(HttpMethod.POST, "/api/v1/agent/work-items/*/transition").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/agent/cases/*", "/api/v1/agent/plans/*").authenticated()
@@ -52,6 +53,7 @@ public class SecurityConfiguration {
                         // 컨테이너의 오류 응답 전달만 허용한다. 직접 /error 요청은 아래 기본 거부를 유지한다.
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/cases").hasAuthority("work:write")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/approvals/*/decision").hasAuthority("procurement:decide")
                         .requestMatchers(HttpMethod.POST, "/api/v1/internal/runs/**")
                             .access((authentication, context) -> new AuthorizationDecision(
                                 authentication.get().getPrincipal() instanceof ServiceActor service

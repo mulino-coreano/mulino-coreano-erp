@@ -97,7 +97,7 @@ public class PlanningSnapshotRepository {
         var supply = new ArrayList<BomPlanner.StockLot>();
         loadProductSupply(facts, warehouseId, products, outbound, supply);
         if (!rawIds.isEmpty()) {
-            loadPurchases(facts, rawIds, materials, asOf, end, supply);
+            loadPurchases(facts, warehouseId, rawIds, materials, asOf, end, supply);
             loadRawSupply(facts, warehouseId, materials, supply);
         }
         var productInputs = loadDemand(facts, roots, products, outbound, asOf);
@@ -169,11 +169,12 @@ public class PlanningSnapshotRepository {
         }
     }
 
-    private void loadPurchases(Map<String, SourceFact> facts, Set<Long> rawIds, Map<Long, Map<String, Object>> materials,
+    private void loadPurchases(Map<String, SourceFact> facts, long warehouse, Set<Long> rawIds, Map<Long, Map<String, Object>> materials,
                                LocalDate start, LocalDate end, List<BomPlanner.StockLot> supply) {
         var items = rows(facts, "purchase_order_items", "purchase_order_item_id", """
                 SELECT i.purchase_order_item_id,i.purchase_order_id,i.raw_material_id,i.quantity,i.received_quantity,i.unit_price,
-                       p.supplier_id,p.order_date,p.expected_delivery_date,p.status
+                       p.supplier_id,p.order_date,COALESCE(i.expected_delivery_date,p.expected_delivery_date) AS expected_delivery_date,
+                       p.warehouse_id AS purchase_warehouse_id,p.status
                 FROM purchase_order_items i JOIN purchase_orders p USING(purchase_order_id) WHERE i.raw_material_id IN (:ids)
                 """, Map.of("ids", rawIds));
         if (items.isEmpty()) return;
@@ -194,6 +195,7 @@ public class PlanningSnapshotRepository {
             LocalDate due = date(item, "expected_delivery_date");
             if (Set.of("ORDERED", "PARTIAL").contains(str(item, "status")) && remaining.signum() > 0
                     && due != null && !due.isBefore(start) && !due.isAfter(end)) {
+                if (item.get("purchase_warehouse_id") != null && id(item,"purchase_warehouse_id") != warehouse) continue;
                 supply.add(new BomPlanner.StockLot("purchase_order_items:" + itemId, materialItem(materials.get(id(item, "raw_material_id"))),
                         remaining, due, null, null, true));
             }

@@ -247,7 +247,7 @@ Event는 불변 사실이다. 애플리케이션과 무관하게 DB 트리거가
 
 Event 요청은 알 수 없는 Case/Work Item, 서로 다른 Case의 조합, 해소된 scope와 모순되는 payload identity, 스키마 길이 초과를 `400 Bad Request`로 거부한다. 승인 Event는 완료된 Attention 또는 승인된 Governance Action을 DB에서 다시 해소해 인간 actor를 도출하며, 결정 문자열만으로 대기를 풀 수 없다. Event 멱등 키가 다른 내용에 재사용되거나 동일 Work Item에 활성 Run이 이미 존재하면 `409 Conflict`를 반환한다. Run 요청도 READY 상태·현재 배정·활성 에이전트·Case 소속을 삽입 전에 검증한다.
 
-JWT 인증과 현재 ERP 역할 검증을 추가했다. 업무 조회는 `erp:read`, Case 생성은 OPERATOR/MANAGER 및 `work:write`, 이벤트·Run 예약·dispatch는 허용된 worker 서비스 및 `worker:dispatch`로 제한한다. 발주 승인·변경 적용과 읽기 actor 감사는 후속이다. 백엔드는 내부에 두고 MCP만 고정 HTTPS로 연결한다. 실제 tenant 및 두 대화 클라이언트의 로그인 검증은 로컬 자동 테스트와 구분한다.
+JWT 인증과 현재 ERP 역할 검증을 추가했다. 업무 조회는 `erp:read`, Case 생성은 OPERATOR/MANAGER 및 `work:write`, 이벤트·Run 예약·dispatch는 허용된 worker 서비스 및 `worker:dispatch`로 제한한다. 구매 제안·MANAGER 결정·발주 적용 REST 경로를 추가했다. 대화 승인 도구 연결과 일반 읽기 actor 감사는 후속이다. 백엔드는 내부에 두고 MCP만 고정 HTTPS로 연결한다. 실제 tenant 및 두 대화 클라이언트의 로그인 검증은 로컬 자동 테스트와 구분한다.
 
 ### 목표 아키텍처와 현재 구현의 경계
 
@@ -282,4 +282,4 @@ npm ci
 npm start
 ```
 
-독립 DDL 검증에는 `database/ddl/00~14`을 번호 순서로 적용하고 `database/seed/interface.sql`을 적용한다. 이 경로로 만든 DB에 Flyway를 그대로 실행하면 비어 있지 않은 미관리 스키마 오류가 발생한다. 백엔드 실행용 빈 DB는 Flyway 경로 하나로 초기화한다. stdio는 ERP access token이 필요하고, HTTP 전송은 Auth0 OBO client 설정이 필요하다. [Auth0 연결 안내](11_auth0_setup.md)와 [MCP 실행 안내](../mcp-server/README.md)를 따른다.
+독립 DDL 검증에는 `database/ddl/00~15`을 번호 순서로 적용하고 `database/seed/interface.sql`을 적용한다. 이 경로로 만든 DB에 Flyway를 그대로 실행하면 비어 있지 않은 미관리 스키마 오류가 발생한다. 백엔드 실행용 빈 DB는 Flyway 경로 하나로 초기화한다. stdio는 ERP access token이 필요하고, HTTP 전송은 Auth0 OBO client 설정이 필요하다. [Auth0 연결 안내](11_auth0_setup.md)와 [MCP 실행 안내](../mcp-server/README.md)를 따른다.

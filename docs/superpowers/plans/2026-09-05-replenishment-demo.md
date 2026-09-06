@@ -211,6 +211,16 @@ ACT 접수 → Orchestrator 실행 예약
 
 **산출 계약:** MANAGER 승인 한 번에 정확한 원재료 PO 묶음이 한 번 생성되고 근거·감사로 추적된다.
 
+#### 6단계 구현 시 확정한 저장 계약
+
+**현재 우선순위 — 코드 정리:** 구매 제안·결정 use case와 데이터 접근을 분리하고 미사용 JPA를 제거했다. 구매 모듈의 조회·저장·계획 로딩·검증 조회는 스키마 생성 기반 jOOQ로 전환했다. 기존 응답·권한·금액·트랜잭션 회귀를 검증하며 나머지 JDBC 코드는 점진적으로 정리한다. 라이브러리 도입만으로 업무 조건·동시성의 정확성이 보장된다고 간주하지 않는다.
+
+- 기존 발주 상세의 quantity/received_quantity는 기본 단위를 유지한다. 구매 수량·구매 단가·구매/기본 단위·환산율·약정 금액을 별도 열에 저장한다. 기본 단가 unit_price만 NUMERIC(24,9)로 확장하여 현재 KG/G·L/ML의 0.001/1/1000 환산을 정확히 보존한다. 제안 단계에서도 무손실 나눗셈과 저장 범위를 검사하며 기본 단가를 반올림하지 않는다.
+- 공급처별 PO 하나에 상세별 납기를 저장하고 헤더에는 가장 늦은 납기를 둔다. 가용 공급 계산은 상세 납기를 우선한다. 새 PO의 계획 거점도 저장한다. 기존 행은 새 단위·거점을 추측해서 채우지 않는다.
+- 계획에 연결된 새 governance action은 불변 payload·version·hash·Case/WI·요청 인간·제안 agent를 갖는다. 단일 최종 결정과 단일 purchase application을 강제한다. 일반 Attention 답변과 구매 승인은 action FK로 구분한다.
+- 구매 승인 전에는 planning source 전체의 변경이 먼저 획득하는 source guard로 신규 행까지 직렬화하고 최신 source와 계산을 비교한다. 잠금 순서는 요청 조정 → source guard → 창고 조정 → WI/Run/Case/Agent → plan → action → 관련 행이다. 원자적 발주 이후에는 이전 source hash 대신 승인한 발주 행과 실제 생성 행을 비교한다.
+- APPROVAL 대기는 제안 transaction의 서버 전용 함수가 저장한다. 모델이 임의 APPROVAL 조건을 등록할 수 없다. 이미 저장된 승인 대기 결과는 원래 Run receipt로 확인한다. 구매 후보가 없는 READY 계획에는 가짜 승인이나 PO를 생성하지 않는다.
+
 ### 7단계 — 두 대화 클라이언트의 업무 UX
 
 **책임 영역:** Case overview query, MCP tool registry/한국어 응답, 클라이언트 연결 설정.

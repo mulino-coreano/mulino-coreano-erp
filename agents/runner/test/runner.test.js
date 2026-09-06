@@ -42,6 +42,24 @@ test('204 is idle and a real child success is reported through finish', async t 
   assert.ok(calls.every(c => c.key));
 });
 
+test('saved approval wait uses the original server receipt without creating model-supplied approval conditions', async t => {
+  const {runner,calls}=await setup(t,{mode:'approval',route:({action,res})=>{
+    if(action==='finish'){json(res,{...receipt('WAITING'),alreadyFinished:true});return true;}
+  }});
+  assert.equal((await runner.runOnce()).outcome,'WAITING');
+  const finish=calls.filter(call=>call.action==='finish');
+  assert.equal(finish.length,1);assert.equal(finish[0].body.outcome,'WAITING');
+  assert.deepEqual(finish[0].body.waitingConditions,[]);
+});
+
+test('an invented approval reference cannot put an active run into approval waiting', async t => {
+  const {runner,calls}=await setup(t,{mode:'approval',route:({action,res,body})=>{
+    if(action==='finish'&&body.outcome==='WAITING'){json(res,{error:'INVALID_RESULT'},400);return true;}
+  }});
+  assert.equal((await runner.runOnce()).outcome,'FAILED');
+  assert.deepEqual(calls.filter(call=>call.action==='finish').map(call=>call.body.outcome),['WAITING','FAILED']);
+});
+
 test('one in-flight child, heartbeat renews lease, stop reports ABORTED', async t => {
   const { runner, calls, handles, clock } = await setup(t, { mode: 'hang' });
   const running = runner.runOnce();

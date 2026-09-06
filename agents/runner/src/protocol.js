@@ -82,7 +82,10 @@ export function validateResult(value) {
   require(value.resultRef === undefined || value.resultRef === null || string(value.resultRef, 256), 'INVALID_MODEL_RESULT');
   const waits = value.waitingConditions ?? [];
   require(Array.isArray(waits) && waits.length <= 16, 'INVALID_MODEL_RESULT');
-  require(value.outcome === 'WAITING' ? waits.length > 0 : waits.length === 0, 'INVALID_MODEL_RESULT');
+  // This reference describes a wait already committed by the proposal API. It grants
+  // no new wait: an active Run still rejects an empty WAITING result on the server.
+  const persistedApproval = typeof value.resultRef === 'string' && /^APPROVAL-[1-9]\d*$/.test(value.resultRef);
+  require(value.outcome === 'WAITING' ? waits.length > 0 || persistedApproval : waits.length === 0, 'INVALID_MODEL_RESULT');
   for (const wait of waits) {
     require(object(wait) && ['DEPENDENCY_DONE', 'SCHEDULED_TIME'].includes(wait.type)
       && object(wait.payload) && string(wait.reason, 1000)

@@ -1,5 +1,6 @@
 package com.mulinocoreano.backend.execution;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -29,8 +30,10 @@ public class RunExecutionService {
     private final RunService runs;
     private final DispatcherService dispatcher;
     private final ObjectMapper mapper;
-    public RunExecutionService(JdbcClient jdbc,RunLeaseRepository leases,ExecutionContextBuilder contexts,RunService runs,DispatcherService dispatcher,ObjectMapper mapper,PlatformTransactionManager transactionManager) {
+    private final ObjectProvider<ProcurementCompletionVerifier> procurementCompletion;
+    public RunExecutionService(JdbcClient jdbc,RunLeaseRepository leases,ExecutionContextBuilder contexts,RunService runs,DispatcherService dispatcher,ObjectMapper mapper,PlatformTransactionManager transactionManager,ObjectProvider<ProcurementCompletionVerifier> procurementCompletion) {
         this.jdbc=jdbc;this.leases=leases;this.contexts=contexts;this.runs=runs;this.dispatcher=dispatcher;this.mapper=mapper;
+        this.procurementCompletion = procurementCompletion;
         claimTransaction=new TransactionTemplate(transactionManager);
         claimTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         claimTransaction.setTimeout(30);
@@ -113,6 +116,28 @@ public class RunExecutionService {
         return finishLocked(row,outcome,summary,waiting);
     }
 
+    /** Trusted purchasing-service hook. No HTTP controller exposes this operation. */
+    public Receipt awaitPurchaseApproval(long runId, long governanceActionId, String summary) {
+        RunLeaseRepository.requireTransaction();
+        var row=leases.lock(runId);
+        leases.requireLive(row);
+        if (!"PROCUREMENT".equals(row.agentKey())) throw conflict("Only the assigned purchasing role may await purchase approval");
+        boolean pending=jdbc.sql("""
+                SELECT g.governance_action_id FROM governance_actions g
+                JOIN work_items w ON w.work_item_id=g.work_item_id AND w.case_id=g.case_id
+                WHERE g.governance_action_id=:id AND g.case_id=:caseId AND g.work_item_id=:wi
+                  AND g.proposed_by_agent_id=:agent AND g.replenishment_plan_id IS NOT NULL
+                  AND g.resource_type='REPLENISHMENT_PLAN' AND g.required_role='MANAGER' AND g.status='PENDING'
+                  AND (g.expires_at IS NULL OR g.expires_at>clock_timestamp())
+                  AND w.procurement_plan_id=g.replenishment_plan_id AND w.procurement_outcome='PROPOSED'
+                FOR UPDATE OF g
+                """).param("id",governanceActionId).param("caseId",row.caseId()).param("wi",row.workId())
+                .param("agent",row.agentId()).query(Long.class).optional().isPresent();
+        if (!pending || hasActiveWait(row.workId())) throw conflict("Purchase approval is not pending for this Run");
+        var wait=new Wait("APPROVAL",Map.of("approval_id",Long.toString(governanceActionId)),"MANAGER의 구매 승인 필요");
+        return finishLocked(row,"WAITING",summary,List.of(wait),true);
+    }
+
     @Transactional public Map<String,Object> retry(String runRef,String workerId,String token) {
         var row=workerLease(runRef,workerId,token);
         if(!Set.of("FAILED","ABORTED").contains(row.status())) throw conflict("Only a failed or aborted Run can be retried");
@@ -123,13 +148,19 @@ public class RunExecutionService {
     }
 
     private Receipt finishLocked(RunLeaseRepository.RunRow row,String outcome,String summary,List<Wait> waiting) {
+        return finishLocked(row,outcome,summary,waiting,false);
+    }
+
+    private Receipt finishLocked(RunLeaseRepository.RunRow row,String outcome,String summary,List<Wait> waiting,boolean trustedApproval) {
         requireResultText(summary, 8000);
         if (outcome == null || !Set.of("DONE", "WAITING", "FAILED", "ABORTED").contains(outcome)) throw invalidResult();
         if (waiting != null && waiting.stream().anyMatch(java.util.Objects::isNull)) throw invalidResult();
         List<Wait> waits = waiting == null ? List.of() : List.copyOf(waiting);
-        if ("WAITING".equals(outcome)) waits = normalizeWaiting(row, waits);
-        else if (!waits.isEmpty()) throw invalidResult();
+        if ("WAITING".equals(outcome) && !trustedApproval) waits = normalizeWaiting(row, waits);
+        else if (trustedApproval && !"WAITING".equals(outcome)) throw invalidResult();
+        else if (!"WAITING".equals(outcome) && !waits.isEmpty()) throw invalidResult();
         if("DONE".equals(outcome)) validateCompletion(row);
+        leases.requireLive(leases.lock(row.id()));
         String runStatus=Set.of("DONE","WAITING").contains(outcome)?"COMPLETED":outcome;
         // Release the active Run before storing waits or dispatching terminal dependency events.
         jdbc.sql("""
@@ -178,7 +209,15 @@ public class RunExecutionService {
                     AND (assigned_agent_id IS NOT NULL OR assigned_user_id IS NOT NULL))
                     """).param("c",row.caseId()).param("wi",row.workId()).param("ref",row.workRef()).query(Boolean.class).single();
             if(!responsible) throw completionNotVerified();
+        } else if ("PROCUREMENT".equals(row.agentKey())) {
+            var verifier=procurementCompletion.getIfAvailable();
+            if (verifier==null || !verifier.verified(row.caseId(),row.workId())) throw completionNotVerified();
         } else throw completionNotVerified();
+    }
+
+    private boolean hasActiveWait(long workId) {
+        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM waiting_conditions WHERE work_item_id=:wi AND status='ACTIVE')")
+                .param("wi",workId).query(Boolean.class).single();
     }
 
     private List<Wait> normalizeWaiting(RunLeaseRepository.RunRow row, List<Wait> waits) {

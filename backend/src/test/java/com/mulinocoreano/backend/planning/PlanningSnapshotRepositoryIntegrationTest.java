@@ -57,6 +57,27 @@ class PlanningSnapshotRepositoryIntegrationTest {
 
     private long id(String query) { return jdbc.sql(query).query(Long.class).single(); }
 
+    @Test void purchaseLineArrivalTakesPrecedenceOverTheHeaderFinalArrival() {
+        jdbc.sql("UPDATE purchase_orders SET expected_delivery_date=DATE '2026-09-20' WHERE status='ORDERED'").update();
+        jdbc.sql("""
+                UPDATE purchase_order_items i SET purchase_quantity=i.quantity,purchase_unit_price=i.unit_price,
+                  purchase_unit=t.purchase_unit,base_unit=r.unit,base_quantity_per_purchase_unit=1,
+                  line_amount=round(i.quantity*i.unit_price,0),expected_delivery_date=DATE '2026-09-07',
+                  supplier_material_term_id=t.supplier_material_term_id
+                FROM purchase_orders p,supplier_material_terms t,raw_materials r
+                WHERE i.purchase_order_id=p.purchase_order_id AND p.status='ORDERED'
+                  AND t.supplier_id=p.supplier_id AND t.raw_material_id=i.raw_material_id AND r.raw_material_id=i.raw_material_id
+                """).update();
+        assertThat(load().supply().stream().filter(BomPlanner.StockLot::projected).toList())
+                .singleElement().satisfies(lot->assertThat(lot.availableOn()).isEqualTo(LocalDate.of(2026,9,7)));
+    }
+
+    @Test void purchaseAssignedToAnotherWarehouseIsNotSupplyForThisPlan() {
+        long other=id("INSERT INTO warehouses(name,type) VALUES('다른 목적지','AMBIENT') RETURNING warehouse_id");
+        jdbc.sql("UPDATE purchase_orders SET warehouse_id=:warehouse WHERE status='ORDERED'").param("warehouse",other).update();
+        assertThat(load().supply().stream().filter(BomPlanner.StockLot::projected).toList()).isEmpty();
+    }
+
     @Test
     void rejectsStockThatDisagreesWithLotResiduals() {
         jdbc.sql("UPDATE stock SET quantity=quantity+1 WHERE product_id=:id").param("id", amr).update();

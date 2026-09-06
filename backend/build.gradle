@@ -18,21 +18,53 @@ repositories {
     mavenCentral()
 }
 
+sourceSets {
+    codegen
+    main.java.srcDir layout.buildDirectory.dir('generated/sources/jooq')
+}
+
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.flywaydb:flyway-database-postgresql'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-jooq'
+    compileOnly 'jakarta.xml.bind:jakarta.xml.bind-api'
+    codegenImplementation 'org.jooq:jooq-codegen'
+    codegenImplementation 'org.flywaydb:flyway-core'
+    codegenImplementation 'org.flywaydb:flyway-database-postgresql'
+    codegenImplementation 'org.testcontainers:testcontainers-postgresql'
+    codegenRuntimeOnly 'org.postgresql:postgresql'
+    codegenRuntimeOnly 'org.slf4j:slf4j-simple'
     runtimeOnly 'org.postgresql:postgresql'
-    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-flyway-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.register('generateJooq', JavaExec) {
+    description = 'Generate typed SQL metadata from migrations in a disposable PostgreSQL 18 container.'
+    group = 'build'
+    dependsOn tasks.named('codegenClasses')
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    classpath = sourceSets.codegen.runtimeClasspath
+    mainClass = 'com.mulinocoreano.codegen.GenerateJooq'
+    inputs.files(fileTree('src/main/resources/db/migration'))
+    inputs.files(sourceSets.codegen.output)
+    outputs.dir(layout.buildDirectory.dir('generated/sources/jooq'))
+    args file('src/main/resources/db/migration').absolutePath,
+            layout.buildDirectory.dir('generated/sources/jooq').get().asFile.absolutePath
+    systemProperty 'org.jooq.no-logo', 'true'
+    systemProperty 'org.jooq.no-tips', 'true'
+    systemProperty 'org.slf4j.simpleLogger.defaultLogLevel', 'warn'
+}
+
+tasks.named('compileJava') {
+    dependsOn tasks.named('generateJooq')
 }
 
 tasks.named('test') {

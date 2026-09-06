@@ -608,6 +608,7 @@ public class DispatcherService {
                     WHERE ar.attention_request_id=:attentionId
                       AND ar.status='ANSWERED'
                       AND ar.resolved_by_user_id IS NOT NULL
+                      AND ar.governance_action_id IS NULL
                     FOR SHARE OF ar
                     """)
                     .param("attentionId", attentionId)
@@ -635,6 +636,11 @@ public class DispatcherService {
             assertCompatibleScope(requestedScope, authoritative);
             return new PreparedApproval(
                     authoritative, new EventActor("USER", attention.userId()), false);
+        }
+
+        if (jdbc.sql("SELECT EXISTS(SELECT 1 FROM governance_actions WHERE governance_action_id=:id AND replenishment_plan_id IS NOT NULL)")
+                .param("id",governanceActionId).query(Boolean.class).single()) {
+            return resolvePurchaseApproval(governanceActionId,requestedScope,payload);
         }
 
         ApprovedGovernanceAction approval = jdbc.sql("""
@@ -693,6 +699,33 @@ public class DispatcherService {
                     .optional();
         }
         return Optional.empty();
+    }
+
+    private PreparedApproval resolvePurchaseApproval(long id, EventScope requested, Map<String,Object> payload) {
+        PreparedApproval approval=jdbc.sql("""
+                SELECT g.case_id,c.case_ref,g.work_item_id,w.work_item_ref,d.decided_by
+                FROM governance_actions g
+                JOIN cases c ON c.case_id=g.case_id
+                JOIN work_items w ON w.work_item_id=g.work_item_id AND w.case_id=g.case_id
+                JOIN replenishment_plans p ON p.replenishment_plan_id=g.replenishment_plan_id AND p.case_id=g.case_id
+                JOIN governance_decisions d ON d.governance_action_id=g.governance_action_id
+                JOIN users u ON u.user_id=d.decided_by
+                WHERE g.governance_action_id=:id AND g.status='APPROVED' AND g.required_role='MANAGER'
+                  AND g.resource_type='REPLENISHMENT_PLAN' AND g.resource_id=p.replenishment_plan_id
+                  AND d.is_final AND d.decision='APPROVE' AND u.role='MANAGER' AND u.is_active
+                  AND d.governance_decision_id=(SELECT latest.governance_decision_id FROM governance_decisions latest
+                    WHERE latest.governance_action_id=g.governance_action_id
+                    ORDER BY latest.decided_at DESC,latest.governance_decision_id DESC LIMIT 1)
+                FOR SHARE OF g,d,u
+                """).param("id",id).query((rs,n)->new PreparedApproval(
+                    new EventScope(rs.getLong("case_id"),rs.getString("case_ref"),rs.getLong("work_item_id"),rs.getString("work_item_ref")),
+                    new EventActor("USER",rs.getLong("decided_by")),false)).optional()
+                .orElseThrow(()->new InvalidInterfaceRequestException("Purchase approval requires its final active MANAGER decision"));
+        assertCompatibleScope(requested,approval.scope());
+        validateDecisionAliases(payload,"APPROVED");
+        for (String alias:List.of("approval_id","approvalId","governance_action_id","governanceActionId")) payload.put(alias,Long.toString(id));
+        payload.put("decision","APPROVED");
+        return approval;
     }
 
     private EventScope authoritativeGovernanceScope(

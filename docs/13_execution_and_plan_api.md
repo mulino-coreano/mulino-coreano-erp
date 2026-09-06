@@ -1,6 +1,6 @@
 # 계획 저장과 Run 실행 연결
 
-계산 결과를 불변 계획 버전으로 저장하고, Case·Work Item에 묶인 실행 권한으로 업무를 처리하는 서버 경로와 Node 실행기를 구현했다. 최소 Zig CLI와 Codex 컨테이너 이미지는 [CLI·런타임 안내](14_cli_and_runtime.md)에 연결했다. 실제 Auth0/두 대화 클라이언트 로그인·모델 업무 수행, 구매 승인·발주 적용은 아직 남아 있다.
+계산 결과를 불변 계획 버전으로 저장하고, Case·Work Item에 묶인 실행 권한으로 업무를 처리하는 서버 경로와 Node 실행기를 구현했다. 구매 제안·MANAGER 결정·발주 적용 REST 경로도 연결했다. 최소 Zig CLI와 Codex 컨테이너 이미지는 [CLI·런타임 안내](14_cli_and_runtime.md)를 따른다. 실제 Auth0/두 대화 클라이언트 로그인·모델 업무 수행과 대화 승인 도구 연결은 아직 남아 있다.
 
 ## 사용자 목표 접수
 
@@ -34,7 +34,7 @@ V22는 Work Item에 서버 소유 `planning_attempt_sequence`, `latest_planning_
 
 따라서 READY 버전 뒤에 계획을 만들지 못한 최신 실패가 있어도 예전 READY로 DONE을 선언할 수 없다. SUPPLY_CHAIN 완료는 최신 시도가 READY이고 같은 업무의 최신 계획을 가리킬 때만 가능하다. 에이전트가 전달한 metadata나 과거의 미검증 계획은 완료 근거로 사용하지 않는다.
 
-현재 Procurement/QC 완료 검증은 후속 업무 구현 전까지 허용하지 않는다. Orchestrator의 종료도 명시적 후속 책임 없이 허용하지 않으며, 어떤 Run 종료도 상위 품절 방지 Case를 자동 종결하지 않는다.
+Procurement 완료는 실제 발주와 불변 승인 내용을 비교하거나 서버가 구매 불필요를 검증한 경우에만 허용한다. QC 완료는 아직 허용하지 않는다. Orchestrator의 종료도 명시적 후속 책임 없이 허용하지 않으며, 어떤 Run 종료도 상위 품절 방지 Case를 자동 종결하지 않는다.
 
 ## 실행 권한과 수명주기
 
@@ -58,7 +58,28 @@ flowchart LR
 - `context_snapshot`은 예약 당시 기록으로 보존한다. claim 시 현재 Case와 관련 ERP 사실을 다시 구성해 별도 `execution_context`에 기록한다. 이전 계획 source snapshot은 덮어쓰지 않는다.
 - heartbeat는 15초, lease는 60초, 실행 상한은 600초다. 임대 유실은 최대 한 번 새 Run으로 재예약한다. 반복 실패·기한 초과·명시적 실패는 BLOCKED와 Attention으로 남긴다.
 - Work Item과 Run의 종료, 대기 저장, 후속 이벤트는 원자적으로 처리한다. CLI가 먼저 업무를 종료한 뒤 프로세스가 실패해도 원래 완료 receipt를 덮어쓰지 않는다.
-- 현재 agent 대기 API는 DEPENDENCY_DONE과 SCHEDULED_TIME을 지원하며 최대 16개다. 충돌하는 alias는 거부하고 유효한 시각은 offset이 있는 표준 형식으로 정규화한다. 발주 승인 대기의 실제 생성·응답 경로는 후속 단계에서 연결한다.
+- 일반 agent 대기 API는 DEPENDENCY_DONE과 SCHEDULED_TIME을 지원하며 최대 16개다. 충돌하는 alias와 잘못된 시각은 거부한다. APPROVAL 대기는 구매 제안 트랜잭션의 서버 전용 경로만 만들 수 있다.
+
+## 구매 제안·결정·조회
+
+| API | 책임 |
+|---|---|
+| `POST /api/v1/plans/{ref}/purchase-proposal` | 현재 Procurement capability와 멱등 키로 최신 계획을 재검증하고 불변 제안·Attention·승인 대기 저장. 본문은 `{}`이며 발주 행을 입력받지 않는다 |
+| `GET /api/v1/approvals/{id}` | `erp:read`로 구매 내용·요청자·제안 역할·버전/hash·결정·생성 발주 ID 조회 |
+| `POST /api/v1/approvals/{id}/decision` | 활성 MANAGER 및 `procurement:decide`. APPROVE/BLOCK, expectedVersion, proposalHash, reason과 멱등 키 필요 |
+| `GET /api/v1/purchase-orders/{id}` | 실제 기본/구매 단위 수량·가격·납기와 계획·승인·적용 연결 조회 |
+
+승인 전에는 발주가 없다. 승인과 발주·결정·적용·감사·이벤트가 함께 커밋되며 중간 실패는 전부 롤백한다. 동일 요청은 기존 결과를 재생한다. 변경된 입력은 원 제안을 EXPIRED로 기록한 뒤 409를 반환한다. 반려·만료가 같은 제안의 자동 재요청을 만들지 않는다. 이 REST 구현이 실제 대화 클라이언트에서 인간 확인을 받았다는 증거는 아니다.
+
+제안의 `executionResult`는 서버가 이미 저장한 상태다. 승인 대기는 `outcome=WAITING`, 빈 `waitingConditions`, `resultRef=APPROVAL-<id>`로 표현한다. 실행기는 원래 terminal receipt를 확인하며, 아직 실행 중인 Run에 이런 참조만 보내도 서버가 새 대기를 허용하지 않는다.
+
+## 데이터 접근과 코드 생성
+
+구매 모듈은 제안·결정·검증 서비스와 데이터 접근을 분리했다. 쿼리는 jOOQ 3.21.7의 생성된 테이블·컬럼·enum으로 작성하며 JPA는 사용하지 않는다. 값은 DSL에 전달해 바인딩하고, 요청 값을 SQL 문자열에 이어 붙이지 않는다. 나머지 기존 JDBC 경로는 아직 점진적 전환 대상이다.
+
+`backend`에서 `./gradlew generateJooq`를 실행하면 Testcontainers가 임시 PostgreSQL 18.6을 시작하고 Flyway 전체 마이그레이션을 적용한 뒤 Java 타입을 만든다. Docker가 필요하며 실제 애플리케이션 DB 설정이나 자격증명을 사용하지 않는다. 생성 코드는 `build/generated/sources/jooq`에만 있고 커밋하지 않는다. `compileJava`가 이 작업에 의존하며, 마이그레이션·생성기 변경 시 다시 생성한다. 변경이 없으면 Gradle의 최신 상태 검사를 사용한다.
+
+Spring이 제공하는 DSLContext로 기존 JDBC 트랜잭션에 참여한다. 쿼리의 스키마는 연결의 search_path를 따르므로 테스트 전용 스키마도 격리된다. 타입 생성은 컬럼·값의 타입 오류를 더 일찍 드러내며, 업무 조건과 동시성의 정확성은 별도 통합 테스트로 검증한다. [jOOQ 코드 생성](https://www.jooq.org/doc/latest/manual/code-generation/)과 [Spring 통합](https://docs.spring.io/spring-boot/reference/data/sql.html)을 따른다.
 
 claim은 비밀값을 한 번 발급하는 제어 프로토콜이므로 원래 토큰 응답을 저장·재생하지 않는다. 같은 worker에 활성 lease가 있으면 409로 거부한다. 응답 유실 시 실행기는 즉시 다른 작업을 가져가지 않고 최대 60초 기다린다. 일반 업무 쓰기의 멱등 처리와 이 발급 예외를 구분한다. 기존 수동 dispatch는 호출 사실을 기록하는 관리 트리거이며 Event 인입은 별도의 외부 이벤트 키를 사용한다.
 
@@ -72,8 +93,8 @@ claim은 비밀값을 한 번 발급하는 제어 프로토콜이므로 원래 �
 
 ## 검증과 마이그레이션
 
-- PostgreSQL 18의 전체 Backend `clean test bootJar`: 406개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다.
-- Node 실행기 45개, MCP 19개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
+- PostgreSQL 18의 전체 Backend `clean test bootJar`: 455개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다.
+- Node 실행기 48개, MCP 19개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
 - V20은 QUEUED enum을 먼저 추가하고 V21에서 lease·멱등 데이터와 인덱스를 사용한다. V22는 최신 계산 결과의 원본 업무 연결을 강제한다.
 - 기존 RUNNING 예약 기록은 ABORTED로 정리하고 원래 snapshot을 보존한다. 이미 종료되었거나 실제 대기 중인 의무를 강제로 깨우지 않는다.
-- 독립 DDL 00~14와 Flyway 경로는 별도 DB에서 검증한다. 외부 Auth0/ChatGPT/Codex 로그인 검증, 실제 모델 실행과 발주 승인·적용은 아직 남아 있다.
+- 독립 DDL 00~15·seed와 Flyway 경로를 별도 PostgreSQL 18 DB에서 검증했다. 외부 Auth0/ChatGPT/Codex 로그인, 실제 모델 실행, 대화 승인 연결과 전체 시연 인수는 아직 남아 있다.

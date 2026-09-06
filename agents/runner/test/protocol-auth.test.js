@@ -120,6 +120,13 @@ test('claim business context preserves exact decimal and large integer source va
     unitPrice: '0.000001', ratio: '1e-6', count: 2 });
 });
 
+test('a server-issued approval reference can describe an already persisted wait without manufacturing conditions', () => {
+  const result={ outcome:'WAITING',summary:'승인 대기가 서버에 저장되었습니다.',waitingConditions:[],resultRef:'APPROVAL-42' };
+  assert.deepEqual(validateResult(result),result);
+  for (const resultRef of [null,'PLAN-42','APPROVAL-0','APPROVAL-made-up'])
+    assert.throws(()=>validateResult({...result,resultRef}), /INVALID_MODEL_RESULT/);
+});
+
 test('worker HTTP surfaces lease conflict without server secrets or automatic mutation retry', async t => {
   let calls = 0;
   const app = await server((req, res) => { calls++; json(res, { message: 'lease-secret' }, 409); });
