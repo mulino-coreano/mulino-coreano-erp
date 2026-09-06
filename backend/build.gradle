@@ -68,5 +68,16 @@ tasks.named('compileJava') {
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform { excludeTags "demo-e2e" }
+}
+
+// Explicit acceptance suite: requires disposable PostgreSQL 18, Node dependencies and host Zig CLI.
+tasks.register('demoE2eTest', Test) {
+    description = 'Run real HTTP/MCP/runner/CLI acceptance with simulated identity provider and model.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform { includeTags 'demo-e2e' }
+    outputs.upToDateWhen { false }
+    testLogging { events 'passed', 'failed'; showStandardStreams = true }
 }
