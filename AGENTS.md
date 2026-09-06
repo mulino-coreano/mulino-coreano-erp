@@ -91,7 +91,7 @@ The full flow and agent intervention points are the single source of truth (SSOT
 - Commit message prefixes: `feat` | `chore` | `fix` | `docs` (e.g. `feat(migration): create migration files`)
 
 ## Conventions
-- New purchasing queries use jOOQ generated tables/columns/enums. Keep SQL access in repositories and transaction/business decisions in services. Do not concatenate request values into SQL. Existing JDBC modules are migrated incrementally; do not add another ORM or duplicate hand-maintained schema models.
+- Purchasing and interface intake/read queries use jOOQ generated tables/columns/enums. Keep SQL access in repositories and transaction/business decisions in services. Do not concatenate request values into SQL. Existing JDBC modules are migrated incrementally; do not add another ORM or duplicate hand-maintained schema models. CaseIntakeService owns goal intake; InterfaceQueries owns read presentation, and their repositories own persistence.
 - `./gradlew generateJooq` applies Flyway migrations in a fresh PostgreSQL 18 Docker container and writes only `backend/build/generated/sources/jooq`. Never generate against a production/application database or commit generated files. `compileJava` runs generation when inputs change. Keep jOOQ schema rendering disabled so the connection search path remains authoritative for isolated tests.
 - The issue/PR label scheme is in `docs/06_labels.md` (category + `L0-db`~`L3-dashboard` layer labels)
 - Never commit secrets (`application-local.yml`, `.env`) — already in `.gitignore`

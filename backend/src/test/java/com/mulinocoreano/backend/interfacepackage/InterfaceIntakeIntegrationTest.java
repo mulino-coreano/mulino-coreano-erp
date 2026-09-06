@@ -32,7 +32,7 @@ class InterfaceIntakeIntegrationTest {
     JdbcClient jdbc;
 
     @Autowired
-    InterfaceService service;
+    CaseIntakeService service;
 
     @Test
     void bootstrapProvidesActiveOrchestratorAndDeterministicDefaultChannels() {

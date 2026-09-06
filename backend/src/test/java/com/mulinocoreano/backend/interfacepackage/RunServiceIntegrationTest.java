@@ -26,9 +26,6 @@ class RunServiceIntegrationTest {
     RunService runService;
 
     @Autowired
-    InterfaceService interfaceService;
-
-    @Autowired
     JdbcClient jdbc;
 
     @Autowired
@@ -302,12 +299,12 @@ class RunServiceIntegrationTest {
     }
 
     @Test
-    void interfaceServiceCreateRunDelegatesToTransactionalRunService() {
+    void manualSchedulingUsesTransactionalRunServiceWithoutTriggerEvent() {
         Fixture fixture = fixture(
                 "Interface delegation",
                 "{\"type\":\"stock\",\"ref\":\"STOCK-DELEGATE\"}");
 
-        RunDto run = interfaceService.createRun(request(fixture));
+        RunDto run = runService.createRun(request(fixture), null);
 
         assertThat(run.status()).isEqualTo("QUEUED");
         assertThat(triggerEventIsNull(run.runId())).isTrue();

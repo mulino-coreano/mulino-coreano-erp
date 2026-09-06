@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class InterfaceMonitorIntegrationTest {
 
     @Autowired
-    InterfaceService service;
+    InterfaceQueries service;
 
     @Autowired
     JdbcClient jdbc;

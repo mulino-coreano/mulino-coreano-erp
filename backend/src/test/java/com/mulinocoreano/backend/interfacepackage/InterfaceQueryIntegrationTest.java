@@ -64,6 +64,20 @@ class InterfaceQueryIntegrationTest {
     }
 
     @Test
+    void searchTreatsSqlSyntaxAndWildcardCharactersAsLiteralText() throws Exception {
+        long warehouseId = warehouse("Literal search");
+        String marker = shortId();
+        String query = marker + " %_ ' OR 1=1 --";
+        stock("Item " + query, "LITERAL-" + marker, warehouseId, 7);
+        stock("Unrelated " + marker, "OTHER-" + marker, warehouseId, 9);
+
+        mockMvc.perform(get("/api/v1/ask").param("q", query))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalLocationCount").value(1))
+                .andExpect(jsonPath("$.inventory[0].sku").value("LITERAL-" + marker));
+    }
+
+    @Test
     void askInventoryReportsTotalReturnedAndTruncationTruthfully() throws Exception {
         long warehouseId = warehouse("Truncation warehouse");
         String marker = "Bounded-" + shortId();
