@@ -39,8 +39,8 @@ BEGIN
         RAISE EXCEPTION 'followup responsibility cannot be removed' USING ERRCODE='23514';
     END IF;
     IF TG_OP='UPDATE' THEN
-        IF ROW(OLD.followup_ref,OLD.case_id,OLD.replenishment_plan_id,OLD.source_work_item_id,OLD.work_item_id,OLD.parent_work_item_id,OLD.purchase_application_id,OLD.source_outcome,OLD.created_at)
-            IS DISTINCT FROM ROW(NEW.followup_ref,NEW.case_id,NEW.replenishment_plan_id,NEW.source_work_item_id,NEW.work_item_id,NEW.parent_work_item_id,NEW.purchase_application_id,NEW.source_outcome,NEW.created_at)
+        IF ROW(OLD.replenishment_followup_id,OLD.followup_ref,OLD.case_id,OLD.replenishment_plan_id,OLD.source_work_item_id,OLD.work_item_id,OLD.parent_work_item_id,OLD.purchase_application_id,OLD.source_outcome,OLD.created_at)
+            IS DISTINCT FROM ROW(NEW.replenishment_followup_id,NEW.followup_ref,NEW.case_id,NEW.replenishment_plan_id,NEW.source_work_item_id,NEW.work_item_id,NEW.parent_work_item_id,NEW.purchase_application_id,NEW.source_outcome,NEW.created_at)
             OR (OLD.attention_request_id IS NOT NULL AND OLD.attention_request_id IS DISTINCT FROM NEW.attention_request_id) THEN
             RAISE EXCEPTION 'followup identity and existing Attention are immutable' USING ERRCODE='23514';
         END IF;
