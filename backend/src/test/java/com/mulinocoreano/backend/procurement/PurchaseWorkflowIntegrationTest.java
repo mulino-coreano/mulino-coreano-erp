@@ -1,6 +1,8 @@
 package com.mulinocoreano.backend.procurement;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -22,6 +24,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import tools.jackson.databind.JsonNode;
@@ -48,10 +51,108 @@ class PurchaseWorkflowIntegrationTest {
     @Autowired RunService runs;
     @Autowired RunExecutionService execution;
     @Autowired PlanPersistenceService plans;
+    @MockitoSpyBean ReplenishmentCalculator calculator;
+    @MockitoSpyBean PurchasePlanRepository purchasePlans;
     long managerId, operatorId, caseId, workId, warehouse;
     PlanDto plan;
     RunExecutionService.Claim claim;
     long originalOrders;
+
+    @Test
+    void approvalWaitingBehindRecalculationMustSeeTheNewPlanVersion() throws Exception {
+        JsonNode proposal = propose();
+        work("WI-REPLAN", "SUPPLY_CHAIN");
+        runs.createRun(
+                new CreateRunRequest("SUPPLY_CHAIN", "CASE-PURCHASE", "WI-REPLAN", "CODEX"), null);
+        var replanClaim = execution.claim("replan-worker").orElseThrow();
+        var products =
+                jdbc.sql(
+                                "SELECT product_id FROM products WHERE sku IN"
+                                    + " ('DEMO-AMR','DEMO-BSC') ORDER BY product_id")
+                        .query(Long.class)
+                        .list();
+        var calculating = new CountDownLatch(1);
+        var releaseCalculation = new CountDownLatch(1);
+        var approving = new CountDownLatch(1);
+        doAnswer(
+                        invocation -> {
+                            if (Thread.currentThread().getName().equals("replan-race")) {
+                                calculating.countDown();
+                                if (!releaseCalculation.await(10, TimeUnit.SECONDS))
+                                    throw new AssertionError("Calculation was not released");
+                            }
+                            return invocation.callRealMethod();
+                        })
+                .when(calculator)
+                .calculate(any());
+        doAnswer(
+                        invocation -> {
+                            if (Thread.currentThread().getName().equals("approval-race")) {
+                                jdbc.sql("SET LOCAL application_name='mulino-approval-race'")
+                                        .update();
+                                approving.countDown();
+                            }
+                            return invocation.callRealMethod();
+                        })
+                .when(purchasePlans)
+                .lockSources();
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var replan =
+                    pool.submit(
+                            () -> {
+                                Thread.currentThread().setName("replan-race");
+                                return plans.calculate(
+                                        "CASE-PURCHASE",
+                                        new PlanRequest(warehouse, products, 30),
+                                        "new-plan",
+                                        replanClaim.capabilityToken());
+                            });
+            assertThat(calculating.await(10, TimeUnit.SECONDS)).isTrue();
+            var decision =
+                    pool.submit(
+                            () -> {
+                                Thread.currentThread().setName("approval-race");
+                                return decisionStatus(
+                                        proposal.path("approvalId").asLong(),
+                                        decisionBody(proposal, "APPROVE"),
+                                        "version-race");
+                            });
+            try {
+                assertThat(approving.await(5, TimeUnit.SECONDS)).isTrue();
+                boolean blocked = false;
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (System.nanoTime() < deadline && !blocked) {
+                    blocked =
+                            jdbc.sql(
+                                            "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE"
+                                                + " application_name='mulino-approval-race' AND"
+                                                + " wait_event_type='Lock')")
+                                    .query(Boolean.class)
+                                    .single();
+                    if (!blocked) Thread.sleep(10);
+                }
+                assertThat(blocked)
+                        .as("The approval must actually be waiting on a PostgreSQL lock")
+                        .isTrue();
+            } finally {
+                releaseCalculation.countDown();
+            }
+            assertThat(replan.get(15, TimeUnit.SECONDS).version()).isEqualTo(plan.version() + 1);
+            assertThat(decision.get(15, TimeUnit.SECONDS)).isEqualTo(409);
+        } finally {
+            releaseCalculation.countDown();
+        }
+        assertThat(count("purchase_orders")).isEqualTo(originalOrders);
+        assertThat(count("purchase_applications")).isZero();
+        assertThat(
+                        jdbc.sql(
+                                        "SELECT status::text FROM governance_actions WHERE"
+                                            + " governance_action_id=:id")
+                                .param("id", proposal.path("approvalId").asLong())
+                                .query(String.class)
+                                .single())
+                .isEqualTo("EXPIRED");
+    }
 
     @TestConfiguration
     static class Time {
@@ -77,7 +178,7 @@ class PurchaseWorkflowIntegrationTest {
         var products =
                 jdbc.sql(
                                 "SELECT product_id FROM products WHERE sku IN"
-                                    + " ('DEMO-AMR','DEMO-BSC') ORDER BY product_id")
+                                        + " ('DEMO-AMR','DEMO-BSC') ORDER BY product_id")
                         .query(Long.class)
                         .list();
         caseId =
@@ -133,7 +234,7 @@ class PurchaseWorkflowIntegrationTest {
         assertThat(
                         jdbc.sql(
                                         "SELECT sum(line_amount) FROM purchase_order_items WHERE"
-                                            + " purchase_quantity IS NOT NULL")
+                                                + " purchase_quantity IS NOT NULL")
                                 .query(java.math.BigDecimal.class)
                                 .single())
                 .isEqualByComparingTo("16500");
@@ -159,7 +260,7 @@ class PurchaseWorkflowIntegrationTest {
         assertThat(
                         jdbc.sql(
                                         "SELECT count(*) FROM case_participants WHERE"
-                                            + " case_id=:caseId AND user_id=:user")
+                                                + " case_id=:caseId AND user_id=:user")
                                 .param("caseId", caseId)
                                 .param("user", managerId)
                                 .query(Long.class)
@@ -200,7 +301,7 @@ class PurchaseWorkflowIntegrationTest {
         assertThat(
                         jdbc.sql(
                                         "SELECT status::text FROM governance_actions WHERE"
-                                            + " governance_action_id=:id")
+                                                + " governance_action_id=:id")
                                 .param("id", proposal.path("approvalId").asLong())
                                 .query(String.class)
                                 .single())
@@ -257,7 +358,7 @@ class PurchaseWorkflowIntegrationTest {
         assertThat(
                         jdbc.sql(
                                         "SELECT requested_by FROM governance_actions WHERE"
-                                            + " governance_action_id=:id")
+                                                + " governance_action_id=:id")
                                 .param("id", id)
                                 .query(Long.class)
                                 .single())
@@ -265,8 +366,8 @@ class PurchaseWorkflowIntegrationTest {
         assertThat(
                         jdbc.sql(
                                         "SELECT actor_id IS NULL FROM governance_audit_logs WHERE"
-                                            + " governance_action_id=:id AND"
-                                            + " event_type='PURCHASE_PROPOSED'")
+                                                + " governance_action_id=:id AND"
+                                                + " event_type='PURCHASE_PROPOSED'")
                                 .param("id", id)
                                 .query(Boolean.class)
                                 .single())
@@ -285,7 +386,7 @@ class PurchaseWorkflowIntegrationTest {
                 200);
         jdbc.sql(
                         "UPDATE purchase_orders SET status='DRAFT' WHERE purchase_application_id IS"
-                            + " NOT NULL")
+                                + " NOT NULL")
                 .update();
         var next = execution.claim("cancel-check").orElseThrow();
         assertThatThrownBy(
@@ -323,8 +424,8 @@ CREATE TRIGGER fail_second_purchase_line AFTER INSERT ON purchase_order_items
         assertThatThrownBy(() -> decide(id, body, "failed-then-retry", managerId, "MANAGER", 200))
                 .hasRootCauseMessage(
                         "ERROR: test failure after two new purchase lines\n"
-                            + "  Where: PL/pgSQL function fail_second_purchase_line() line 5 at"
-                            + " RAISE");
+                                + "  Where: PL/pgSQL function fail_second_purchase_line() line 5 at"
+                                + " RAISE");
         assertThat(count("purchase_orders")).isEqualTo(originalOrders);
         assertThat(count("purchase_applications")).isZero();
         assertThat(
@@ -335,7 +436,7 @@ CREATE TRIGGER fail_second_purchase_line AFTER INSERT ON purchase_order_items
         assertThat(
                         jdbc.sql(
                                         "SELECT status::text FROM governance_actions WHERE"
-                                            + " governance_action_id=:id")
+                                                + " governance_action_id=:id")
                                 .param("id", id)
                                 .query(String.class)
                                 .single())
@@ -343,13 +444,13 @@ CREATE TRIGGER fail_second_purchase_line AFTER INSERT ON purchase_order_items
         assertThat(
                         jdbc.sql(
                                         "SELECT count(*) FROM request_idempotency WHERE"
-                                            + " request_key='failed-then-retry'")
+                                                + " request_key='failed-then-retry'")
                                 .query(Long.class)
                                 .single())
                 .isZero();
         jdbc.sql(
                         "DROP TRIGGER fail_second_purchase_line ON purchase_order_items; DROP"
-                            + " FUNCTION fail_second_purchase_line()")
+                                + " FUNCTION fail_second_purchase_line()")
                 .update();
         decide(id, body, "failed-then-retry", managerId, "MANAGER", 200);
         assertThat(count("purchase_orders")).isEqualTo(originalOrders + 1);
@@ -401,7 +502,7 @@ CREATE TRIGGER fail_second_purchase_line AFTER INSERT ON purchase_order_items
         assertThat(
                         jdbc.sql(
                                         "SELECT status::text FROM governance_actions WHERE"
-                                            + " governance_action_id=:id")
+                                                + " governance_action_id=:id")
                                 .param("id", id)
                                 .query(String.class)
                                 .single())
@@ -420,7 +521,7 @@ CREATE TRIGGER fail_second_purchase_line AFTER INSERT ON purchase_order_items
         var products =
                 jdbc.sql(
                                 "SELECT product_id FROM products WHERE sku IN"
-                                    + " ('DEMO-AMR','DEMO-BSC') ORDER BY product_id")
+                                        + " ('DEMO-AMR','DEMO-BSC') ORDER BY product_id")
                         .query(Long.class)
                         .list();
         plan =

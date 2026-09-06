@@ -22,7 +22,7 @@ MCP `create_case`는 키를 생성하거나 호출자가 준 `requestKey`를 유
 
 입력은 `warehouseId`, `productIds`, 선택적 `horizonDays`다. 기준일은 서버의 서울 시간대 `planningClock`에서 정한다. Case에 사람의 명시적 범위가 있으면 창고·제품 집합을 일치시켜야 하며, 생략한 예측 기간은 저장된 목표일까지의 잔여 일수로 계산한다. 에이전트가 명시한 기간이 마감일과 다르면 거부한다.
 
-저장은 반복 읽기 트랜잭션에서 수행한다. 창고 조정 잠금을 먼저 획득한 뒤 현재 lease·Case·Work Item·배정 역할을 검증하고 실제 ERP snapshot과 계산을 저장한다. 마지막 권한 검증에서 lease가 만료되면 계획·Attention·멱등 응답을 포함한 전체 변경을 롤백한다. 경합 재시도는 기존 트랜잭션 밖에서 새 snapshot으로 수행한다.
+저장은 반복 읽기 트랜잭션에서 수행한다. 공통 계획 guard, 창고 조정 잠금 순서로 획득한 뒤 현재 lease·Case·Work Item·배정 역할을 검증하고 실제 ERP snapshot과 계산을 저장한다. 마지막 권한 검증에서 lease가 만료되면 계획·Attention·멱등 응답을 포함한 전체 변경을 롤백한다. 경합 재시도는 기존 트랜잭션 밖에서 새 snapshot으로 수행한다.
 
 `replenishment_plans`에는 실제 source snapshot, 결과, 원본 업무, 버전, SHA-256을 저장한다. JSON 객체 키 순서와 소수 정밀도를 정규화하여 같은 데이터가 같은 hash를 갖도록 한다. 이전 계획의 수정·삭제·TRUNCATE는 허용하지 않는다.
 
@@ -71,6 +71,8 @@ flowchart LR
 
 승인 전에는 발주가 없다. 승인과 발주·결정·적용·감사·이벤트가 함께 커밋되며 중간 실패는 전부 롤백한다. 동일 요청은 기존 결과를 재생한다. 변경된 입력은 원 제안을 EXPIRED로 기록한 뒤 409를 반환한다. 반려·만료가 같은 제안의 자동 재요청을 만들지 않는다. 이 REST 구현이 실제 대화 클라이언트에서 인간 확인을 받았다는 증거는 아니다.
 
+계획 저장과 구매 판단은 `PlanningDataGuard`를 공유한다. 단순 행 잠금만으로는 대기 중인 REPEATABLE READ 트랜잭션의 snapshot이 갱신되지 않으므로 guard의 revision도 증가시킨다. 앞선 계획 저장을 기다렸던 요청은 SQLSTATE 40001에서 전체 트랜잭션을 다시 시작하고 새 계획 버전을 확인한다. 이 revision은 조정용 값이며 업무 수량이나 계획 내용은 아니다.
+
 제안의 `executionResult`는 서버가 이미 저장한 상태다. 승인 대기는 `outcome=WAITING`, 빈 `waitingConditions`, `resultRef=APPROVAL-<id>`로 표현한다. 실행기는 원래 terminal receipt를 확인하며, 아직 실행 중인 Run에 이런 참조만 보내도 서버가 새 대기를 허용하지 않는다.
 
 ## 데이터 접근과 코드 생성
@@ -93,7 +95,7 @@ claim은 비밀값을 한 번 발급하는 제어 프로토콜이므로 원래 �
 
 ## 검증과 마이그레이션
 
-- PostgreSQL 18의 전체 Backend `clean test bootJar`: 455개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다.
+- PostgreSQL 18의 전체 Backend `clean test bootJar`: 456개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다.
 - Node 실행기 48개, MCP 19개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
 - V20은 QUEUED enum을 먼저 추가하고 V21에서 lease·멱등 데이터와 인덱스를 사용한다. V22는 최신 계산 결과의 원본 업무 연결을 강제한다.
 - 기존 RUNNING 예약 기록은 ABORTED로 정리하고 원래 snapshot을 보존한다. 이미 종료되었거나 실제 대기 중인 의무를 강제로 깨우지 않는다.

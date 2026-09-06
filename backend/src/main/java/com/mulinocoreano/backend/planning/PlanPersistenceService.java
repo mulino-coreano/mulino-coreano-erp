@@ -3,6 +3,7 @@ package com.mulinocoreano.backend.planning;
 import com.mulinocoreano.backend.execution.RunCapabilityAccess;
 import com.mulinocoreano.backend.idempotency.RequestIdempotency;
 import com.mulinocoreano.backend.interfacepackage.AttentionDto;
+import com.mulinocoreano.backend.persistence.PlanningDataGuard;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -40,14 +41,17 @@ public class PlanPersistenceService {
     private final ObjectMapper mapper;
     private final Clock clock;
     private final TransactionTemplate transaction;
+    private final PlanningDataGuard dataGuard;
 
     public PlanPersistenceService(JdbcClient jdbc, PlanningSnapshotRepository snapshots,
                                   ReplenishmentCalculator calculator, RunCapabilityAccess capabilities,
                                   RequestIdempotency idempotency, CanonicalJson json, ObjectMapper mapper,
-                                  @Qualifier("planningClock") Clock clock, PlatformTransactionManager transactionManager) {
+                                  @Qualifier("planningClock") Clock clock, PlatformTransactionManager transactionManager,
+                                  PlanningDataGuard dataGuard) {
         this.jdbc = jdbc; this.snapshots = snapshots; this.calculator = calculator;
         this.capabilities = capabilities; this.idempotency = idempotency;
         this.json = json; this.mapper = mapper; this.clock = clock;
+        this.dataGuard = dataGuard;
         transaction = new TransactionTemplate(transactionManager);
         transaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -59,6 +63,7 @@ public class PlanPersistenceService {
         for (int attempt = 1; ; attempt++) {
             try {
                 JsonNode response = transaction.execute(status -> {
+                    dataGuard.lock();
                     // Intake uses this same order before touching the warehouse or its Case.
                     idempotency.coordinate("planning.warehouse", String.valueOf(normalized.warehouseId()));
                     var scope = capabilities.requireLocked(capabilityToken, "SUPPLY_CHAIN", caseRef);

@@ -2,7 +2,6 @@ package com.mulinocoreano.backend.procurement;
 
 import static com.mulinocoreano.backend.generated.Tables.CASES;
 import static com.mulinocoreano.backend.generated.Tables.PLANNING_CASES;
-import static com.mulinocoreano.backend.generated.Tables.PLANNING_DATA_GUARD;
 import static com.mulinocoreano.backend.generated.Tables.REPLENISHMENT_PLANS;
 import static com.mulinocoreano.backend.generated.Tables.WORK_ITEMS;
 
@@ -13,6 +12,7 @@ import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
 
 import com.mulinocoreano.backend.generated.enums.WorkItemStatus;
+import com.mulinocoreano.backend.persistence.PlanningDataGuard;
 import com.mulinocoreano.backend.planning.CanonicalJson;
 
 import org.jooq.DSLContext;
@@ -22,17 +22,16 @@ import org.springframework.stereotype.Repository;
 public class PurchasePlanRepository {
     private final DSLContext dsl;
     private final CanonicalJson json;
+    private final PlanningDataGuard dataGuard;
 
-    public PurchasePlanRepository(DSLContext dsl, CanonicalJson json) {
+    public PurchasePlanRepository(DSLContext dsl, CanonicalJson json, PlanningDataGuard dataGuard) {
         this.dsl = dsl;
         this.json = json;
+        this.dataGuard = dataGuard;
     }
 
     public void lockSources() {
-        dsl.select(PLANNING_DATA_GUARD.REVISION)
-                .from(PLANNING_DATA_GUARD)
-                .forUpdate()
-                .fetchSingle();
+        dataGuard.lock();
     }
 
     public PurchasePlan load(String ref) {
