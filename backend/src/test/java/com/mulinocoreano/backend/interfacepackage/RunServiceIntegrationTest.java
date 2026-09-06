@@ -152,6 +152,24 @@ class RunServiceIntegrationTest {
     }
 
     @Test
+    void reconstructionFailurePreservesExactNumbersInThePriorSnapshot() {
+        Fixture fixture = fixture("Exact fallback evidence", """
+                {"type":"stock","ref":"STOCK-EXACT","quantity":999999999999.123456,"id":9007199254740993}
+                """);
+        RunDto original = runService.createRun(request(fixture), null);
+        complete(original.runId());
+
+        RunDto failed = createFailedRun(fixture, "force fallback");
+
+        assertThat(failed.status()).isEqualTo("FAILED");
+        assertThat(jdbc.sql("SELECT context_snapshot #>> '{business,references,0,quantity}' FROM runs WHERE run_id=:id")
+                .param("id", failed.runId()).query(String.class).single()).isEqualTo("999999999999.123456");
+        assertThat(jdbc.sql("SELECT context_snapshot #>> '{business,references,0,id}' FROM runs WHERE run_id=:id")
+                .param("id", failed.runId()).query(String.class).single()).isEqualTo("9007199254740993");
+        assertThat(snapshot(failed.runId()).path("stale").asBoolean()).isTrue();
+    }
+
+    @Test
     void contextReconstructionReadsEveryDynamicLayerAndTimestampWithOneStatement() {
         Fixture fixture = fixture(
                 "One statement objective",

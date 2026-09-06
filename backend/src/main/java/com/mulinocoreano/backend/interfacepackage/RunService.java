@@ -3,6 +3,7 @@ package com.mulinocoreano.backend.interfacepackage;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
 
 import java.sql.Types;
@@ -304,7 +305,9 @@ public class RunService {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> readSnapshot(String json) {
-        return objectMapper.readValue(json, Map.class);
+        return objectMapper.readerFor(Map.class)
+                .with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                .readValue(json);
     }
 
     private RunDto loadRun(long runId) {
