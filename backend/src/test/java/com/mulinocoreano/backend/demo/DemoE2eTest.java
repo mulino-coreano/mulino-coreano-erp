@@ -103,7 +103,8 @@ class DemoE2eTest {
     void restartTheRealApplicationAndResumePersistedApproval() throws Exception {
         assertThat(previousContextIdentity).as("Preparation must complete before restart acceptance").isNotNull();
         assertThat(contextIdentity).isNotEqualTo(previousContextIdentity);
-        assertThat(port).as("A newly started HTTP listener").isNotEqualTo(previousPort);
+        // RANDOM_PORT may legitimately reuse the old port; context identity proves recreation.
+        assertThat(port).as("The restarted HTTP listener reports its actual port").isPositive();
         // No fixture reset, SQL write or status reconstruction between stop and recovery.
         assertThat(persistedReferences()).containsExactlyElementsOf(pendingReferences);
         Path root = Path.of("..").toAbsolutePath().normalize();
@@ -111,7 +112,7 @@ class DemoE2eTest {
         launch(root, config, "resume");
         assertThat(supplyRunCount()).as("The completed supply calculation was not rerun").isEqualTo(1);
         assertThat(jdbc.sql("SELECT count(*) FROM purchase_orders WHERE purchase_application_id IS NOT NULL").query(Long.class).single()).isEqualTo(1);
-        System.out.println("DEMO_E2E_BACKEND_RESTART_PASS: oldPort=" + previousPort + ", newPort=" + port);
+        System.out.println("DEMO_E2E_BACKEND_RESTART_PASS: oldPort=" + previousPort + ", restartedPort=" + port);
         assertThat(jdbc.sql("SELECT sum(i.quantity*i.unit_price) FROM purchase_order_items i JOIN purchase_orders p USING(purchase_order_id) WHERE p.purchase_application_id IS NOT NULL").query(java.math.BigDecimal.class).single()).isEqualByComparingTo("16500");
         resetFixture();
         launch(root, config, "prepare");
