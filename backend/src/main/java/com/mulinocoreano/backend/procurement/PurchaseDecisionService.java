@@ -163,7 +163,7 @@ public class PurchaseDecisionService {
                 approval.id(), userId, reason, "EXPIRED".equals(status) ? "EXPIRED" : "ANSWERED");
         repository.attention(
                 approval.caseId(),
-                null,
+                repository.policyReviewParent(approval.caseId(), approval.workId()),
                 "재보충 방침 확인 필요",
                 reason + " 자동으로 같은 발주안을 다시 요청하지 않습니다.",
                 null);

@@ -463,6 +463,38 @@ class PurchaseWorkflowIntegrationTest {
     }
 
     @Test
+    void expiredPolicyReviewTargetsTheUnfinishedOrchestratorParent() throws Exception {
+        var proposal = propose();
+        jdbc.sql("UPDATE supplier_material_terms SET unit_price=unit_price+1").update();
+        decide(proposal.path("approvalId").asLong(), decisionBody(proposal,"APPROVE"), "parent-expired", managerId,"MANAGER",409);
+        assertThat(jdbc.sql("SELECT w.work_item_ref FROM attention_requests a JOIN work_items w USING(work_item_id) WHERE a.title='재보충 방침 확인 필요'").query(String.class).single()).isEqualTo("WI-ORCH");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"DONE","CANCELLED","MISSING","WRONG_ROLE","HUMAN","INACTIVE","OTHER_CASE"})
+    void policyReviewFallsBackWithoutAnEligibleSameCaseParent(String invalid) throws Exception {
+        if (List.of("DONE","CANCELLED").contains(invalid))
+            jdbc.sql("UPDATE work_items SET status=CAST(:status AS work_item_status),resolved_at=CURRENT_TIMESTAMP WHERE work_item_ref='WI-ORCH'").param("status",invalid).update();
+        else if ("MISSING".equals(invalid))
+            jdbc.sql("UPDATE work_items SET metadata='{}'::jsonb WHERE work_item_id=:id").param("id",workId).update();
+        else if ("WRONG_ROLE".equals(invalid))
+            jdbc.sql("UPDATE work_items SET assigned_agent_id=(SELECT agent_id FROM agents WHERE agent_key='SUPPLY_CHAIN') WHERE work_item_ref='WI-ORCH'").update();
+        else if ("HUMAN".equals(invalid))
+            jdbc.sql("UPDATE work_items SET assigned_agent_id=NULL,assigned_user_id=:id WHERE work_item_ref='WI-ORCH'").param("id",managerId).update();
+        else if ("INACTIVE".equals(invalid))
+            jdbc.sql("UPDATE agents SET is_active=false WHERE agent_key='ORCHESTRATOR'").update();
+        else {
+            long other=jdbc.sql("INSERT INTO cases(case_ref,title,objective,intent_type,opened_by_user_id) VALUES('CASE-OTHER','Other','Other','ACT',:id) RETURNING case_id").param("id",managerId).query(Long.class).single();
+            jdbc.sql("UPDATE work_items SET case_id=:id WHERE work_item_ref='WI-ORCH'").param("id",other).update();
+        }
+        var proposal=propose();
+        decide(proposal.path("approvalId").asLong(),decisionBody(proposal,"BLOCK"),"invalid-parent",managerId,"MANAGER",200);
+        assertThat(jdbc.sql("SELECT work_item_id IS NULL FROM attention_requests WHERE title='재보충 방침 확인 필요'").query(Boolean.class).single()).isTrue();
+        assertThat(count("purchase_orders")).isEqualTo(originalOrders);
+        assertThat(count("replenishment_followups")).isZero();
+    }
+
+    @Test
     void operatorCannotApproveEvenWhenSendingAnotherActorId() throws Exception {
         JsonNode proposal = propose();
         var body = mapper.readTree(decisionBody(proposal, "APPROVE")).deepCopy();

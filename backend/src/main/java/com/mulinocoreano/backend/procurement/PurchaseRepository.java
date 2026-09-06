@@ -326,6 +326,27 @@ public class PurchaseRepository {
                 .execute();
     }
 
+    /** Link policy review only to the source work's validated, unfinished coordinator. */
+    public Long policyReviewParent(long caseId, long sourceWorkId) {
+        JSONB metadata = dsl.select(WORK_ITEMS.METADATA).from(WORK_ITEMS)
+                .where(WORK_ITEMS.WORK_ITEM_ID.eq(sourceWorkId).and(WORK_ITEMS.CASE_ID.eq(caseId)))
+                .fetchOne(WORK_ITEMS.METADATA);
+        if (metadata == null) return null;
+        var parentRef = json.readTree(metadata.data()).path("parentWorkItemRef");
+        if (!parentRef.isTextual() || parentRef.asText().isBlank()) return null;
+        return dsl.select(WORK_ITEMS.WORK_ITEM_ID).from(WORK_ITEMS)
+                .join(AGENTS).on(AGENTS.AGENT_ID.eq(WORK_ITEMS.ASSIGNED_AGENT_ID))
+                .where(WORK_ITEMS.CASE_ID.eq(caseId)
+                        .and(WORK_ITEMS.WORK_ITEM_REF.eq(parentRef.asText()))
+                        .and(WORK_ITEMS.WORK_ITEM_ID.ne(sourceWorkId))
+                        .and(WORK_ITEMS.ASSIGNED_USER_ID.isNull())
+                        .and(WORK_ITEMS.STATUS.notIn(WorkItemStatus.DONE, WorkItemStatus.CANCELLED))
+                        .and(AGENTS.AGENT_KEY.eq("ORCHESTRATOR"))
+                        .and(AGENTS.IS_ACTIVE.isTrue()))
+                .forUpdate().of(WORK_ITEMS)
+                .fetchOne(WORK_ITEMS.WORK_ITEM_ID);
+    }
+
     public void attention(
             long caseId, Long workId, String title, String question, Long approvalId) {
         var attention = ATTENTION_REQUESTS;
