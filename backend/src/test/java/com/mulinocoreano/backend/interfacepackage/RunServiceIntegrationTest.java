@@ -8,8 +8,8 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Proxy;
+import org.jooq.DSLContext;
+import org.jooq.ExecuteListener;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -22,6 +22,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 @Transactional
 class RunServiceIntegrationTest {
     @Autowired RunSchedulingRepository scheduling;
+    @Autowired ContextSnapshotRepository contextRepository;
+    @Autowired DSLContext dsl;
 
 
     @Autowired
@@ -106,7 +108,7 @@ class RunServiceIntegrationTest {
         complete(newer.runId());
 
         AtomicInteger attempts = new AtomicInteger();
-        ContextSnapshotService failingBuilder = new ContextSnapshotService(jdbc, objectMapper) {
+        ContextSnapshotService failingBuilder = new ContextSnapshotService(contextRepository, objectMapper) {
             @Override
             public Map<String, Object> build(String caseRef) {
                 attempts.incrementAndGet();
@@ -193,7 +195,8 @@ class RunServiceIntegrationTest {
                 .update();
         AtomicInteger statements = new AtomicInteger();
         ContextSnapshotService oneStatementService = new ContextSnapshotService(
-                countingJdbc(statements), objectMapper);
+                new ContextSnapshotRepository(dsl.configuration().deriveAppending(
+                        ExecuteListener.onExecuteStart(ctx -> statements.incrementAndGet())).dsl()), objectMapper);
 
         JsonNode snapshot = objectMapper.valueToTree(oneStatementService.build(fixture.caseRef()));
 
@@ -248,7 +251,7 @@ class RunServiceIntegrationTest {
                 "No prior snapshot",
                 "{\"type\":\"stock\",\"ref\":\"STOCK-9\"}");
         AtomicInteger attempts = new AtomicInteger();
-        ContextSnapshotService failingBuilder = new ContextSnapshotService(jdbc, objectMapper) {
+        ContextSnapshotService failingBuilder = new ContextSnapshotService(contextRepository, objectMapper) {
             @Override
             public Map<String, Object> build(String caseRef) {
                 attempts.incrementAndGet();
@@ -279,7 +282,7 @@ class RunServiceIntegrationTest {
                 "Uncommitted dispatcher-visible objective",
                 "{\"type\":\"purchase_order\",\"ref\":\"PO-RETRY\"}");
         AtomicInteger attempts = new AtomicInteger();
-        ContextSnapshotService failsOnce = new ContextSnapshotService(jdbc, objectMapper) {
+        ContextSnapshotService failsOnce = new ContextSnapshotService(contextRepository, objectMapper) {
             @Override
             public Map<String, Object> build(String caseRef) {
                 if (attempts.incrementAndGet() == 1) {
@@ -431,7 +434,7 @@ class RunServiceIntegrationTest {
     }
 
     private RunDto createFailedRun(Fixture fixture, String message) {
-        ContextSnapshotService failingBuilder = new ContextSnapshotService(jdbc, objectMapper) {
+        ContextSnapshotService failingBuilder = new ContextSnapshotService(contextRepository, objectMapper) {
             @Override
             public Map<String, Object> build(String caseRef) {
                 throw new IllegalStateException(message);
@@ -502,22 +505,6 @@ class RunServiceIntegrationTest {
                 .param("workItemId", fixture.workItemId())
                 .param("objective", objective)
                 .update();
-    }
-
-    private JdbcClient countingJdbc(AtomicInteger statements) {
-        return (JdbcClient) Proxy.newProxyInstance(
-                JdbcClient.class.getClassLoader(),
-                new Class<?>[]{JdbcClient.class},
-                (proxy, method, args) -> {
-                    if (method.getName().equals("sql")) {
-                        statements.incrementAndGet();
-                    }
-                    try {
-                        return method.invoke(jdbc, args);
-                    } catch (InvocationTargetException failure) {
-                        throw failure.getCause();
-                    }
-                });
     }
 
     private static String unique(String prefix) {

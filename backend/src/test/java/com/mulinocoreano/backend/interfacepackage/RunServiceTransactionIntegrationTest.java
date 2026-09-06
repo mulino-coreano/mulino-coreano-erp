@@ -201,8 +201,8 @@ class RunServiceTransactionIntegrationTest {
         @Bean
         @Primary
         FailsOnceContextSnapshotService failsOnceContextSnapshotService(
-                JdbcClient jdbc, ObjectMapper objectMapper) {
-            return new FailsOnceContextSnapshotService(jdbc, objectMapper);
+                JdbcClient jdbc, ObjectMapper objectMapper, ContextSnapshotRepository repository) {
+            return new FailsOnceContextSnapshotService(jdbc, objectMapper, repository);
         }
     }
 
@@ -215,8 +215,8 @@ class RunServiceTransactionIntegrationTest {
         private final AtomicReference<CountDownLatch> blockedBuildStarted = new AtomicReference<>();
         private final AtomicReference<CountDownLatch> blockedBuildRelease = new AtomicReference<>();
 
-        FailsOnceContextSnapshotService(JdbcClient jdbc, ObjectMapper objectMapper) {
-            super(jdbc, objectMapper);
+        FailsOnceContextSnapshotService(JdbcClient jdbc, ObjectMapper objectMapper, ContextSnapshotRepository repository) {
+            super(repository, objectMapper);
             this.jdbc = jdbc;
         }
 

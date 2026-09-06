@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class DispatcherIntegrationTest {
     @Autowired RunSchedulingRepository scheduling;
+    @Autowired ContextSnapshotRepository contextRepository;
 
 
     @Autowired
@@ -106,7 +107,7 @@ class DispatcherIntegrationTest {
     @Test
     void failedContextReconstructionIsReportedAndRaisesOperatorAttention() {
         Fixture fixture = waitingFixture("SUPPLIER_REPLY", "{\"supplier_id\":75}", "WAITING");
-        ContextSnapshotService failingContext = new ContextSnapshotService(jdbc, objectMapper) {
+        ContextSnapshotService failingContext = new ContextSnapshotService(contextRepository, objectMapper) {
             @Override
             public Map<String, Object> build(String caseRef) {
                 throw new IllegalStateException("context source unavailable");
