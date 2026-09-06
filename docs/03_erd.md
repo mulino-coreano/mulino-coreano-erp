@@ -681,3 +681,21 @@ erDiagram
 V24/DDL16은 `attention_requests.version`의 과거 NULL을 1로 채우고 NOT NULL을 적용한다. 성공한 UPDATE마다 기존 값에 1을 더하며 NULL·0·음수 입력은 먼저 거부한다. 질문 수정 후 예전 버전으로 제출한 답변을 구분하기 위한 값이다.
 
 일반 답변은 기존 `decisions`의 새 행과 `metadata.sourceAttentionId`, 인간 작성자·범위, `ATTENTION_ANSWER_RECORDED` 이벤트로 연결한다. 신규 테이블이나 LOT 추적 FK는 추가하지 않는다. 구매 연결 Attention 및 AUTHORITY_REQUIRED 요청은 일반 답변 API로 처리하지 않으며, 구매 결정·발주 적용의 기존 관계를 유지한다.
+
+
+## 12. 재보충 후속 책임
+
+V25/DDL17의 `replenishment_followups`는 ERP 거래를 복제하지 않고 검증된 계획·Procurement 업무·후속 조정 업무·원 발주 적용을 연결한다. 같은 Case의 복합 FK와 계획/업무/application 유일성, 신원 변경·삭제·TRUNCATE 금지로 책임의 중복이나 바꿔치기를 막는다.
+
+```mermaid
+erDiagram
+    cases ||--o{ replenishment_followups : case_id
+    replenishment_plans ||--o| replenishment_followups : replenishment_plan_id
+    work_items ||--o| replenishment_followups : source_work_item_id
+    work_items ||--o| replenishment_followups : work_item_id
+    work_items o|--o{ replenishment_followups : parent_work_item_id
+    purchase_applications o|--o| replenishment_followups : purchase_application_id
+    attention_requests o|--o| replenishment_followups : attention_request_id
+```
+
+후속 업무 담당은 ORCHESTRATOR이고 서버가 관찰한다. APPLIED에는 원 application을 연결하고 NO_PURCHASE_REQUIRED에는 application과 납기를 지어내지 않는다. `due_at`/`observed_at`은 TIMESTAMPTZ다. 실제 입고·LOT 관찰은 JSON과 hash로 보존하며 같은 관찰에 이벤트를 중복 생성하지 않는다. 한 번 연결한 Attention과 인간 답변은 유지한다. 입고 확인은 생산·재고 목표의 완료를 뜻하지 않는다.

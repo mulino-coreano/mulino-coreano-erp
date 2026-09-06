@@ -1,6 +1,6 @@
 # 재보충 후속 책임 연결
 
-상태: 구현 중. 기준은 첫 데모 계획의 발주 업무 DONE·Case WAITING·기한 확인 요구사항이다. 생산·입고 쓰기와 Case 자동 종결은 추가하지 않는다.
+상태: 로컬 구현·통합 검사 완료. 기준은 첫 데모 계획의 발주 업무 DONE·Case WAITING·기한 확인 요구사항이다. 생산·입고 쓰기와 Case 자동 종결은 추가하지 않는다.
 
 ## 저장 계약
 
@@ -23,7 +23,7 @@ APPLIED는 해당 application의 실제 발주 상세·입고·LOT을 조회한�
 `followup.ReplenishmentFollowupService`:
 
 - `ensureForVerifiedCompletion(long caseId, long sourceWorkItemId)`: 기존 트랜잭션 필수, 검증된 원본 업무로 책임 생성/재사용.
-- `sweepDue()`: caller 트랜잭션에 참여, 실제 변화로 생성한 이벤트 ID 목록 반환. 변경 없음은 빈 목록.
+- `sweepDue()`: caller 트랜잭션에 참여, 실제 변화로 생성한 이벤트 ID 목록 반환. 변경 없음은 빈 목록. 명시적 수동 dispatch의 자체 감사 이벤트는 유지한다.
 
 `followup.ReplenishmentFollowupRepository`:
 
@@ -43,3 +43,10 @@ Case overview·실행 맥락은 `followups`로 이 상태를 보여준다. Monit
 4. 일반 dispatch·Run 생성·claim·질문 답변의 전용 업무 우회 차단.
 5. 부모 재개 후 책임 확인, Case WAITING 및 API/MCP 표시.
 6. 통합 Backend·MCP·runner 검사와 갱신한 역할 이미지 검사. 실제 로그인/모델 인수는 별도 기록.
+
+
+## 검증 기록
+
+Backend 전체 504개와 MCP 26개 검사를 통과했다. 입고/LOT 분할 수량, 복수 납기, 반복·동시 sweep, 늦은 입고 후 인간 답변 보존, 부모 의존 대기의 실제 자동 재개, 일반 경로 우회 차단과 구매 불필요 경로를 포함한다. V25/DDL17 및 18개 독립 DDL·시드 설치를 확인했다.
+
+관찰 상태의 실제 값은 AWAITING_RECEIPT, RECEIPT_REVIEW_REQUIRED, PRODUCTION_REVIEW_REQUIRED, STOCK_REVIEW_REQUIRED다. 리뷰에서 발견한 MCP 상태명 불일치를 고쳤다. 물리적인 생산/입고 쓰기와 Case 자동 종결은 범위 밖이며, 실제 클라이언트·모델 전체 인수는 별도다.

@@ -90,6 +90,20 @@ Agent 조회는 반복 읽기 트랜잭션에서 capability를 잠금·검증하
 
 제안의 `executionResult`는 서버가 이미 저장한 상태다. 승인 대기는 `outcome=WAITING`, 빈 `waitingConditions`, `resultRef=APPROVAL-<id>`로 표현한다. 실행기는 원래 terminal receipt를 확인하며, 아직 실행 중인 Run에 이런 참조만 보내도 서버가 새 대기를 허용하지 않는다.
 
+## 발주 이후의 후속 책임
+
+Procurement DONE의 검증과 같은 트랜잭션에서 V25의 후속 책임을 저장하고 Case를 WAITING으로 남긴다. 실패하면 DONE도 롤백한다. 담당 ORCHESTRATOR는 조정 책임이며, 실제 생산이나 입고를 수행했다고 뜻하지 않는다. 부모는 typed 연결의 미완료 책임을 확인한 뒤 자기 실행을 끝낼 수 있다.
+
+후속 업무는 일반 모델 Run으로 실행하지 않는다. generic dispatch 후보, Run 생성·claim, 일반 답변의 재개 경로에서 typed 후속 업무를 구분한다. 답변은 기록하지만 `SERVER_MANAGED` 업무를 새 Run으로 예약하지 않는다. metadata만으로 후속 권한이나 부모 완료 근거를 만들 수 없다.
+
+기한은 원 application의 실제 미충족 발주 상세에서 가져온다. 날짜만 있는 납기는 한국 시간 다음 날 00:00을 확인 시점으로 삼는다. 자체 TIMESTAMPTZ와 전용 SCHEDULED_TIME을 사용하며 레거시 Work Item due_at으로 판정하지 않는다. 아직 기한이 남은 상세는 먼저 미입고로 처리하지 않는다.
+
+worker claim의 조건부 sweep과 명시적 dispatch가 실제 입고·LOT을 다시 읽는다. 부분·HOLD·BLOCKED·자재/공급처/창고/수량 불일치는 정상 사용 가능 입고로 보지 않는다. 미입고가 남으면 지난 기한의 대기를 유지하여 늦은 입고를 다시 확인하고, 충족되면 다음 상세 기한으로 이동한다. 변하지 않은 관찰은 새 이벤트나 Attention을 만들지 않는다. 명시적 수동 dispatch 자체의 감사 이벤트는 유지한다.
+
+관찰 상태는 AWAITING_RECEIPT, RECEIPT_REVIEW_REQUIRED, PRODUCTION_REVIEW_REQUIRED, STOCK_REVIEW_REQUIRED다. 모든 입고가 확인되면 입고 타이머만 종료한다. 구매 불필요인 경우에도 실제 계획의 생산 필요 여부를 구분해 생산/재고 확인 책임을 남긴다. Attention은 후속 기록당 한 번 연결하며 이미 받은 답변을 덮어쓰거나 반복 요청하지 않는다.
+
+Case overview와 실행 맥락의 `followups`에는 담당·원 계획·원 구매 업무·부모·실제 기한·관찰 시각·입고 근거·주의 요청·남은 의무를 보여준다. 이 기능은 ERP 입고/생산 쓰기나 Case 자동 종결 API가 아니다.
+
 ## 데이터 접근과 코드 생성
 
 구매 모듈은 제안·결정·검증 서비스와 데이터 접근을 분리했다. 쿼리는 jOOQ 3.21.7의 생성된 테이블·컬럼·enum으로 작성하며 JPA는 사용하지 않는다. 값은 DSL에 전달해 바인딩하고, 요청 값을 SQL 문자열에 이어 붙이지 않는다. 업무 테이블의 조회·저장은 생성된 타입을 쓰는 저장소에 모았다. 트랜잭션 격리 수준을 확인하는 고정 `SHOW transaction_isolation`은 인프라 검사로 남긴다.
@@ -130,9 +144,9 @@ claim은 비밀값을 한 번 발급하는 제어 프로토콜이므로 원래 �
 
 ## 검증과 마이그레이션
 
-- PostgreSQL 18의 전체 Backend `test bootJar`: 488개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다. heartbeat의 전체 실행 기한 제한과 600초 초과 시 자동 재시도 금지도 검증한다. 저장소 전환 후 근거 타입·격리 수준·최근 구매 순서·과거 NULL 이벤트 재호출의 충돌 처리도 포함한다.
-- Node 실행기 48개, MCP 25개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
-- 전체 검사 뒤 인간 overview에 원 질문 참조를 추가하고 답변→상세 연결 관련 16개 테스트와 `bootJar`를 다시 확인했다. MCP 25개와 Auth0 준비 도구 19개 테스트도 통과했다.
+- PostgreSQL 18의 전체 Backend `test bootJar`: 504개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다. heartbeat의 전체 실행 기한 제한과 600초 초과 시 자동 재시도 금지도 검증한다. 저장소 전환 후 근거 타입·격리 수준·최근 구매 순서·과거 NULL 이벤트 재호출의 충돌 처리도 포함한다.
+- Node 실행기 48개, MCP 26개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
+- 후속 책임의 생성·기한·입고·중복·부모 재개·일반 경로 우회 차단을 포함한 전체 검사다. MCP 26개와 Auth0 준비 도구 19개 검사를 별도로 확인했다.
 - V20은 QUEUED enum을 먼저 추가하고 V21에서 lease·멱등 데이터와 인덱스를 사용한다. V22는 최신 계산 결과의 원본 업무 연결을 강제한다.
 - 기존 RUNNING 예약 기록은 ABORTED로 정리하고 원래 snapshot을 보존한다. 이미 종료되었거나 실제 대기 중인 의무를 강제로 깨우지 않는다.
 - 독립 DDL 00~15·seed와 Flyway 경로를 별도 PostgreSQL 18 DB에서 검증했다. 외부 Auth0/ChatGPT/Codex 로그인, 실제 모델 실행, 대화 승인 연결과 전체 시연 인수는 아직 남아 있다.
