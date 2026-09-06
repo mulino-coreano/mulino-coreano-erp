@@ -50,13 +50,27 @@ class PurchaseWorkflowIntegrationTest {
     @Autowired ObjectMapper mapper;
     @Autowired RunService runs;
     @Autowired RunExecutionService execution;
-    @Autowired PlanPersistenceService plans;
+    @MockitoSpyBean PlanPersistenceService plans;
+    @Autowired AgentQueryService agentQueries;
     @MockitoSpyBean ReplenishmentCalculator calculator;
     @MockitoSpyBean PurchasePlanRepository purchasePlans;
     long managerId, operatorId, caseId, workId, warehouse;
     PlanDto plan;
     RunExecutionService.Claim claim;
     long originalOrders;
+
+    @Test
+    void planReadRechecksTheLeaseBeforeReturningItsEvidence() {
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            jdbc.sql("UPDATE runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE run_ref=:ref")
+                    .param("ref", claim.runRef()).update();
+            return result;
+        }).when(plans).get(plan.ref());
+        assertThatThrownBy(() -> agentQueries.plan(claim.capabilityToken(), "PROCUREMENT", "CASE-PURCHASE", plan.ref()))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("STALE_LEASE");
+    }
 
     @Test
     void approvalWaitingBehindRecalculationMustSeeTheNewPlanVersion() throws Exception {

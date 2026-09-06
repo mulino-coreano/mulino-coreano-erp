@@ -88,6 +88,8 @@ Run 임대의 조회·잠금은 `RunLeaseRepository`가 생성된 타입으로 �
 
 Run 예약의 조회·저장·savepoint는 `RunSchedulingRepository`로 분리했다. `RunService`는 요청·배정 검증과 컨텍스트 재구성·실패 처리를 담당한다. 활성 Run의 부분 유일 인덱스와 충돌 무시 조건, 재구성 시도별 savepoint, 이전 근거의 `stale` 표시는 유지한다.
 
+계획 조회는 `PlanQueryRepository`의 생성된 jOOQ 타입을 사용한다. Agent 조회는 같은 Case에 속한 계획인지 확인하고, 결과 구성 후 lease를 다시 확인하여 조회 중 실행 권한이 만료된 경우 근거를 반환하지 않는다.
+
 `backend`에서 `./gradlew generateJooq`를 실행하면 Testcontainers가 임시 PostgreSQL 18.6을 시작하고 Flyway 전체 마이그레이션을 적용한 뒤 Java 타입을 만든다. Docker가 필요하며 실제 애플리케이션 DB 설정이나 자격증명을 사용하지 않는다. 생성 코드는 `build/generated/sources/jooq`에만 있고 커밋하지 않는다. `compileJava`가 이 작업에 의존하며, 마이그레이션·생성기 변경 시 다시 생성한다. 변경이 없으면 Gradle의 최신 상태 검사를 사용한다.
 
 Spring이 제공하는 DSLContext로 기존 JDBC 트랜잭션에 참여한다. 쿼리의 스키마는 연결의 search_path를 따르므로 테스트 전용 스키마도 격리된다. 타입 생성은 컬럼·값의 타입 오류를 더 일찍 드러내며, 업무 조건과 동시성의 정확성은 별도 통합 테스트로 검증한다. [jOOQ 코드 생성](https://www.jooq.org/doc/latest/manual/code-generation/)과 [Spring 통합](https://docs.spring.io/spring-boot/reference/data/sql.html)을 따른다.
@@ -104,7 +106,7 @@ claim은 비밀값을 한 번 발급하는 제어 프로토콜이므로 원래 �
 
 ## 검증과 마이그레이션
 
-- PostgreSQL 18의 전체 Backend `clean test bootJar`: 458개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다.
+- PostgreSQL 18의 전체 Backend `test bootJar`: 459개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다.
 - Node 실행기 48개, MCP 19개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
 - V20은 QUEUED enum을 먼저 추가하고 V21에서 lease·멱등 데이터와 인덱스를 사용한다. V22는 최신 계산 결과의 원본 업무 연결을 강제한다.
 - 기존 RUNNING 예약 기록은 ABORTED로 정리하고 원래 snapshot을 보존한다. 이미 종료되었거나 실제 대기 중인 의무를 강제로 깨우지 않는다.

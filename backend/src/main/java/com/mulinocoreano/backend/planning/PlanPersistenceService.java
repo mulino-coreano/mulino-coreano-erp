@@ -42,16 +42,18 @@ public class PlanPersistenceService {
     private final Clock clock;
     private final TransactionTemplate transaction;
     private final PlanningDataGuard dataGuard;
+    private final PlanQueryRepository planQueries;
 
     public PlanPersistenceService(JdbcClient jdbc, PlanningSnapshotRepository snapshots,
                                   ReplenishmentCalculator calculator, RunCapabilityAccess capabilities,
                                   RequestIdempotency idempotency, CanonicalJson json, ObjectMapper mapper,
                                   @Qualifier("planningClock") Clock clock, PlatformTransactionManager transactionManager,
-                                  PlanningDataGuard dataGuard) {
+                                  PlanningDataGuard dataGuard, PlanQueryRepository planQueries) {
         this.jdbc = jdbc; this.snapshots = snapshots; this.calculator = calculator;
         this.capabilities = capabilities; this.idempotency = idempotency;
         this.json = json; this.mapper = mapper; this.clock = clock;
         this.dataGuard = dataGuard;
+        this.planQueries = planQueries;
         transaction = new TransactionTemplate(transactionManager);
         transaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -90,17 +92,7 @@ public class PlanPersistenceService {
     }
 
     public PlanDto get(String planRef) {
-        return jdbc.sql("""
-                SELECT p.plan_ref,c.case_ref,p.version,p.warehouse_id,p.as_of,p.horizon_days,p.target_date,
-                       p.source_snapshot::text,p.result::text,p.source_hash,p.plan_hash
-                FROM replenishment_plans p JOIN cases c USING(case_id) WHERE p.plan_ref=:ref
-                """).param("ref", planRef).query((rs, row) -> {
-                    JsonNode result = json.readTree(rs.getString("result"));
-                    return new PlanDto(rs.getString("plan_ref"), rs.getString("case_ref"), rs.getInt("version"),
-                            rs.getLong("warehouse_id"), rs.getTimestamp("as_of").toInstant(), rs.getInt("horizon_days"),
-                            rs.getDate("target_date").toLocalDate(), json.readTree(rs.getString("source_snapshot")), result,
-                            rs.getString("source_hash"), rs.getString("plan_hash"), attention(result));
-                }).optional().orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "PLAN_NOT_FOUND"));
+        return planQueries.find(planRef).orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "PLAN_NOT_FOUND"));
     }
 
     private Object prepare(RunCapabilityAccess.RunScope scope, PlanRequest request, JsonNode humanScope) {
@@ -273,9 +265,6 @@ public class PlanPersistenceService {
                         question, consequence, "OPEN", rs.getTimestamp(2).toInstant())).single();
     }
 
-    private AttentionDto attention(JsonNode result) {
-        return result.hasNonNull("attention") ? mapper.treeToValue(result.get("attention"), AttentionDto.class) : null;
-    }
     private static PlanRequest normalize(PlanRequest request) {
         if (request == null || request.warehouseId() == null || request.warehouseId() <= 0
                 || request.productIds() == null || request.productIds().isEmpty() || request.productIds().size() > 100
