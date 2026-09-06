@@ -147,6 +147,27 @@ class DispatcherIntegrationTest {
     }
 
     @Test
+    void replayOfLegacyNullPayloadEventIsRejectedAsContentConflict() {
+        Fixture fixture = waitingFixture("SUPPLIER_REPLY", "{\"supplier_id\":75}", "WAITING");
+        String externalRef = unique("legacy-msg");
+        jdbc.sql("""
+                INSERT INTO events (event_type, external_ref, case_id, payload)
+                VALUES ('SUPPLIER_EMAIL_RECEIVED', :externalRef, :caseId, NULL)
+                """)
+                .param("externalRef", externalRef)
+                .param("caseId", fixture.caseId())
+                .update();
+
+        assertThatThrownBy(() -> dispatcher.ingest(new CreateEventRequest(
+                "SUPPLIER_EMAIL_RECEIVED", externalRef, fixture.caseRef(), null,
+                Map.of("supplierId", 75))))
+                .isInstanceOf(EventIdempotencyConflictException.class)
+                .hasMessageContaining("different event content");
+        assertThat(eventCount("SUPPLIER_EMAIL_RECEIVED", externalRef)).isEqualTo(1);
+        assertThat(workItemStatus(fixture.workItemId())).isEqualTo("WAITING");
+    }
+
+    @Test
     void publicEventIngestionRequiresNonBlankIdempotencyKey() {
         Fixture fixture = waitingFixture("SUPPLIER_REPLY", "{\"supplier_id\":77}", "WAITING");
 

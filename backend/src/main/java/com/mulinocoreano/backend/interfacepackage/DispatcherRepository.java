@@ -332,7 +332,7 @@ public class DispatcherRepository {
                                 new ExistingEvent(
                                         r.value1(),
                                         Timestamp.valueOf(r.value2()).toInstant(),
-                                        r.value3(),
+                                        Boolean.TRUE.equals(r.value3()),
                                         parsePayload(r.value4())));
     }
 
