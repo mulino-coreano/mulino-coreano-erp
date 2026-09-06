@@ -78,9 +78,9 @@ flowchart LR
 
 ## 데이터 접근과 코드 생성
 
-구매 모듈은 제안·결정·검증 서비스와 데이터 접근을 분리했다. 쿼리는 jOOQ 3.21.7의 생성된 테이블·컬럼·enum으로 작성하며 JPA는 사용하지 않는다. 값은 DSL에 전달해 바인딩하고, 요청 값을 SQL 문자열에 이어 붙이지 않는다. 나머지 기존 JDBC 경로는 아직 점진적 전환 대상이다.
+구매 모듈은 제안·결정·검증 서비스와 데이터 접근을 분리했다. 쿼리는 jOOQ 3.21.7의 생성된 테이블·컬럼·enum으로 작성하며 JPA는 사용하지 않는다. 값은 DSL에 전달해 바인딩하고, 요청 값을 SQL 문자열에 이어 붙이지 않는다. 업무 테이블의 조회·저장은 생성된 타입을 쓰는 저장소에 모았다. 트랜잭션 격리 수준을 확인하는 고정 `SHOW transaction_isolation`은 인프라 검사로 남긴다.
 
-기존 `InterfaceService`도 접수와 조회로 분리했다. `CaseIntakeService`는 인간 권한·목표 범위·기존 Case 재사용·초기 실행 예약을 담당하고, `CaseIntakeRepository`가 해당 저장과 잠금을 수행한다. `InterfaceQueries`는 조회 응답·반환 개수 정책, `InterfaceReadRepository`는 생성된 타입을 사용한 조회만 담당한다. Run 예약은 기존 `RunService`로 직접 연결한다. API의 재고 검색·Case 접수·모니터 의미를 바꾸지 않는 정리이며, Dispatcher와 실행 컨텍스트 등의 기존 JDBC 구현은 남아 있다.
+기존 `InterfaceService`도 접수와 조회로 분리했다. `CaseIntakeService`는 인간 권한·목표 범위·기존 Case 재사용·초기 실행 예약을 담당하고, `CaseIntakeRepository`가 해당 저장과 잠금을 수행한다. `InterfaceQueries`는 조회 응답·반환 개수 정책, `InterfaceReadRepository`는 생성된 타입을 사용한 조회만 담당한다. Run 예약은 기존 `RunService`로 직접 연결한다. API의 재고 검색·Case 접수·모니터 의미는 유지한다.
 
 외부 신원 조회와 멱등 응답 저장도 생성된 타입을 사용한다. 신원은 여전히 매 요청 `(issuer, subject)`와 활성 ERP 사용자를 조회하며 캐시로 역할 변경을 늦추지 않는다. 멱등 키의 advisory lock과 응답 저장은 호출자의 기존 트랜잭션에 참여하고, 충돌·롤백·재생 규칙을 유지한다.
 
@@ -93,6 +93,12 @@ Run 예약의 조회·저장·savepoint는 `RunSchedulingRepository`로 분리�
 계획 조회는 `PlanQueryRepository`의 생성된 jOOQ 타입을 사용한다. Agent 조회는 같은 Case에 속한 계획인지 확인하고, 결과 구성 후 lease를 다시 확인하여 조회 중 실행 권한이 만료된 경우 근거를 반환하지 않는다.
 
 `ContextSnapshotRepository`는 생성된 jOOQ 테이블과 JSON 표현식으로 업무·참여자·근거·주장·결정을 한 SQL 문에서 읽는다. `ContextSnapshotService`는 이 결과를 숫자 정밀도를 보존하는 맥락 Map으로 복원한다. 배열 순서·빈 목록·명시적 null과 기존 필드 이름을 유지하며 예약 맥락을 현재값 캐시로 재사용하지 않는다.
+
+계획 저장은 `PlanPersistenceRepository`, 실제 ERP 근거 수집은 `PlanningSnapshotRepository`가 담당한다. 계획 서비스는 계산·검증·멱등 처리·재시도를 유지한다. source guard와 창고 조정의 잠금 순서, 최신 시점 확보를 위한 창고 행 갱신, 같은 Case·업무의 계산 시도 기록을 보존한다. 근거의 enum·배열·수량·날짜·시간 표현도 기존 저장 형식과 대조한다.
+
+`AgentWorkRepository`는 하위 업무와 참여자 저장, `ExecutionContextRepository`는 Case 범위·최신 계획·최근 구매 상태 조회를 담당한다. 서비스는 서버 소유 메타데이터, 역할 범위, 실행 예약 실패 시 롤백을 검증한다. 최근 구매 10건의 순서와 미반영 승인 표시, 큰 ID와 소수 정밀도를 유지한다.
+
+`DispatcherRepository`는 이벤트 저장·재생 확인, 대기 조건의 잠금·갱신, 근거 조회를 담당한다. `DispatcherService`는 이벤트 해석·범위·승인 판단과 재개 여부를 결정한다. 대기 조건과 업무의 잠금 순서, 조건부 상태 갱신, 같은 이벤트의 충돌 판정은 유지한다.
 
 `backend`에서 `./gradlew generateJooq`를 실행하면 Testcontainers가 임시 PostgreSQL 18.6을 시작하고 Flyway 전체 마이그레이션을 적용한 뒤 Java 타입을 만든다. Docker가 필요하며 실제 애플리케이션 DB 설정이나 자격증명을 사용하지 않는다. 생성 코드는 `build/generated/sources/jooq`에만 있고 커밋하지 않는다. `compileJava`가 이 작업에 의존하며, 마이그레이션·생성기 변경 시 다시 생성한다. 변경이 없으면 Gradle의 최신 상태 검사를 사용한다.
 
@@ -110,7 +116,7 @@ claim은 비밀값을 한 번 발급하는 제어 프로토콜이므로 원래 �
 
 ## 검증과 마이그레이션
 
-- PostgreSQL 18의 전체 Backend `test bootJar`: 462개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다. heartbeat의 전체 실행 기한 제한과 600초 초과 시 자동 재시도 금지도 검증한다.
+- PostgreSQL 18의 전체 Backend `test bootJar`: 466개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다. heartbeat의 전체 실행 기한 제한과 600초 초과 시 자동 재시도 금지도 검증한다. 저장소 전환 후 근거 타입·격리 수준·최근 구매 순서·과거 NULL 이벤트 재호출의 충돌 처리도 포함한다.
 - Node 실행기 48개, MCP 19개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
 - V20은 QUEUED enum을 먼저 추가하고 V21에서 lease·멱등 데이터와 인덱스를 사용한다. V22는 최신 계산 결과의 원본 업무 연결을 강제한다.
 - 기존 RUNNING 예약 기록은 ABORTED로 정리하고 원래 snapshot을 보존한다. 이미 종료되었거나 실제 대기 중인 의무를 강제로 깨우지 않는다.
