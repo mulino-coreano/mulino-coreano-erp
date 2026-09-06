@@ -30,6 +30,9 @@ class DispatcherConcurrencyIntegrationTest {
     JdbcClient jdbc;
 
     @Autowired
+    DispatcherRepository dispatcherRepository;
+
+    @Autowired
     RunSchedulingRepository scheduling;
 
     @Autowired
@@ -55,7 +58,7 @@ class DispatcherConcurrencyIntegrationTest {
                 scheduling, objectMapper, contextSnapshotService,
                 schedulingReached, continueScheduling);
         DispatcherService dispatcher = new DispatcherService(
-                jdbc, objectMapper, new WaitingConditionMatcher(), pausingRunService);
+                dispatcherRepository, objectMapper, new WaitingConditionMatcher(), pausingRunService);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {

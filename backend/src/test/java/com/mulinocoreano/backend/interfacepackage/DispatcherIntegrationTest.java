@@ -34,6 +34,9 @@ class DispatcherIntegrationTest {
     JdbcClient jdbc;
 
     @Autowired
+    DispatcherRepository dispatcherRepository;
+
+    @Autowired
     ObjectMapper objectMapper;
 
     @Test
@@ -115,7 +118,7 @@ class DispatcherIntegrationTest {
         };
         RunService failingRunService = new RunService(scheduling, objectMapper, failingContext);
         DispatcherService failingDispatcher = new DispatcherService(
-                jdbc, objectMapper, new WaitingConditionMatcher(), failingRunService);
+                dispatcherRepository, objectMapper, new WaitingConditionMatcher(), failingRunService);
 
         EventDispatchResponse result = failingDispatcher.ingest(new CreateEventRequest(
                 "SUPPLIER_EMAIL_RECEIVED", unique("msg"), fixture.caseRef(), null,
