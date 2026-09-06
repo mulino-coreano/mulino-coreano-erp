@@ -21,9 +21,25 @@ const done = (ref = null) => ({
   waitingConditions: [],
   resultRef: ref,
 });
+// Revision permission is a persisted human answer, never an expired proposal alone.
+const revision = c.epistemic?.decisions?.findLast(
+  (d) =>
+    d.sourceAttentionId &&
+    d.decided_by?.user_id &&
+    d.scope === "THIS_CASE" &&
+    c.purchasing?.some(
+      (p) =>
+        p.status === "EXPIRED" &&
+        d.decision_text ===
+          `Recalculate this Case using the changed supplier price; request a fresh purchase approval. Source plan: ${p.planRef}.`,
+    ),
+);
 let result;
 if (claim.agentKey === "ORCHESTRATOR") {
-  if (c.purchasing?.some((p) => p.status === "BLOCKED")) {
+  if (
+    c.purchasing?.some((p) => p.status === "BLOCKED") ||
+    (c.purchasing?.some((p) => p.status === "EXPIRED") && !revision)
+  ) {
     result = {
       outcome: "ABORTED",
       summary: "Human policy review required after BLOCK; no automatic reissue",
@@ -35,7 +51,26 @@ if (claim.agentKey === "ORCHESTRATOR") {
     assert.ok(c.followups[0].dueAt);
     result = done();
   } else {
-    const role = c.latestPlan ? "PROCUREMENT" : "SUPPLY_CHAIN";
+    const revisionTitle = revision
+      ? `Demo SUPPLY_CHAIN revision ${revision.decision_id}`
+      : null;
+    const revisionComplete =
+      revision &&
+      c.obligation?.some(
+        (w) => w.title === revisionTitle && w.status === "DONE",
+      );
+    const role =
+      revision && !revisionComplete
+        ? "SUPPLY_CHAIN"
+        : c.latestPlan
+          ? "PROCUREMENT"
+          : "SUPPLY_CHAIN";
+    const title =
+      role === "SUPPLY_CHAIN" && revision ? revisionTitle : `Demo ${role}`;
+    const key =
+      role === "SUPPLY_CHAIN"
+        ? `${claim.workItemRef}:supply-chain:${revision ? `decision-${revision.decision_id}` : "initial"}`
+        : `${claim.workItemRef}:procurement:${c.latestPlan.ref}`;
     const w = cli(
       "work",
       "create",
@@ -43,10 +78,10 @@ if (claim.agentKey === "ORCHESTRATOR") {
       JSON.stringify({
         caseRef: claim.caseRef,
         agentKey: role,
-        title: `Demo ${role}`,
+        title,
       }),
       "--request-key",
-      `${claim.caseRef}-${role}`,
+      key,
     );
     result = {
       outcome: "WAITING",
@@ -69,7 +104,7 @@ if (claim.agentKey === "ORCHESTRATOR") {
     "--json",
     process.env.DEMO_PLAN_INPUT,
     "--request-key",
-    `${claim.caseRef}-plan`,
+    `${claim.workItemRef}:plan`,
   );
   assert.equal(cli("plan", "show", p.ref).ref, p.ref);
   result = done(p.ref);
@@ -86,7 +121,7 @@ if (claim.agentKey === "ORCHESTRATOR") {
       "--json",
       "{}",
       "--request-key",
-      `${claim.caseRef}-purchase`,
+      `${claim.workItemRef}:purchase`,
     );
     assert.ok(p.executionResult);
     result = p.executionResult;

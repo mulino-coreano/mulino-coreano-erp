@@ -86,13 +86,25 @@ class DemoE2eTest {
         assertThat(jdbc.sql("SELECT count(*) FROM purchase_orders WHERE purchase_application_id IS NOT NULL").query(Long.class).single()).isZero();
         assertThat(jdbc.sql("SELECT count(*) FROM replenishment_followups").query(Long.class).single()).isZero();
         resetFixture();
-        launch(root, config, "approve");
+        launch(root, config, "prepare");
+        launch(root, config, "resume");
+        assertThat(jdbc.sql("SELECT sum(i.quantity*i.unit_price) FROM purchase_order_items i JOIN purchase_orders p USING(purchase_order_id) WHERE p.purchase_application_id IS NOT NULL").query(java.math.BigDecimal.class).single()).isEqualByComparingTo("16500");
+        resetFixture();
+        launch(root, config, "prepare");
+        // Declared fixture input change: external supplier price moves while approval is pending.
+        assertThat(jdbc.sql("UPDATE supplier_material_terms SET unit_price=1300 WHERE supplier_material_term_id=1 AND unit_price=1200").update()).isEqualTo(1);
+        launch(root, config, "expire");
+        assertThat(jdbc.sql("SELECT count(*) FROM purchase_orders WHERE purchase_application_id IS NOT NULL").query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM replenishment_followups").query(Long.class).single()).isZero();
+        launch(root, config, "replan");
+        assertThat(jdbc.sql("SELECT count(*) FROM purchase_orders WHERE purchase_application_id IS NOT NULL").query(Long.class).single()).isZero();
+        launch(root, config, "resume");
         assertThat(jdbc.sql("SELECT due_at FROM replenishment_followups").query(java.time.OffsetDateTime.class).single().toInstant()).isEqualTo(Instant.parse("2026-09-07T15:00:00Z"));
-        assertThat(jdbc.sql("SELECT trim_scale(i.quantity)::text || ':' || trim_scale(i.unit_price)::text FROM purchase_order_items i JOIN purchase_orders p USING(purchase_order_id) WHERE p.purchase_application_id IS NOT NULL ORDER BY i.raw_material_id").query(String.class).list()).containsExactly("5:1200", "5:1500", "60:50");
+        assertThat(jdbc.sql("SELECT trim_scale(i.quantity)::text || ':' || trim_scale(i.unit_price)::text FROM purchase_order_items i JOIN purchase_orders p USING(purchase_order_id) WHERE p.purchase_application_id IS NOT NULL ORDER BY i.raw_material_id").query(String.class).list()).containsExactly("5:1300", "5:1500", "60:50");
         businessNow.set(Instant.parse("2026-09-08T00:00:00Z"));
         launch(root, config, "due");
         assertThat(jdbc.sql("SELECT count(*) FROM purchase_orders WHERE purchase_application_id IS NOT NULL").query(Long.class).single()).isEqualTo(1);
-        assertThat(jdbc.sql("SELECT sum(i.quantity*i.unit_price) FROM purchase_order_items i JOIN purchase_orders p USING(purchase_order_id) WHERE p.purchase_application_id IS NOT NULL").query(java.math.BigDecimal.class).single()).isEqualByComparingTo("16500");
+        assertThat(jdbc.sql("SELECT sum(i.quantity*i.unit_price) FROM purchase_order_items i JOIN purchase_orders p USING(purchase_order_id) WHERE p.purchase_application_id IS NOT NULL").query(java.math.BigDecimal.class).single()).isEqualByComparingTo("17000");
         assertThat(jdbc.sql("SELECT count(*) FROM replenishment_followups").query(Long.class).single()).isEqualTo(1);
         assertThat(jdbc.sql("SELECT count(*) FROM runs r JOIN replenishment_followups f ON f.work_item_id=r.work_item_id").query(Long.class).single()).isZero();
     }
