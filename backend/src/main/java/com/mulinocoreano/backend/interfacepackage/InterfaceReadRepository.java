@@ -144,10 +144,16 @@ public class InterfaceReadRepository {
                                 a.QUESTION,
                                 a.CONSEQUENCE,
                                 a.STATUS,
-                                a.CREATED_AT)
+                                a.CREATED_AT,
+                                a.VERSION,
+                                a.GOVERNANCE_ACTION_ID,
+                                WORK_ITEMS.WORK_ITEM_REF,
+                                a.SUGGESTED_SCOPE)
                         .from(a)
                         .join(CASES)
                         .on(CASES.CASE_ID.eq(a.CASE_ID))
+                        .leftJoin(WORK_ITEMS)
+                        .on(WORK_ITEMS.WORK_ITEM_ID.eq(a.WORK_ITEM_ID))
                         .where(a.STATUS.eq(AttentionRequestStatus.OPEN))
                         .orderBy(a.CREATED_AT.desc());
         var rows = limit == null ? query.fetch() : query.limit(limit).fetch();
@@ -161,7 +167,11 @@ public class InterfaceReadRepository {
                                 r.value5(),
                                 r.value6(),
                                 r.value7().getLiteral(),
-                                instant(r.value8())));
+                                instant(r.value8()),
+                                r.value9(),
+                                r.value10(),
+                                r.value11(),
+                                r.value12() == null ? null : r.value12().getLiteral()));
     }
 
     public Counts counts() {

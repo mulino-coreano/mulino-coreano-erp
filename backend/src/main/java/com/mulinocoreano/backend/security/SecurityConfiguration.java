@@ -89,6 +89,8 @@ public class SecurityConfiguration {
                                         // 컨테이너의 오류 응답 전달만 허용한다. 직접 /error 요청은 아래 기본 거부를 유지한다.
                                         .dispatcherTypeMatchers(DispatcherType.ERROR)
                                         .permitAll()
+                                        .requestMatchers(HttpMethod.POST, "/api/v1/attention/*/answer")
+                                        .hasAuthority("work:write")
                                         .requestMatchers(HttpMethod.POST, "/api/v1/cases")
                                         .hasAuthority("work:write")
                                         .requestMatchers(

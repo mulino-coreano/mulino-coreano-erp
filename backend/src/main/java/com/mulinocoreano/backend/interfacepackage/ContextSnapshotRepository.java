@@ -329,6 +329,8 @@ public class ContextSnapshotRepository {
                                 jsonbArrayAgg(
                                                 jsonbObject(
                                                         key("decision_id").value(d.DECISION_ID),
+                                                        key("sourceAttentionId")
+                                                                .value(jsonbGetAttribute(d.METADATA, "sourceAttentionId")),
                                                         key("work_item_ref")
                                                                 .value(wi.WORK_ITEM_REF),
                                                         key("decision_text").value(d.DECISION_TEXT),
