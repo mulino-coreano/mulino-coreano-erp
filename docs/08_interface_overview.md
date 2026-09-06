@@ -240,7 +240,7 @@ Event는 불변 사실이다. 애플리케이션과 무관하게 DB 트리거가
 | 표면(채널) | 구현 |
 |---|---|
 | 백엔드 API | `interfacepackage/`의 업무 API와 `security/`의 `/api/v1/me`·JWT 신원/권한 검증 |
-| 이벤트 디스패처 | `DispatcherService` — 권위 있는 이벤트 기록·멱등 처리 → 대기조건 충족 → WI READY → Run 스케줄/실패 attention을 단일 트랜잭션으로 수행 |
+| 이벤트 디스패처 | `EventPreparation`이 실제 업무·승인·Claim/Evidence를 조회해 이벤트 범위와 내용을 검증한다. `DispatcherService`는 같은 트랜잭션에서 준비 → 이벤트 기록·멱등 처리 → 새 이벤트의 근거 연결 → 대기조건 충족 → WI READY → Run 스케줄/실패 attention을 조정한다. |
 | 대화 커넥터 | `mcp-server/` — 기존 도구 5종과 `whoami`, 인증된 stdio 및 Streamable HTTP, Auth0 OBO token exchange |
 | 재보충 계산 | `planning/` — 실제 ERP snapshot 대사, 주문 이력·날짜별 BOM·재고·공급처 계산. 불변 plan 저장/조회와 SUPPLY_CHAIN 실행 권한 검증까지 연결 |
 | L0 스키마 | 인터페이스 DDL 07~09, 인증 DDL 10(Flyway V18), 계획 DDL 11(Flyway V19), 실행·멱등 DDL 12~14(Flyway V20~V22) |
