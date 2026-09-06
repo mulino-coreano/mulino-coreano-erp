@@ -81,6 +81,8 @@ flowchart LR
 
 기존 `InterfaceService`도 접수와 조회로 분리했다. `CaseIntakeService`는 인간 권한·목표 범위·기존 Case 재사용·초기 실행 예약을 담당하고, `CaseIntakeRepository`가 해당 저장과 잠금을 수행한다. `InterfaceQueries`는 조회 응답·반환 개수 정책, `InterfaceReadRepository`는 생성된 타입을 사용한 조회만 담당한다. Run 예약은 기존 `RunService`로 직접 연결한다. API의 재고 검색·Case 접수·모니터 의미를 바꾸지 않는 정리이며, Dispatcher와 실행 컨텍스트 등의 기존 JDBC 구현은 남아 있다.
 
+외부 신원 조회와 멱등 응답 저장도 생성된 타입을 사용한다. 신원은 여전히 매 요청 `(issuer, subject)`와 활성 ERP 사용자를 조회하며 캐시로 역할 변경을 늦추지 않는다. 멱등 키의 advisory lock과 응답 저장은 호출자의 기존 트랜잭션에 참여하고, 충돌·롤백·재생 규칙을 유지한다.
+
 `backend`에서 `./gradlew generateJooq`를 실행하면 Testcontainers가 임시 PostgreSQL 18.6을 시작하고 Flyway 전체 마이그레이션을 적용한 뒤 Java 타입을 만든다. Docker가 필요하며 실제 애플리케이션 DB 설정이나 자격증명을 사용하지 않는다. 생성 코드는 `build/generated/sources/jooq`에만 있고 커밋하지 않는다. `compileJava`가 이 작업에 의존하며, 마이그레이션·생성기 변경 시 다시 생성한다. 변경이 없으면 Gradle의 최신 상태 검사를 사용한다.
 
 Spring이 제공하는 DSLContext로 기존 JDBC 트랜잭션에 참여한다. 쿼리의 스키마는 연결의 search_path를 따르므로 테스트 전용 스키마도 격리된다. 타입 생성은 컬럼·값의 타입 오류를 더 일찍 드러내며, 업무 조건과 동시성의 정확성은 별도 통합 테스트로 검증한다. [jOOQ 코드 생성](https://www.jooq.org/doc/latest/manual/code-generation/)과 [Spring 통합](https://docs.spring.io/spring-boot/reference/data/sql.html)을 따른다.
