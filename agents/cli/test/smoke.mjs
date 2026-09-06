@@ -94,6 +94,8 @@ function failure(result, exitCode, httpStatus) {
 for (const [args, path] of [
   [['case', 'show', 'CASE-DEMO'], '/api/v1/agent/cases/CASE-DEMO'],
   [['plan', 'show', 'PLAN-DEMO'], '/api/v1/agent/plans/PLAN-DEMO'],
+  [['material', 'show', '9007199254740993'], '/api/v1/agent/materials/9007199254740993'],
+  [['po', 'show', '9007199254740993'], '/api/v1/agent/purchase-orders/9007199254740993'],
 ]) {
   test(`${args.slice(0, 2).join(' ')} sends one authenticated scoped GET`, async t => {
     const server = await endpoint(t);
@@ -115,6 +117,8 @@ test('reference characters are encoded within one path segment', async t => {
 });
 
 for (const { name, args, body, path } of [
+  { name: 'po propose', args: ['po', 'propose', 'PLAN/DEMO?x#%한'],
+    body: '{ }', path: '/api/v1/plans/PLAN%2FDEMO%3Fx%23%25%ED%95%9C/purchase-proposal' },
   { name: 'plan calculate', args: ['plan', 'calculate', 'CASE-DEMO'],
     body: '{ "warehouseId": 1, "productIds": [1, 2], "horizonDays": 30 }', path: '/api/v1/cases/CASE-DEMO/plans' },
   { name: 'work create', args: ['work', 'create'],
@@ -306,4 +310,42 @@ test('API timeout also bounds a response that stalls after headers and partial b
   failure(await invoke(['case', 'show', 'CASE-DEMO'], server.base, { MULINO_API_TIMEOUT_MS: '80' }), 2);
   assert.ok(performance.now() - started < 3000);
   assert.equal(server.requests.length, 1);
+});
+
+for (const [group, prefix] of [['material', 'materials'], ['po', 'purchase-orders']]) {
+  test(`${group} identifiers stay within one encoded path segment`, async t => {
+    const server = await endpoint(t);
+    const identifier = '1/2?x#%한';
+    success(await invoke([group, 'show', identifier], server.base));
+    assert.equal(server.requests.length, 1);
+    assert.equal(server.requests[0].url, `/api/v1/agent/${prefix}/${encodeURIComponent(identifier)}`);
+  });
+}
+
+for (const status of ['PENDING_APPROVAL', 'NO_PURCHASE_REQUIRED']) {
+  test(`po propose preserves ${status} and decimal source bytes without a follow-up request`, async t => {
+    const response = `{"status":"${status}","totalAmount":9007199254740993.123456}`;
+    const server = await endpoint(t, (_request, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(response);
+    });
+    const result = await invoke(['po', 'propose', 'PLAN-DEMO', '--json', '{}', '--request-key', 'proposal-1'], server.base);
+    assert.equal(success(result).status, status);
+    assert.equal(result.stdout.trim(), response);
+    assert.equal(server.requests.length, 1, 'A terminal proposal outcome must not trigger retry or another command');
+  });
+}
+
+test('purchasing commands reject invented approval and malformed write arguments locally', async t => {
+  const server = await endpoint(t);
+  for (const args of [
+    ['po', 'approve', '1'],
+    ['po', 'approve', '1', '--json', '{}', '--request-key', 'k'],
+    ['po', 'propose', 'PLAN-1', '--json', '{}'],
+    ['po', 'propose', 'PLAN-1', '--json', '[]', '--request-key', 'k'],
+    ['po', 'propose', 'PLAN-1', '--json', '{}', '--request-key', ''],
+    ['po', 'propose', 'PLAN-1', '--json', '{}', '--json', '{}', '--request-key', 'k'],
+    ['material', 'show', '1', '--json', '{}'],
+  ]) failure(await invoke(args, server.base), 1);
+  assert.equal(server.requests.length, 0);
 });

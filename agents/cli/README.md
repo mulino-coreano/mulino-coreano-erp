@@ -34,6 +34,9 @@ HTTPS는 시스템 CA와 서버 인증서를 검증합니다. 인증서 검증�
 ## 현재 지원 명령
 
 ```text
+mulino material show ID
+mulino po show ID
+mulino po propose PLAN_REF --json '{}' --request-key KEY
 mulino case show CASE_REF
 mulino plan show PLAN_REF
 mulino plan calculate CASE_REF --json BODY --request-key KEY
@@ -43,6 +46,9 @@ mulino work transition WORK_ITEM_REF --json BODY --request-key KEY
 
 | 명령 | HTTP 경로 |
 |---|---|
+| `material show` | `GET /agent/materials/{id}` |
+| `po show` | `GET /agent/purchase-orders/{id}` |
+| `po propose` | `POST /plans/{ref}/purchase-proposal` |
 | `case show` | `GET /agent/cases/{ref}` |
 | `plan show` | `GET /agent/plans/{ref}` |
 | `plan calculate` | `POST /cases/{ref}/plans` |
@@ -53,6 +59,7 @@ mulino work transition WORK_ITEM_REF --json BODY --request-key KEY
 
 요청 DTO의 현재 필드는 다음과 같습니다. 서버가 인가한 역할과 범위 안에서만 처리합니다.
 
+- `po propose`: 빈 JSON object `{}`만 전달합니다. 서버가 해당 plan의 모든 구매 행을 선택하며 품목·수량·공급자를 CLI에서 변경하지 않습니다. 빈 object 여부는 서버가 검증합니다.
 - `plan calculate`: `warehouseId`, `productIds`, 선택 `horizonDays`.
 - `work create`: `caseRef`, `agentKey`, `title`, 선택 `description`, `metadata`. 현재 Orchestrator가 담당 역할에 업무를 배정하는 경로입니다.
 - `work transition`: `outcome`, `summary`, 선택 `waitingConditions`. 대기 조건의 형식과 완료 근거는 서버가 검증합니다.
@@ -65,11 +72,13 @@ mulino plan calculate CASE-EXAMPLE \
   --request-key plan-example-1
 ```
 
-`material`, `po` 등 대응 엔드포인트가 아직 없는 명령은 지원하지 않습니다. 성공을 가장한 응답이나 직접 DB 접근은 제공하지 않습니다.
+`po approve`·승인 결정·구매 적용 명령은 지원하지 않습니다. `material show`·`po show`는 서버가 Run capability 범위와 역할을 검증하는 조회입니다. 성공을 가장한 응답이나 직접 DB 접근은 제공하지 않습니다.
 
 ## 출력과 실패 처리
 
 성공하면 서버 JSON 원문을 stdout에 전달하고 종료 코드 0을 반환합니다. 소수·큰 정수는 계산하거나 재직렬화하지 않으므로 원래 숫자를 보존합니다. `PENDING_APPROVAL`·`BLOCKED` 같은 업무 판정도 HTTP 성공 응답이면 종료 코드 0의 데이터입니다.
+
+`po propose`가 `PENDING_APPROVAL` 또는 구매 불필요 결과를 반환하면서 Run capability를 종료할 수 있습니다. 이는 성공이며 자동 재시도하거나 추가 완료 명령을 보내지 않습니다. 승인 결정과 실제 PO 적용은 서버의 별도 권한 경로에서 처리합니다.
 
 사용법·환경 설정 오류는 종료 코드 1, HTTP·네트워크·TLS·timeout·응답 오류는 종료 코드 2이며 stderr에 안전한 JSON만 출력합니다. HTTP 오류에는 상태 번호가 포함됩니다. 예: `{"error":"API_ERROR","status":409}`. 실패 시 stdout에는 성공 결과를 내보내지 않습니다.
 
