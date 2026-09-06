@@ -13,6 +13,8 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import { conversationTools, callConversationTool, rejectUnknown } from "./conversation-tools.js";
+
 const CASE_STATUSES = new Set(["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"]);
 const CHANNELS = new Set(["CHAT", "SLACK", "EMAIL", "DASHBOARD", "API"]);
 
@@ -65,7 +67,7 @@ function casePayload(args) {
 }
 
 export function scopeForTool(name) {
-  return name === "create_case" ? "work:write" : "erp:read";
+  return conversationTools.find(tool => tool.name === name)?.scope ?? (name === "create_case" ? "work:write" : "erp:read");
 }
 
 export function createToolServer(api) {
@@ -83,6 +85,7 @@ export function createToolServer(api) {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
+      ...conversationTools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
       {
         name: "whoami",
         description: "현재 인증된 인간 사용자와 ERP 역할 및 허용 capability를 확인합니다.",
@@ -149,11 +152,13 @@ export function createToolServer(api) {
       },
       {
         name: "list_cases",
-        description: "List persistent business Cases (MONITOR).",
+        description: "등록된 Case를 목표·제목 검색어(q), 제품 SKU(productSku), 상태로 찾습니다.",
         inputSchema: {
           type: "object",
           properties: {
             status: { type: "string", enum: ["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"] },
+            q: { type: "string", minLength: 1, maxLength: 200 },
+            productSku: { type: "string", minLength: 1, maxLength: 50 },
           },
         },
       },
@@ -169,7 +174,8 @@ export function createToolServer(api) {
       },
     ].map((tool) => ({
       ...tool,
-      annotations: { readOnlyHint: tool.name !== "create_case", openWorldHint: false },
+      inputSchema: { ...tool.inputSchema, additionalProperties: false },
+      annotations: { readOnlyHint: scopeForTool(tool.name) === "erp:read", destructiveHint: tool.name === "decide_purchase", openWorldHint: false },
       _meta: { securitySchemes: [{ type: "oauth2", scopes: [scopeForTool(tool.name)] }] },
     })),
   }));
@@ -179,8 +185,14 @@ export function createToolServer(api) {
     const args = suppliedArguments ?? {};
     let requestKey;
     try {
+      const conversationTool = conversationTools.find(tool => tool.name === name);
+      if (conversationTool) {
+        if (conversationTool.write) requestKey = caseRequestKey(args.requestKey);
+        return await callConversationTool(conversationTool, args, api, requestKey);
+      }
       switch (name) {
         case "whoami": {
+          rejectUnknown(args, []);
           const data = await api("/me");
           return {
             content: [{ type: "text", text: "사용자: " + data.name + "\n역할: " + data.role }],
@@ -188,6 +200,8 @@ export function createToolServer(api) {
           };
         }
         case "ask_inventory": {
+          rejectUnknown(args, ["productQuery"]);
+          if (args.productQuery !== undefined && (typeof args.productQuery !== "string" || !args.productQuery.trim())) throw new Error("productQuery는 비어 있지 않은 제품명 또는 SKU여야 합니다.");
           const query = args?.productQuery?.trim();
           const data = await api(query ? "/ask?q=" + encodeURIComponent(query) : "/ask");
           return {
@@ -230,17 +244,23 @@ export function createToolServer(api) {
           };
         }
         case "list_cases": {
-          if (args.status && !CASE_STATUSES.has(args.status)) {
+          rejectUnknown(args, ["status", "q", "productSku"]);
+          if (args.status !== undefined && !CASE_STATUSES.has(args.status)) {
             throw new Error("status must be OPEN, IN_PROGRESS, WAITING, RESOLVED, or CLOSED");
           }
-          const q = args.status ? "?status=" + encodeURIComponent(args.status) : "";
+          const params = new URLSearchParams();
+          for (const [field, max] of [["q", 200], ["productSku", 50]]) {
+            if (args[field] !== undefined && (typeof args[field] !== "string" || !args[field].trim() || args[field].length > max)) throw new Error(`${field} 검색어가 올바르지 않습니다.`);
+          }
+          for (const field of ["status", "q", "productSku"]) if (args[field] !== undefined) params.set(field, args[field]);
+          const q = params.size ? "?" + params.toString() : "";
           const data = await api("/cases" + q);
           return {
             content: [
               {
                 type: "text",
                 text: data.length
-                  ? data.map((c) => c.caseRef + " — [" + c.status + "] " + c.title).join("\n")
+                  ? data.map((c) => c.caseRef + " — [" + c.status + "] " + c.title + (c.summary ? "\n  상태: " + c.summary.state + " / 인간 응답 필요: " + c.summary.needsHumanAttention + " / 남은 작업: " + c.summary.remainingWorkCount + "\n  다음 행동: " + c.summary.nextActions.join("; ") : "")).join("\n")
                   : "등록된 Case가 없습니다.",
               },
             ],
@@ -248,6 +268,7 @@ export function createToolServer(api) {
           };
         }
         case "list_attention": {
+          rejectUnknown(args, []);
           const data = await api("/attention");
           return {
             content: [
@@ -257,7 +278,7 @@ export function createToolServer(api) {
                   ? data
                       .map(
                         (a) =>
-                          "[" + a.reasonType + "] " + a.title + " (" + a.caseRef + ")\n  질문: " + a.question +
+                          "요청 " + a.attentionRequestId + " / 버전 " + a.version + " / 상태 " + a.status + (a.governanceActionId != null ? " / 구매 승인 " + a.governanceActionId + " (get_approval → decide_purchase)" : " (answer_attention)") + "\n[" + a.reasonType + "] " + a.title + " (" + a.caseRef + ")\n  질문: " + a.question +
                           (a.consequence ? "\n  미조치 시: " + a.consequence : "")
                       )
                       .join("\n\n")
@@ -268,6 +289,7 @@ export function createToolServer(api) {
           };
         }
         case "monitor_status": {
+          rejectUnknown(args, []);
           const data = await api("/monitor");
           return {
             content: [

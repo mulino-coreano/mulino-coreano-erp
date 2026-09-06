@@ -44,7 +44,7 @@ test("unauthenticated MCP gets a discoverable challenge; metadata ignores forwar
     const metadata = await response.json();
     assert.equal(metadata.resource, RESOURCE);
     assert.deepEqual(metadata.authorization_servers, [ISSUER]);
-    assert.deepEqual(metadata.scopes_supported, ["erp:read", "work:write", "offline_access"]);
+    assert.deepEqual(metadata.scopes_supported, ["erp:read", "work:write", "procurement:decide", "offline_access"]);
   }
   assert.equal(f.exchanges.length, 0);
 });
@@ -80,14 +80,17 @@ test("real SDK lists existing tools plus whoami and exchanges only for each tool
   const incoming = await f.token();
   const client = await f.client(incoming);
   const listing = await client.listTools();
-  assert.deepEqual(listing.tools.map((t) => t.name).sort(), ["ask_inventory", "create_case", "list_attention", "list_cases", "monitor_status", "whoami"]);
+  assert.deepEqual(listing.tools.map((t) => t.name).sort(), ["answer_attention", "ask_inventory", "create_case", "decide_purchase", "get_approval", "get_case", "get_plan", "get_purchase_order", "list_attention", "list_cases", "monitor_status", "whoami"]);
   const whoami = listing.tools.find((t) => t.name === "whoami");
   assert.equal(whoami.annotations.readOnlyHint, true);
   assert.deepEqual(whoami._meta.securitySchemes, [{ type: "oauth2", scopes: ["erp:read"] }]);
   assert.equal(listing.tools.find((t) => t.name === "create_case").annotations.readOnlyHint, false);
   assert.equal(listing.tools.find((t) => t.name === "monitor_status").annotations.readOnlyHint, true);
   assert.equal(f.exchanges.length, 0);
-  const result = await client.callTool({ name: "whoami", arguments: { sub: "forged", role: "ADMIN" } });
+  const forged = await client.callTool({ name: "whoami", arguments: { sub: "forged", role: "ADMIN" } });
+  assert.equal(forged.isError, true);
+  assert.equal(f.exchanges.length, 0);
+  const result = await client.callTool({ name: "whoami" });
   assert.equal(result.isError, undefined);
   assert.equal(result.structuredContent.name, "auth0|alice");
   assert.equal(f.backendCalls[0].path, "/api/v1/me");
@@ -253,3 +256,22 @@ async function listen(server) {
   resources.push(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
   return `http://127.0.0.1:${server.address().port}`;
 }
+
+test("human conversation mutations enforce distinct scopes and exchange exactly once", async () => {
+  const f = await fixture();
+  for (const [name, scope, args] of [
+    ["decide_purchase", "procurement:decide", { approvalId: "9007199254740993", expectedVersion: 1, proposalHash: "a".repeat(64), decision: "BLOCK", reason: "검토 후 차단", requestKey: "decision-http-1" }],
+    ["answer_attention", "work:write", { attentionRequestId: "9007199254740993", expectedVersion: 1, scope: "THIS_ACTION", answer: "확인", requestKey: "answer-http-1" }],
+  ]) {
+    const before = f.exchanges.length;
+    const forbidden = await f.rpc(await f.token(), "tools/call", { name, arguments: args });
+    assert.equal(forbidden.status, 403); assert.ok(forbidden.headers.get("www-authenticate").includes(scope));
+    assert.equal(f.exchanges.length, before);
+    const client = await f.client(await f.token({ scope: `erp:read ${scope}` }));
+    const response = await client.callTool({ name, arguments: args });
+    assert.equal(response.isError, undefined); assert.equal(response.structuredContent.requestKey, args.requestKey);
+    assert.equal(f.exchanges.at(-1).scope, scope); assert.equal(f.exchanges.length, before + 1);
+    assert.equal(f.backendCalls.at(-1).idempotencyKey, args.requestKey);
+  }
+  assert.equal(f.backendCalls.length, 2);
+});

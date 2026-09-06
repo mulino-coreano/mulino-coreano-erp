@@ -11,7 +11,7 @@ export function createHttpServer(config, { authFetch = fetch } = {}) {
   const metadata = {
     resource: config.audience,
     authorization_servers: [config.issuer],
-    scopes_supported: ["erp:read", "work:write", "offline_access"],
+    scopes_supported: ["erp:read", "work:write", "procurement:decide", "offline_access"],
     bearer_methods_supported: ["header"],
     resource_name: "Mulino ERP",
   };

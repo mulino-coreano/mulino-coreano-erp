@@ -96,3 +96,24 @@ Auth0/ERP 응답 본문·토큰·시크릿·내부 오류는 도구 오류에 �
 API 제한 시간이 지나면 호출을 자동 재시도하지 않습니다. 변경 요청은 서버에서 이미 반영되었을 가능성을 안내하며 상태를 먼저 확인해야 합니다. 이후 호출자가 `create_case` 재시도를 결정하면 오류 결과의 `requestKey`와 원래 입력을 그대로 사용합니다.
 
 `npm test`는 실제 SDK stdio/HTTP 클라이언트, 서명된 JWT, 로컬 JWKS 및 token/ERP endpoint로 다음을 검증합니다: 메타데이터와 challenge, 누락·서명·issuer·audience·만료·scope 오류, M2M 거부, 사용자별 문맥 분리와 토큰 교체, 정확한 OBO 요청, 바뀐 subject/audience 및 잘못된 OBO 결과 거부, backend credential 전달, 오류 비밀 제거, redirect 및 Host/Origin 거부, 기존 도구 호환성과 변경 요청 timeout. 목표 접수는 요청 키의 생성·유지·오류 반환, 정확한 재보충 본문, 신규/기존 Case 문구, 잘못된 입력 거부, 큰 ID 정밀도와 자동 재시도 없음을 추가로 검증합니다.
+
+## 인간 대화 도구
+
+| 도구 | API | Scope |
+|---|---|---|
+| `get_case(caseRef)` | `GET /cases/{ref}/overview` | `erp:read` |
+| `get_plan(planRef)` | `GET /plans/{ref}` | `erp:read` |
+| `get_approval(approvalId)` | `GET /approvals/{id}` | `erp:read` |
+| `get_purchase_order(purchaseOrderId)` | `GET /purchase-orders/{id}` | `erp:read` |
+| `decide_purchase(approvalId, decision, expectedVersion, proposalHash, reason, requestKey?)` | `POST /approvals/{id}/decision` | `procurement:decide` |
+| `answer_attention(attentionRequestId, answer, expectedVersion, scope, requestKey?)` | `POST /attention/{id}/answer` | `work:write` |
+
+`list_cases`는 `q`(목표·제목의 리터럴 검색어, 최대 200자), `productSku`(정확한 SKU, 최대 50자), `status`를 함께 받습니다. `get_case`는 인간·에이전트 참여자, 활성 대기, 승인·근거와 남은 의무를 표시합니다. 요약은 backend 계산을 사용하고 전체 backend 응답은 `structuredContent`에 보존합니다. 조회는 작업 실행이나 변경을 일으키지 않습니다.
+
+구매 결정은 `get_approval`에 표시된 공급사별 품목·정확한 수량·단가·합계와 **해당 버전·해시**를 검토한 인간이 **매번 명시적으로** 선택한 `APPROVE` 또는 `BLOCK`만 전달합니다. `APPROVE`는 실제 발주를 생성할 수 있으며 MANAGER 권한이 필요합니다. 저장된 정책이나 이전 동의는 자동 승인 권한이 아닙니다. 서버의 버전·해시·권한 검증은 클라이언트가 인간에게 확인받았다는 증명이 아닙니다. 발주 생성 후에도 생산·입고 이행 확인이 남습니다.
+
+일반 질문의 답변은 최신 `version`을 `expectedVersion`으로 전달하고 `THIS_ACTION` 또는 `THIS_CASE` 범위를 지정합니다. `governanceActionId`가 있는 구매 승인 요청은 일반 답변 경로로 처리할 수 없습니다. `THIS_CASE`도 향후 구매 자동 승인 정책을 만들지 않습니다. 답변 기록·작업 재개 예약은 목표 완료를 의미하지 않습니다.
+
+ID는 안전한 양의 정수 또는 signed 64-bit 범위의 정확한 숫자 문자열을 사용합니다. 큰 ID와 ERP 소수 금액은 숫자로 다시 변환하지 않습니다. 버전은 1~2147483647 정수, 제안 해시는 소문자 64자리 SHA-256, 사유는 비어 있지 않은 최대 4000자, 답변은 최대 8000자입니다. 사용자·역할·대리 실행 필드 등 미지원 입력은 거부합니다.
+
+두 변경 도구는 `create_case`와 같은 요청 키 규칙을 사용합니다. 키를 생략하면 한 번 생성하여 성공·API 오류 모두 `structuredContent.requestKey`로 반환하며, 오류 본문과 자격증명은 노출하지 않습니다. 타임아웃 후 자동 재시도하지 말고 현재 상태를 조회한 뒤 사용자가 재시도를 지시한 경우에만 같은 키와 같은 입력을 사용합니다. `procurement:decide`를 Auth0 MCP/ERP API와 OBO 권한에 함께 설정해야 하며, 실제 tenant 로그인 검증은 별도입니다.
