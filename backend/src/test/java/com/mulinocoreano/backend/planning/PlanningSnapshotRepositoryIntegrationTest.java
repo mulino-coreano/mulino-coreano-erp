@@ -55,6 +55,59 @@ class PlanningSnapshotRepositoryIntegrationTest {
         assertThat(snapshot.sourceFacts()).isNotEmpty();
     }
 
+    @Test
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    void rejectsCallerTransactionWithoutSnapshotIsolation() {
+        assertThatThrownBy(this::load).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("INCOHERENT_SNAPSHOT_TRANSACTION");
+    }
+
+    @Test
+    void sourceFactsPreserveCanonicalNamesTypesAndOrdering() {
+        var snapshot = load();
+        assertThat(snapshot.sourceFacts()).extracting(PlanningSnapshotRepository.SourceFact::sourceRef)
+                .isSorted().doesNotHaveDuplicates();
+        snapshot.sourceFacts().forEach(fact -> {
+            assertThat(fact.values().keySet().stream().toList()).isSorted();
+            fact.values().values().forEach(value -> assertThat(value == null
+                    || value instanceof String || value instanceof Number || value instanceof Boolean
+                    || value instanceof List<?>).isTrue());
+        });
+        var product = snapshot.sourceFacts().stream()
+                .filter(fact -> fact.sourceRef().equals("products:" + amr)).findFirst().orElseThrow();
+        assertThat(product.values()).containsEntry("product_type", "FINISHED_GOODS")
+                .containsEntry("is_active", true);
+        assertThat(product.values().keySet()).containsExactly("expiry_days", "is_active", "name",
+                "product_id", "product_type", "sku", "unit");
+        var receipts = snapshot.sourceFacts().stream()
+                .filter(fact -> fact.sourceRef().startsWith("inbound:")).toList();
+        assertThat(receipts).isNotEmpty().allSatisfy(fact -> {
+            var original = jdbc.sql("SELECT * FROM inbound WHERE inbound_id=:id")
+                    .param("id", fact.values().get("inbound_id")).query().singleRow();
+            for (String column : List.of("inbound_date", "expiry_date", "status", "status_decided_at")) {
+                Object value = original.get(column);
+                assertThat(fact.values().get(column)).isEqualTo(value == null ? null : value.toString());
+            }
+        });
+        var terms = snapshot.sourceFacts().stream()
+                .filter(fact -> fact.sourceRef().startsWith("supplier_material_terms:")).toList();
+        assertThat(terms).isNotEmpty().allSatisfy(fact -> {
+            assertThat(fact.values().get("unit_price")).isInstanceOf(BigDecimal.class);
+            assertThat(fact.values().get("required_cert_types")).isInstanceOf(List.class);
+            assertThat((List<?>) fact.values().get("required_cert_types"))
+                    .isNotEmpty().allSatisfy(type -> assertThat(type).isInstanceOf(String.class));
+            assertThat(fact.values()).containsKeys("supplier_active", "supplier_name");
+            assertThat(fact.values().get("valid_from")).isInstanceOf(String.class);
+            assertThat(LocalDate.parse((String) fact.values().get("valid_from"))).isNotNull();
+        });
+        assertThat(snapshot.supplierTerms().values()).allSatisfy(materialTerms ->
+                assertThat(materialTerms).allSatisfy(term ->
+                        assertThat(term.requiredCertificateTypes()).isNotEmpty()));
+        assertThat(snapshot.sourceFacts().stream().filter(fact -> fact.sourceRef().startsWith("outbound_lots:")))
+                .allSatisfy(fact -> assertThat(fact.values())
+                        .containsKeys("lot_product_id", "lot_warehouse_id", "lot_quantity"));
+    }
+
     private long id(String query) { return jdbc.sql(query).query(Long.class).single(); }
 
     @Test void purchaseLineArrivalTakesPrecedenceOverTheHeaderFinalArrival() {
