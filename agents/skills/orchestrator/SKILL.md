@@ -27,7 +27,7 @@ mulino work create --json '{"caseRef":"CASE-실제참조","agentKey":"SUPPLY_CHA
 6. 아래 본문과 키를 부모 Work Item + 정확한 계획 버전별로 고정한다. `metadata.businessRef`에 실제 계획 참조를 넣고 description에도 남긴다. `parentWorkItemRef`는 서버가 현재 부모로 설정한다. 재개 시 같은 요청을 재전송하여 기존 `workItemRef`를 복구할 수 있다. 같은 계획에 새 요청 키·새 제목을 만들어 중복 배정하지 않는다.
 
 ```bash
-mulino work create --json '{"caseRef":"CASE-실제참조","agentKey":"PROCUREMENT","title":"재보충 구매안 검토","description":"계획 PLAN-실제참조의 구매안을 검토하고 인간 결정 후 실제 발주를 확인한다.","metadata":{"businessRef":"PLAN-실제참조"}}' --request-key '<workItemRef>:procurement:<planRef>'
+mulino work create --json '{"caseRef":"CASE-실제참조","agentKey":"PROCUREMENT","title":"재보충 구매안 검토","description":"계획 PLAN-실제참조의 구매안을 검토하고 인간 결정 후 실제 발주를 확인한다.","metadata":{"businessRef":{"type":"replenishment_plan","ref":"PLAN-실제참조"}}}' --request-key '<workItemRef>:procurement:<planRef>'
 ```
 
 7. Case를 다시 읽고 정확한 구매 자식의 상태를 확인한다. 진행 중이면 그 참조로 DEPENDENCY_DONE을 반환한다. 구매 승인 대기는 자식의 서버가 저장하며 Orchestrator는 승인 조건을 직접 만들거나 polling하지 않는다. BLOCKED/실패는 사실과 필요한 인간 조치를 보고한다. 새 계획이 생겼다는 이유만으로 이전 미해결 구매 의무를 숨기지 않는다.

@@ -48,7 +48,7 @@ psql -d mulino_coreano -f database/seed/interface.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```
 
-**Planned stack** (new code follows this baseline): Backend is Spring Boot 4.1.x + Java 21 + Gradle exposing a REST API. Agents are Claude Code or Codex sessions (Cowork) driven by per-role skills; the planned agent tool surface is a single Zig CLI (`mulino`) calling the REST API. Dashboard is React 19 + Vite. There is no A2A protocol — the runtime's native subagent dispatch (Claude Code or Codex) replaces it. The implemented `mcp-server/` has authenticated stdio and remote HTTP transports using the same REST API; the Zig CLI implements scoped Case/plan/work commands while material/PO commands remain future work.
+**Planned stack** (new code follows this baseline): Backend is Spring Boot 4.1.x + Java 21 + Gradle exposing a REST API. Agents are Claude Code or Codex sessions (Cowork) driven by per-role skills; the planned agent tool surface is a single Zig CLI (`mulino`) calling the REST API. Dashboard is React 19 + Vite. There is no A2A protocol — the runtime's native subagent dispatch (Claude Code or Codex) replaces it. The implemented `mcp-server/` has authenticated stdio and remote HTTP transports using the same REST API; the Zig CLI implements scoped Case/plan/work/material/PO reads and purchase proposals; human conversation approval tools remain future work.
 
 ## Architecture (4 layers = directory mapping)
 

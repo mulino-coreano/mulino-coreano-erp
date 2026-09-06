@@ -64,11 +64,11 @@ OAuth는 개별 발주에 대한 사람의 확인을 증명하지 않는다. 인
 | `POST /cases/{ref}/plans` | SUPPLY_CHAIN capability로 계산. 인간의 창고·품목·목표일을 지켜 불변 계획·실제 snapshot·버전·hash 저장 | 구현 |
 | `GET /plans/{ref}` | ERP 조회 권한으로 저장된 계획·근거·제외 사유 확인 | 구현 |
 | `GET /agent/cases/{ref}`, `/agent/plans/{ref}` | 유효한 capability의 같은 Case 맥락·계획 조회 | 구현 |
-| `POST /plans/{ref}/purchase-proposal` | procurement가 검증된 계획의 승인 요청 생성. ERP 발주 행은 만들지 않음 | 백엔드 구현; CLI 연결 후속 |
+| `POST /plans/{ref}/purchase-proposal` | procurement가 검증된 계획의 승인 요청 생성. ERP 발주 행은 만들지 않음 | 백엔드·CLI 구현 |
 | `GET /approvals/{id}` | 공급처별 발주 내용·총액·근거·요청 이유·version/hash | 백엔드 구현; MCP 연결 후속 |
 | `POST /approvals/{id}/decision` | MANAGER의 APPROVE/BLOCK, 대상 version/hash·사유. 승인과 발주 반영 원자적 실행 | 백엔드 구현; 대화 결정 UX 후속 |
 | `POST /attention/{id}/answer` | answer·expectedVersion·THIS_ACTION/THIS_CASE. 구매 승인을 대신할 수 없음 | 후속 |
-| `GET /purchase-orders/{id}` | 발주·상세·원 승인·계획·감사 연결 | 백엔드 구현; CLI/MCP 연결 후속 |
+| `GET /purchase-orders/{id}` | 발주·상세·원 승인·계획·감사 연결 | 백엔드·agent CLI 구현; MCP 연결 후속 |
 | `/internal/runs/claim`, `/heartbeat`, `/finish`, `/retry` | 지정 worker M2M의 lease 제어. 공개 MCP에는 노출하지 않음 | 로컬 구현·검증 |
 | `/agent/work-items`, `/agent/work-items/{ref}/transition` | scoped 업무 생성·상태 전이·대기 저장. 임의 내부 상태 PATCH 없음 | 구현 |
 
@@ -192,7 +192,7 @@ ACT 접수 → Orchestrator 실행 예약
 **책임 영역:** `agents/cli/`, `agents/skills/`, 실행기와 backend agent capability.
 
 - [x] Zig 0.16.0 stdlib로 `case show`, `work create/transition`, `plan calculate/show`를 구현한다. JSON stdout/error stderr와 기존 exit code 계약, 숫자 정밀도·TLS·제한 시간·리다이렉트 차단을 검증한다.
-- [ ] 백엔드 구매 연결 후 `material show`, `po propose/show`를 추가한다. 현재 미구현 경로를 성공한 명령으로 노출하지 않는다.
+- [x] `material show`, `po propose/show`와 Case 범위의 자재·발주 조회 API를 추가했다. 인간 승인 명령은 agent CLI에 노출하지 않는다.
 - [x] 토큰은 환경변수로 받되 실행 결과·로그에 포함하지 않는다. CLI는 자동 재시도하지 않고 호출자의 멱등 키를 전달한다. 인간 승인 명령은 agent CLI에 넣지 않는다.
 - [ ] Orchestrator → Supply Chain → Procurement의 역할별 업무·hand-off·승인 대기를 연결한다. 대기 중 역할 실행의 종료와 상위 Case 책임의 지속을 스킬에 구분한다. 역할 변경을 업무 흐름에도 반영한다.
 - [ ] 모의 런타임 계약 테스트와 실제 Codex native subagent 실행 시험을 분리한다. 실제 시험은 계산 결과 참조와 승인 요청이 저장되는 것을 확인한다.

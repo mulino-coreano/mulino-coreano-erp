@@ -69,6 +69,10 @@ flowchart LR
 | `GET /api/v1/approvals/{id}` | `erp:read`로 구매 내용·요청자·제안 역할·버전/hash·결정·생성 발주 ID 조회 |
 | `POST /api/v1/approvals/{id}/decision` | 활성 MANAGER 및 `procurement:decide`. APPROVE/BLOCK, expectedVersion, proposalHash, reason과 멱등 키 필요 |
 | `GET /api/v1/purchase-orders/{id}` | 실제 기본/구매 단위 수량·가격·납기와 계획·승인·적용 연결 조회 |
+| `GET /api/v1/agent/purchase-orders/{id}` | 살아 있는 Run의 Case에서 적용된 발주 또는 최신 계획의 발주 상세 근거에 연결된 발주 조회 |
+| `GET /api/v1/agent/materials/{id}` | 최신 Case 계획에 포함된 자재의 현재 마스터·공급·공급 조건·인증을 일관된 snapshot으로 조회 |
+
+Agent 조회는 반복 읽기 트랜잭션에서 capability를 잠금·검증하고 응답 구성 후 다시 확인한다. 자재 응답의 `caseRef`, `planRef`, `warehouseId`, `asOf`는 범위와 조회 기준을 식별하며 `material`, `supply`, `supplierTerms`, `certificates`는 해당 자재와 관련 공급처로 제한한다. 현재 데이터가 일관되지 않으면 409이며 읽기로 Attention이나 계획을 만들지 않는다. 범위 밖 자재·발주는 404다. 기존 계획의 근거를 현재값으로 덮어쓰지 않는다.
 
 승인 전에는 발주가 없다. 승인과 발주·결정·적용·감사·이벤트가 함께 커밋되며 중간 실패는 전부 롤백한다. 동일 요청은 기존 결과를 재생한다. 변경된 입력은 원 제안을 EXPIRED로 기록한 뒤 409를 반환한다. 반려·만료가 같은 제안의 자동 재요청을 만들지 않는다. 이 REST 구현이 실제 대화 클라이언트에서 인간 확인을 받았다는 증거는 아니다.
 
@@ -116,7 +120,7 @@ claim은 비밀값을 한 번 발급하는 제어 프로토콜이므로 원래 �
 
 ## 검증과 마이그레이션
 
-- PostgreSQL 18의 전체 Backend `test bootJar`: 466개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다. heartbeat의 전체 실행 기한 제한과 600초 초과 시 자동 재시도 금지도 검증한다. 저장소 전환 후 근거 타입·격리 수준·최근 구매 순서·과거 NULL 이벤트 재호출의 충돌 처리도 포함한다.
+- PostgreSQL 18의 전체 Backend `test bootJar`: 472개 통과, 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다. heartbeat의 전체 실행 기한 제한과 600초 초과 시 자동 재시도 금지도 검증한다. 저장소 전환 후 근거 타입·격리 수준·최근 구매 순서·과거 NULL 이벤트 재호출의 충돌 처리도 포함한다.
 - Node 실행기 48개, MCP 19개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
 - V20은 QUEUED enum을 먼저 추가하고 V21에서 lease·멱등 데이터와 인덱스를 사용한다. V22는 최신 계산 결과의 원본 업무 연결을 강제한다.
 - 기존 RUNNING 예약 기록은 ABORTED로 정리하고 원래 snapshot을 보존한다. 이미 종료되었거나 실제 대기 중인 의무를 강제로 깨우지 않는다.

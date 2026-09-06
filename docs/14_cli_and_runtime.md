@@ -1,16 +1,17 @@
 # 역할 CLI와 Codex 실행 이미지
 
-현재 Zig CLI는 인증된 Case·계획 조회, 공급망 계획 계산, Orchestrator의 후속 업무 생성과 현재 업무 전이를 제공한다. Docker 이미지에는 이 Linux 실행 파일과 Codex 0.151.0, 역할 지침, 결과 JSON 스키마를 넣었다. **구매 제안·승인·발주 반영과 실제 모델 실행 인수는 아직 남아 있다.**
+현재 Zig CLI는 인증된 Case·계획·자재·발주 조회, 공급망 계획 계산, 구매 제안, Orchestrator의 후속 업무 생성과 현재 업무 전이를 제공한다. Docker 이미지에는 이 Linux 실행 파일과 Codex 0.151.0, 역할 지침, 결과 JSON 스키마를 넣었다. **인간의 대화 승인 도구, 후속 생산·입고 책임의 전체 연결과 실제 모델 실행 인수는 아직 남아 있다.**
 
 ## 구현 범위
 
 | 구성 | 현재 동작 |
 |---|---|
-| `agents/cli/` | Zig 0.16.0 표준 라이브러리만 사용. `case show`, `plan calculate/show`, `work create/transition`의 5개 경로 |
+| `agents/cli/` | Zig 0.16.0 표준 라이브러리만 사용. `case show`, `plan calculate/show`, `work create/transition`, `material show`, `po propose/show`의 8개 경로 |
 | 공급망 지침 | 인간이 확정한 거점·품목·목표일 유지 → 서버 계산 → 저장 계획 조회 → 근거를 가진 완료 제안 |
-| Orchestrator 지침 | 동일 업무 확인 → 공급망 업무·Run 저장 → 의존 대기 후 실행 종료 → 같은 Case에서 재개 |
+| Orchestrator 지침 | 고정 요청 키로 공급망·구매 업무 참조 복구 → 실제 상태 확인 → 의존 대기 후 종료·재개 |
+| Procurement 지침 | 정확한 계획으로 제안 → 서버 executionResult 반환 후 종료 → 인간 결정 후 실제 PO 조회·완료 검증 |
 | 런타임 | 호스트 Node가 lease·프로세스를 관리하고, 컨테이너는 Run capability로 CLI를 호출 |
-| 후속 | material/PO 명령, Procurement 승인 연결, 실제 native subagent 업무 수행과 두 인간 클라이언트의 전체 시연 |
+| 후속 | 대화 승인 도구·생산/입고 후속 책임, 실제 native subagent 업무 수행과 두 인간 클라이언트의 전체 시연 |
 
 CLI의 구체적 인수·본문은 [CLI 안내](../agents/cli/README.md)를 따른다. 명령은 ERP SQL이나 업무 계산을 포함하지 않는다. JSON 응답 숫자를 재직렬화하지 않아 소수·큰 정수의 원문을 보존한다. 변경은 호출자가 지정한 요청 키를 전달하며 자동 재시도·HTTP 리다이렉트는 하지 않는다. TLS 검증과 제한 시간·응답 크기 제한을 적용한다. API 오류는 상태 코드와 제한된 JSON 오류만 반환한다.
 
@@ -53,7 +54,7 @@ Worker API 응답의 소수·지수·JavaScript 안전 범위 밖 정수는 원�
 
 ## 검증 범위
 
-- Zig 단위 테스트 6개, 독립 HTTP smoke 24개 통과. 잘못된 TLS 인증서, 리다이렉트·자동 재시도 차단, 토큰 반사, 소수 정밀도, 응답 크기, 헤더/부분 본문 제한 시간을 포함한다.
+- Zig 단위 테스트 6개, 독립 HTTP smoke 32개 통과. 구매 제안의 빈 본문·요청 키, 승인 대기/구매 불필요 응답과 추가 요청 없는 종료도 포함한다. 잘못된 TLS 인증서, 리다이렉트·자동 재시도 차단, 토큰 반사, 소수 정밀도, 응답 크기, 헤더/부분 본문 제한 시간을 포함한다.
 - 부분 본문 제한 시간 시험에서 Zig 0.16.0 `Client.fetch` 취소 경로의 비정상 종료를 재현했다. 하위 request/response API로 교체한 뒤 정상 JSON 오류·exit 2를 확인했다.
 - ARM64와 AMD64 Linux 정적 바이너리를 빌드했다. 실제 Docker 실행 검증은 ARM64에서 수행했다.
 - 이미지 smoke는 가짜 capability와 별도 임시 볼륨으로 사용자·파일·권한·환경·CA·CLI·정확한 JSON·Codex 설정 파싱과 취소 시 컨테이너 삭제를 확인한다. 외부 네트워크는 차단하며 모델 요청은 0건이다.
