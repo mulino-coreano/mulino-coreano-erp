@@ -147,6 +147,29 @@ class AttentionAnswerIntegrationTest {
     }
 
     @Test
+    void invalidVersionUpdatesAreRejectedWithoutChangingStoredVersion() {
+        for (String invalid : List.of("NULL", "0", "-1")) {
+            assertThatThrownBy(
+                            () ->
+                                    jdbc.sql(
+                                                    "UPDATE attention_requests SET version="
+                                                            + invalid
+                                                            + " WHERE attention_request_id=:id")
+                                            .param("id", attention)
+                                            .update())
+                    .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+            assertThat(
+                            jdbc.sql(
+                                            "SELECT version FROM attention_requests WHERE"
+                                                + " attention_request_id=:id")
+                                    .param("id", attention)
+                                    .query(Integer.class)
+                                    .single())
+                    .isEqualTo(1);
+        }
+    }
+
+    @Test
     void everyUpdateInvalidatesViewedVersion() {
         jdbc.sql(
                         "UPDATE attention_requests SET question='Changed',version=999 WHERE"
