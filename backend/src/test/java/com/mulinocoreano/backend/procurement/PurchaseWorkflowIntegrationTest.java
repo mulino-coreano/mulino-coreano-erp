@@ -52,6 +52,8 @@ class PurchaseWorkflowIntegrationTest {
     @Autowired RunExecutionService execution;
     @MockitoSpyBean PlanPersistenceService plans;
     @Autowired AgentQueryService agentQueries;
+    @MockitoSpyBean AgentPurchasingReads scopedPurchasing;
+    @Autowired CanonicalJson exactJson;
     @MockitoSpyBean ReplenishmentCalculator calculator;
     @MockitoSpyBean PurchasePlanRepository purchasePlans;
     long managerId, operatorId, caseId, workId, warehouse;
@@ -70,6 +72,117 @@ class PurchaseWorkflowIntegrationTest {
         assertThatThrownBy(() -> agentQueries.plan(claim.capabilityToken(), "PROCUREMENT", "CASE-PURCHASE", plan.ref()))
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
                 .hasMessageContaining("STALE_LEASE");
+    }
+
+    @Test
+    void scopedMaterialReturnsOnlyCurrentLinkedFactsAndPreservesPlan() throws Exception {
+        long material = jdbc.sql("SELECT min(raw_material_id) FROM supplier_material_terms").query(Long.class).single();
+        String before = exactJson.write(plans.get(plan.ref()));
+        jdbc.sql("UPDATE supplier_material_terms SET unit_price=123456789012.123456 WHERE raw_material_id=:id")
+                .param("id", material).update();
+        var result = agentGet("materials", material, claim, 200);
+        assertThat(result.path("caseRef").asText()).isEqualTo("CASE-PURCHASE");
+        assertThat(result.path("planRef").asText()).isEqualTo(plan.ref());
+        assertThat(result.path("asOf").asText()).isEqualTo("2026-09-05");
+        assertThat(result.path("material").path("raw_material_id").asLong()).isEqualTo(material);
+        assertThat(result.path("supplierTerms")).isNotEmpty();
+        for (var term : result.path("supplierTerms"))
+            assertThat(term.path("unitPrice").decimalValue()).isEqualByComparingTo("123456789012.123456");
+        for (var supply : result.path("supply"))
+            assertThat(supply.path("item").path("id").asLong()).isEqualTo(material);
+        assertThat(exactJson.write(plans.get(plan.ref()))).isEqualTo(before);
+        agentGet("materials", Long.MAX_VALUE, claim, 404);
+        agentGet("materials", 0, claim, 400);
+        jdbc.sql("DELETE FROM planning_policies WHERE warehouse_id=:id").param("id", warehouse).update();
+        agentGet("materials", material, claim, 409);
+        assertThat(count("attention_requests")).isZero();
+    }
+
+    @Test
+    void scopedPurchaseRequiresLatestEvidenceAndPreservesLargeIdsAndDecimals() throws Exception {
+        long evidenced = java.util.stream.StreamSupport.stream(plan.sourceSnapshot().path("sourceFacts").spliterator(), false).filter(f -> f.path("sourceRef").asText().startsWith("purchase_order_items:")).findFirst().orElseThrow().path("values").path("purchase_order_id").asLong();
+        agentGet("purchase-orders", evidenced, claim, 200);
+        long unlinked = jdbc.sql("INSERT INTO purchase_orders(purchase_order_id,supplier_id,created_by,order_date,status) SELECT 9007199254740993,supplier_id,:user,CURRENT_DATE,'ORDERED' FROM purchase_orders LIMIT 1 RETURNING purchase_order_id")
+                .param("user", managerId).query(Long.class).single();
+        agentGet("purchase-orders", unlinked, claim, 404);
+        jdbc.sql("INSERT INTO replenishment_plans(plan_ref,case_id,warehouse_id,version,as_of,horizon_days,target_date,source_snapshot,result,source_hash,plan_hash,created_by_work_item_id) SELECT 'PLAN-READ-LARGE',case_id,warehouse_id,version+1,as_of,horizon_days,target_date,jsonb_build_object('sourceFacts',jsonb_build_array(jsonb_build_object('sourceRef',:source))),result,source_hash,plan_hash,created_by_work_item_id FROM replenishment_plans WHERE plan_ref=:ref")
+                .param("source", "purchase_orders:"+unlinked).param("ref", plan.ref()).update();
+        long material = jdbc.sql("SELECT min(raw_material_id) FROM raw_materials").query(Long.class).single();
+        jdbc.sql("INSERT INTO purchase_order_items(purchase_order_id,raw_material_id,quantity,unit_price) VALUES(:po,:material,12.345678,123456789012345.123456789)")
+                .param("po", unlinked).param("material", material).update();
+        var result = agentGet("purchase-orders", unlinked, claim, 200);
+        assertThat(result.path("id").asLong()).isEqualTo(unlinked);
+        assertThat(result.path("items").get(0).path("baseUnitPrice").decimalValue()).isEqualByComparingTo("123456789012345.123456789");
+        agentGet("purchase-orders", evidenced, claim, 404);
+        agentGet("purchase-orders", -1, claim, 400);
+    }
+
+    @Test
+    void purchasingReadsRejectStaleReassignedFinishedAndNonAgentCredentials() throws Exception {
+        long material = jdbc.sql("SELECT min(raw_material_id) FROM raw_materials").query(Long.class).single();
+        for (String resource : List.of("materials", "purchase-orders")) {
+            var human = new HumanActor("https://fixture.example/", "manager", managerId, "Manager", "MANAGER", Set.of("erp:read"));
+            var service = new com.mulinocoreano.backend.security.ServiceActor("https://fixture.example/", "worker", "worker", Set.of("worker:dispatch"));
+            for (Object actor : List.of(human, service)) {
+                var auth = UsernamePasswordAuthenticationToken.authenticated(actor, null, List.of(new SimpleGrantedAuthority("erp:read")));
+                mvc.perform(get("/api/v1/agent/"+resource+"/"+material).with(authentication(auth))).andExpect(status().isUnauthorized());
+            }
+            mvc.perform(get("/api/v1/agent/"+resource+"/"+material).header("Authorization", "Bearer human-or-m2m-jwt"))
+                    .andExpect(status().isUnauthorized());
+            mvc.perform(get("/api/v1/agent/"+resource+"/9223372036854775808").header("Authorization", "Bearer "+claim.capabilityToken()))
+                    .andExpect(status().isBadRequest());
+        }
+        jdbc.sql("UPDATE work_items SET assigned_agent_id=(SELECT agent_id FROM agents WHERE agent_key='QC') WHERE work_item_id=:id").param("id", workId).update();
+        agentGet("materials", material, claim, 409);
+        agentGet("purchase-orders", material, claim, 409);
+        jdbc.sql("UPDATE work_items SET assigned_agent_id=(SELECT agent_id FROM agents WHERE agent_key='PROCUREMENT') WHERE work_item_id=:id").param("id", workId).update();
+        jdbc.sql("UPDATE runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE run_ref=:ref").param("ref", claim.runRef()).update();
+        agentGet("materials", material, claim, 409);
+        agentGet("purchase-orders", material, claim, 409);
+        jdbc.sql("UPDATE runs SET status='COMPLETED',finished_at=clock_timestamp() WHERE run_ref=:ref").param("ref", claim.runRef()).update();
+        agentGet("materials", material, claim, 409);
+    }
+
+    @Test
+    void scopedReadsRecheckCapabilityAfterCurrentFactsAreLoaded() {
+        long material = jdbc.sql("SELECT min(raw_material_id) FROM raw_materials").query(Long.class).single();
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            jdbc.sql("UPDATE runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE run_ref=:ref").param("ref", claim.runRef()).update();
+            return result;
+        }).when(scopedPurchasing).material(caseId, "CASE-PURCHASE", material);
+        assertThatThrownBy(() -> agentQueries.material(claim.capabilityToken(), "PROCUREMENT", "CASE-PURCHASE", material))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class).hasMessageContaining("STALE_LEASE");
+    }
+
+    @Test
+    void foreignCaseWithoutPlanCannotReadPurchasingFacts() throws Exception {
+        long material = jdbc.sql("SELECT min(raw_material_id) FROM raw_materials").query(Long.class).single();
+        long order = java.util.stream.StreamSupport.stream(plan.sourceSnapshot().path("sourceFacts").spliterator(), false).filter(f -> f.path("sourceRef").asText().startsWith("purchase_order_items:")).findFirst().orElseThrow().path("values").path("purchase_order_id").asLong();
+        long foreign = jdbc.sql("INSERT INTO cases(case_ref,title,objective,intent_type) VALUES('CASE-FOREIGN-READ','Foreign','Other case','ACT') RETURNING case_id").query(Long.class).single();
+        jdbc.sql("INSERT INTO work_items(work_item_ref,case_id,title,assigned_agent_id) SELECT 'WI-FOREIGN-READ',:id,'Foreign',agent_id FROM agents WHERE agent_key='PROCUREMENT'").param("id", foreign).update();
+        runs.createRun(new CreateRunRequest("PROCUREMENT", "CASE-FOREIGN-READ", "WI-FOREIGN-READ", "CODEX"), null);
+        var other = execution.claim("foreign-worker").orElseThrow();
+        agentGet("materials", material, other, 404);
+        agentGet("purchase-orders", order, other, 404);
+    }
+
+    @Test
+    void scopedOrderRechecksCapabilityAfterProjection() {
+        long order = java.util.stream.StreamSupport.stream(plan.sourceSnapshot().path("sourceFacts").spliterator(), false).filter(f -> f.path("sourceRef").asText().startsWith("purchase_order_items:")).findFirst().orElseThrow().path("values").path("purchase_order_id").asLong();
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            jdbc.sql("UPDATE runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE run_ref=:ref").param("ref", claim.runRef()).update();
+            return result;
+        }).when(scopedPurchasing).order(caseId, order);
+        assertThatThrownBy(() -> agentQueries.purchaseOrder(claim.capabilityToken(), "PROCUREMENT", "CASE-PURCHASE", order))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class).hasMessageContaining("STALE_LEASE");
+    }
+
+    private JsonNode agentGet(String resource, long id, RunExecutionService.Claim token, int statusCode) throws Exception {
+        var result = mvc.perform(get("/api/v1/agent/"+resource+"/"+id).header("Authorization", "Bearer "+token.capabilityToken()))
+                .andExpect(status().is(statusCode)).andReturn().getResponse().getContentAsString();
+        return result.isEmpty() ? exactJson.readTree("{}") : exactJson.readTree(result);
     }
 
     @Test
@@ -267,6 +380,9 @@ class PurchaseWorkflowIntegrationTest {
         assertThat(count("purchase_applications")).isEqualTo(1);
         var next = execution.claim("verify-worker").orElseThrow();
         assertThat(next.agentKey()).isEqualTo("PROCUREMENT");
+        long appliedOrder = jdbc.sql("SELECT purchase_order_id FROM purchase_orders WHERE purchase_application_id IS NOT NULL").query(Long.class).single();
+        assertThat(agentGet("purchase-orders", appliedOrder, next, 200).path("caseRef").asText()).isEqualTo("CASE-PURCHASE");
+        agentGet("purchase-orders", appliedOrder, claim, 401);
         var purchaseContext = mapper.valueToTree(next.context()).path("purchasing");
         assertThat(purchaseContext.isArray()).isTrue();
         assertThat(purchaseContext.get(0).path("status").asText()).isEqualTo("APPROVED");

@@ -64,6 +64,21 @@ public class ExecutionContextRepository {
                 .fetch(record -> record.value1().data());
     }
 
+    public boolean hasAppliedPurchase(long caseId, long orderId) {
+        return dsl.fetchExists(
+                dsl.selectOne()
+                        .from(PURCHASE_ORDERS)
+                        .join(PURCHASE_APPLICATIONS)
+                        .on(
+                                PURCHASE_APPLICATIONS.PURCHASE_APPLICATION_ID.eq(
+                                        PURCHASE_ORDERS.PURCHASE_APPLICATION_ID))
+                        .where(
+                                PURCHASE_ORDERS
+                                        .PURCHASE_ORDER_ID
+                                        .eq(orderId)
+                                        .and(PURCHASE_APPLICATIONS.CASE_ID.eq(caseId))));
+    }
+
     public Optional<PriorPlan> latestPlan(long caseId) {
         var p = REPLENISHMENT_PLANS;
         return dsl.select(
