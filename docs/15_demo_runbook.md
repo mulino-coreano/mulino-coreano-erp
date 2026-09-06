@@ -90,7 +90,7 @@ node scripts/demo/readiness.mjs
 
 기본 동작은 점검뿐이다. 서비스/컨테이너 시작, migration/seed, tenant 변경, 토큰 획득, 로그인, 모델 요청, 업무 쓰기를 실행하지 않는다. DB 변수 3개가 모두 있을 때만 지정 PostgreSQL에 `BEGIN READ ONLY`와 읽기 전용 startup 옵션·statement timeout을 적용해 PostgreSQL 18, 최신 Flyway version, 실패 migration 유무를 조회한다. 접속 URL의 사용자정보·query·fragment는 거부한다. 원격 DB는 인증서 검증 TLS를 요구하고 비밀번호는 자식 프로세스 환경으로만 전달한다.
 
-HTTP는 지정된 안전한 URL에 GET만 보내며 redirect를 따라가지 않는다. public origin/issuer/CIMD는 HTTPS를 요구한다. 인간 token은 명시한 HTTPS 또는 loopback Backend `/me`에만 전송한다. 응답 크기와 시간, 자식 명령 실행 시간에 제한을 둔다. 제공자 오류 본문·환경 값은 결과에 출력하지 않는다.
+HTTP는 지정된 안전한 URL에 GET만 보내며 redirect를 따라가지 않는다. public origin/issuer/CIMD는 HTTPS를 요구한다. issuer는 실제 MCP 시작 설정과 동일한 정규 문자열(마지막 `/` 포함)이어야 하며, 다르면 issuer/resource 조회 전에 실패한다. MCP 설정 자체도 실제 시작 검증 함수를 사용한다. 인간 token은 명시한 HTTPS 또는 loopback Backend `/me`에만 전송한다. 응답 크기와 시간, 자식 명령 실행 시간에 제한을 둔다. 제공자 오류 본문·환경 값은 결과에 출력하지 않는다.
 
 결과의 각 component는 `PASS`, `MISSING`, `FAILED`, `UNVERIFIED`로 구분한다. `MISSING`은 필요한 변수 이름이나 설치 확인 실패, `FAILED`는 버전/응답/연결/안전성 조건 불일치, `UNVERIFIED`는 이 도구로 증명하지 않는 외부 인수다. `PASS`인 로그인 볼륨은 존재만 확인한 것이다. 이미지 존재도 내용·로그인·실행 성공을 대신하지 않는다.
 

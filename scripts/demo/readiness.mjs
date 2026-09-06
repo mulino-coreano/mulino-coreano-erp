@@ -6,6 +6,7 @@ import { constants } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { readConfig, safeUrl } from '../../agents/runner/src/protocol.js';
+import { readHttpConfig } from '../../mcp-server/src/auth/config.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const requiredRunner = ['MULINO_AUTH_ISSUER', 'MULINO_WORKER_CLIENT_ID', 'MULINO_WORKER_CLIENT_SECRET',
@@ -18,6 +19,12 @@ function https(value, originOnly = false) {
   const url = new URL(value);
   assert(url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash
     && (!originOnly || url.pathname === '/'));
+  return url;
+}
+function exactIssuer(value) {
+  const url = https(value, true);
+  // Match the deployed MCP validator: issuer identifiers are exact, never normalized.
+  assert(value === `${url.origin}/`);
   return url;
 }
 export function dbTarget(env) {
@@ -113,7 +120,7 @@ export async function runReadiness(env = process.env, deps = {}) {
   });
   if (!missing('mcp-metadata', ['MULINO_PUBLIC_ORIGIN', 'MULINO_AUTH_ISSUER'])) await check('mcp-metadata', async () => {
     const origin = https(env.MULINO_PUBLIC_ORIGIN, true).origin;
-    const issuer = https(env.MULINO_AUTH_ISSUER, true).href;
+    const issuer = exactIssuer(env.MULINO_AUTH_ISSUER).href;
     assert(!env.MULINO_MCP_AUDIENCE || env.MULINO_MCP_AUDIENCE === `${origin}/mcp`);
     assert(!env.MULINO_API_AUDIENCE || env.MULINO_API_AUDIENCE === 'urn:mulino:erp-api');
     const metadata = await json(`${origin}/.well-known/oauth-protected-resource/mcp`);
@@ -121,7 +128,7 @@ export async function runReadiness(env = process.env, deps = {}) {
       && scopes.every(scope => metadata.scopes_supported?.includes(scope)) && metadata.bearer_methods_supported?.includes('header'));
   });
   if (!missing('issuer-discovery', ['MULINO_AUTH_ISSUER'])) await check('issuer-discovery', async () => {
-    const issuer = https(env.MULINO_AUTH_ISSUER, true);
+    const issuer = exactIssuer(env.MULINO_AUTH_ISSUER);
     const metadata = await json(`${issuer.href}.well-known/openid-configuration`);
     assert(metadata.issuer === issuer.href && metadata.response_types_supported?.includes('code')
       && metadata.grant_types_supported?.includes('authorization_code') && metadata.grant_types_supported?.includes('refresh_token')
@@ -145,7 +152,9 @@ export async function runReadiness(env = process.env, deps = {}) {
       }
     });
   }
-  if (!missing('mcp-config', ['MULINO_AUTH0_CLIENT_ID', 'MULINO_AUTH0_CLIENT_SECRET'])) add('mcp-config', 'PASS', 'OBO 설정 값 존재. 실제 교환은 별도 검증.');
+  if (!missing('mcp-config', ['MULINO_PUBLIC_ORIGIN', 'MULINO_AUTH_ISSUER', 'MULINO_AUTH0_CLIENT_ID', 'MULINO_AUTH0_CLIENT_SECRET'])) {
+    await check('mcp-config', () => { readHttpConfig(env); });
+  }
   if (!missing('runner-config', requiredRunner)) await check('runner-config', () => { readConfig(env); });
   for (const [component, variable, kind] of [['runtime-image', 'MULINO_RUNTIME_IMAGE', 'image'], ['auth-volume', 'MULINO_CODEX_AUTH_VOLUME', 'volume']]) {
     if (!missing(component, [variable])) await check(component, async () => {

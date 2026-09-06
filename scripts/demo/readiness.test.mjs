@@ -142,3 +142,20 @@ test('redirected response, service identity and oversized metadata fail', async 
     assert.equal(status(await runReadiness(env, deps), 'backend-human'), 'FAILED');
   }
 });
+
+test('noncanonical issuer fails the deployed MCP config contract without issuer or resource probes', async () => {
+  for (const issuer of ['https://issuer.example', 'https://ISSUER.example/', 'https://issuer.example:443/']) {
+    const { calls, deps } = fixture();
+    const report = await runReadiness({ ...env, MULINO_AUTH_ISSUER: issuer }, deps);
+    assert.equal(status(report, 'mcp-config'), 'FAILED');
+    assert.equal(status(report, 'issuer-discovery'), 'FAILED');
+    assert.equal(status(report, 'mcp-metadata'), 'FAILED');
+    assert.equal(report.softwareConfigurationChecksPassed, false);
+    assert(!calls.some(call => call.url?.includes('openid-configuration') || call.url?.includes('oauth-protected-resource')));
+  }
+});
+test('MCP configuration checks use the actual startup validator', async () => {
+  const { deps } = fixture();
+  const report = await runReadiness({ ...env, MULINO_PORT: '65536' }, deps);
+  assert.equal(status(report, 'mcp-config'), 'FAILED');
+});
