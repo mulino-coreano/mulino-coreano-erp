@@ -16,6 +16,7 @@ class CaseOverviewIntegrationTest {
     @Autowired CaseOverviewService service;
     @Autowired JdbcClient jdbc;
     @Autowired CanonicalJson json;
+    @Autowired DispatcherService dispatcher;
 
     @Test void humanAssignmentsAllWaitsAndRemainingResponsibilitySurviveRead() {
         var ref="CASE-"+shortId(); long id=businessCase(ref,"Purchasing completed; inbound remains",null);
@@ -61,6 +62,45 @@ class CaseOverviewIntegrationTest {
         assertThatThrownBy(() -> service.overview("CASE-missing")).isInstanceOfSatisfying(ResponseStatusException.class,
             ex -> assertThat(ex.getStatusCode().value()).isEqualTo(404));
         assertThat(counts()).isEqualTo(before);
+    }
+    @Test void timelineIncludesAffectedEventsOnceAndExcludesUnrelatedGlobalEvents() {
+        String ref="CASE-"+shortId(); long id=businessCase(ref,"Affected timeline",null);
+        long agent=jdbc.sql("INSERT INTO agents(agent_key,display_name) VALUES (:key,'Timeline agent') RETURNING agent_id")
+            .param("key","AGENT-"+shortId()).query(Long.class).single();
+        for(int i=0;i<2;i++) {
+            long work=jdbc.sql("INSERT INTO work_items(work_item_ref,case_id,title,status,assigned_agent_id) VALUES (:ref,:id,'Due work','WAITING',:agent) RETURNING work_item_id")
+                .param("ref","WI-"+shortId()).param("id",id).param("agent",agent).query(Long.class).single();
+            jdbc.sql("INSERT INTO waiting_conditions(waiting_ref,work_item_id,condition_type,condition_payload,reason) VALUES (:ref,:work,'SCHEDULED_TIME',jsonb_build_object('due_at',CURRENT_TIMESTAMP-INTERVAL '1 hour'),'Due')")
+                .param("ref","WAIT-"+shortId()).param("work",work).update();
+        }
+        var sweep=dispatcher.dispatchScheduled();
+        assertThat(sweep.satisfiedWaiting()).hasSize(2);
+        assertThat(sweep.scheduledRuns()).hasSize(2);
+        long unrelated=event(null);
+        long otherCase=businessCase("CASE-"+shortId(),"Event source",null);
+        long runOnly=event(otherCase);
+        jdbc.sql("INSERT INTO runs(run_ref,agent_id,case_id,runtime,status,trigger_event_id) VALUES (:ref,:agent,:id,'CODEX','QUEUED',:event)")
+            .param("ref","RUN-"+shortId()).param("agent",agent).param("id",id).param("event",runOnly).update();
+        long waitOnly=event(otherCase);
+        long work=jdbc.sql("INSERT INTO work_items(work_item_ref,case_id,title,status) VALUES (:ref,:id,'Resolved wait','READY') RETURNING work_item_id")
+            .param("ref","WI-"+shortId()).param("id",id).query(Long.class).single();
+        jdbc.sql("INSERT INTO waiting_conditions(waiting_ref,work_item_id,condition_type,reason,status,resolved_at,resolved_by_event_id) VALUES (:ref,:work,'DEPENDENCY_DONE','Cross-case dependency','SATISFIED',CURRENT_TIMESTAMP,:event)")
+            .param("ref","WAIT-"+shortId()).param("work",work).param("event",waitOnly).update();
+        long direct=event(id);
+        var timeline=(Map<String,Object>)service.overview(ref).get("timeline");
+        var items=(List<Map<String,Object>>)timeline.get("items");
+        assertThat(items).extracting(item -> item.get("eventId"))
+            .containsExactly(direct,waitOnly,runOnly,sweep.eventId()).doesNotContain(unrelated);
+        assertThat(timeline).containsEntry("totalCount",4L).containsEntry("truncated",false);
+
+        for(int i=0;i<100;i++) event(id);
+        timeline=(Map<String,Object>)service.overview(ref).get("timeline");
+        assertThat((List<?>)timeline.get("items")).hasSize(100);
+        assertThat(timeline).containsEntry("totalCount",104L).containsEntry("truncated",true);
+    }
+    private long event(Long caseId) {
+        return jdbc.sql("INSERT INTO events(event_type,case_id,payload) VALUES ('DISPATCH_REQUESTED',:id,'{}') RETURNING event_id")
+            .param("id",caseId).query(Long.class).single();
     }
     private long businessCase(String ref,String title,String metadata) {
         return jdbc.sql("INSERT INTO cases(case_ref,title,objective,intent_type,metadata) VALUES (:ref,:title,:title,'ACT',CAST(:metadata AS jsonb)) RETURNING case_id")

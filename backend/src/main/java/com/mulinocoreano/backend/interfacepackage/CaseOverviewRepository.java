@@ -391,7 +391,26 @@ public class CaseOverviewRepository {
 
     public Map<String, Object> timeline(long id) {
         var e = EVENTS;
-        long total = dsl.fetchCount(e, e.CASE_ID.eq(id));
+        var wait = WAITING_CONDITIONS;
+        var item = WORK_ITEMS;
+        var run = RUNS;
+        var affectedCase =
+                e.CASE_ID.eq(id)
+                        .or(
+                                exists(
+                                        selectOne()
+                                                .from(wait)
+                                                .join(item)
+                                                .on(item.WORK_ITEM_ID.eq(wait.WORK_ITEM_ID))
+                                                .where(wait.RESOLVED_BY_EVENT_ID.eq(e.EVENT_ID))
+                                                .and(item.CASE_ID.eq(id))))
+                        .or(
+                                exists(
+                                        selectOne()
+                                                .from(run)
+                                                .where(run.TRIGGER_EVENT_ID.eq(e.EVENT_ID))
+                                                .and(run.CASE_ID.eq(id))));
+        long total = dsl.fetchCount(e, affectedCase);
         var items =
                 maps(
                         dsl.select(
@@ -403,7 +422,7 @@ public class CaseOverviewRepository {
                                         e.USER_ID,
                                         e.OCCURRED_AT)
                                 .from(e)
-                                .where(e.CASE_ID.eq(id))
+                                .where(affectedCase)
                                 .orderBy(e.OCCURRED_AT.desc(), e.EVENT_ID.desc())
                                 .limit(100)
                                 .fetch());
