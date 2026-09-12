@@ -4,11 +4,14 @@ spring:
     username: ${DB_USERNAME:mulino_app}
     password: ${DB_PASSWORD}
 
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    open-in-view: false
-
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+# 설정이 없으면 시작을 거부한다. 무인증 개발 profile은 제공하지 않는다.
+mulino:
+  auth:
+    issuer: ${MULINO_AUTH_ISSUER:}
+    audience: ${MULINO_API_AUDIENCE:urn:mulino:erp-api}
+    jwks-uri: ${MULINO_AUTH_JWKS_URI:}
+    worker-client-id: ${MULINO_WORKER_CLIENT_ID:}

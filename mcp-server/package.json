@@ -1,14 +1,19 @@
 {
   "name": "mulino-mcp-server",
   "version": "0.1.0",
-  "description": "Mulino Coreano ERP — MCP connector for ChatGPT / Claude",
+  "description": "Mulino Coreano ERP \u2014 MCP connector for ChatGPT / Claude",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "start:http": "node src/http-entry.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "jose": "6.2.11"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   }
 }

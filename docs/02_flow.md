@@ -242,7 +242,7 @@ flowchart TD
     Case --> Participants[case_participants / agents / users]
     Case --> Work[work_items: 명시적 담당]
     Work --> Waiting[waiting_conditions: WAITING]
-    Input[이벤트 API / 수동·모니터 재판정] --> Event[events: 불변 사실]
+    Input[인증된 실행기 이벤트 API / 수동 재판정] --> Event[events: 불변 사실]
     Event --> Match[Dispatcher 조건 판정]
     Waiting --> Match
     Match --> Ready[모든 ACTIVE 조건 해소: READY]
@@ -261,4 +261,42 @@ flowchart TD
 - `waiting_conditions.resolved_by_event_id`와 `runs.trigger_event_id`가 재개 원인을 보존한다. 증거와 Claim의 지지/반증 관계는 검증된 동일 Case 안에 기록한다.
 - `decisions`와 `attention_requests`가 Work Item을 참조하면 같은 Case여야 한다. 인간 답변의 `answer_scope`/결정의 `scope`는 컨텍스트에 보존하며 자동으로 전사 정책으로 확대하지 않는다.
 - Work Item의 `metadata.businessRef`는 ERP 행을 가리키는 인덱스다. 운영 Case의 생성이나 승인 Event 수신이 발주·입고·리콜 등 ERP 쓰기 권한을 대신하지 않는다. 해당 변경은 위 거버넌스 승인 매트릭스를 그대로 따른다.
-- 실제 LLM executor, 인간 답변/승인 채널, ERP 변경 capability는 후속 구현이다. 현재 디스패처는 실행 예약까지 기록한다.
+- Run의 QUEUED/lease·완료·대기·실패 API와 Node 실행기, 최소 Zig CLI·Codex 이미지를 구현했다. 구매 제안·MANAGER 결정·원자적 발주 반영 REST 경로도 추가했다. 인간 대화의 조회·구매 결정·일반 답변 도구도 연결했다. 실제 로그인·모델 업무 수행·두 클라이언트의 명시적 승인 UX 인수와 그 외 ERP 변경 capability는 남아 있다. 명령·이미지 검증은 [실행 이미지 안내](14_cli_and_runtime.md)를 따른다.
+
+### 구매 승인 구현 경로
+
+Orchestrator는 같은 요청 키와 본문으로 공급망·구매 업무 참조를 복구하고, 현재 상태를 확인한 뒤 자식의 완료를 기다린다. Procurement는 `plan show`와 Case 범위의 `material show`로 근거를 확인하고 `po propose`로 제안한다. 이미 저장된 승인 대기 응답은 그대로 반환하여 실행을 종료한다. 인간 결정 후 재개한 구매 역할은 해당 업무의 실제 발주를 `po show`로 확인하며, 품절 방지 Case 전체의 완료로 해석하지 않는다.
+
+공급망이 저장한 최신 계획을 Procurement가 재검증하여 구매안을 만든다. 이 단계는 발주 행을 만들지 않으며, 승인 Attention과 APPROVAL 대기를 저장하고 현재 Run을 종료한다. MANAGER의 버전·hash·사유가 있는 결정에서 현재 입력을 다시 확인한 후 공급처별 발주·상세·최종 결정·적용·감사·재개 이벤트를 한 트랜잭션으로 저장한다.
+
+반려 또는 입력 변경은 발주 없이 해당 구매 업무를 종결하고 재판단 요청을 남긴다. 구매가 불필요하면 가짜 승인이나 발주를 생성하지 않는다. 구매 수량과 기본 단위 수량, 상세 납기를 구분하며 새 발주의 창고를 명시한다. 생성 후 실제 발주 행과 승인 내용을 비교해야 구매 업무를 완료할 수 있다. 생산·입고가 남은 상위 Case는 자동 종결하지 않는다. 관계는 [ERD §10](03_erd.md#10-구매-승인과-발주-적용), API는 [실행 연결 안내](13_execution_and_plan_api.md)를 따른다.
+
+### 외부 신원과 조회 경계
+
+Auth0의 `(issuer, subject)`는 `external_identities`를 통해 사전 등록된 `users`에 연결한다. 이메일 자동 매칭은 하지 않으며, 조회와 Case 접수 시 현재 사용자 역할과 활성 여부를 확인한다. 외부 로그인 사용자에게 로컬 비밀번호를 요구하지 않는다. 이 관계는 ERP LOT 추적 체인을 변경하지 않는다.
+
+`GET /api/v1/monitor`는 조회만 수행한다. 기한·의존 업무의 재판정과 이벤트 인입은 허용된 실행기 서비스 신원의 `POST /api/v1/dispatch`, `POST /api/v1/events`로 제한한다. OAuth 접근 허용과 발주·입고·리콜에 대한 인간 승인은 별개의 단계다. 설정은 [Auth0 연결 안내](11_auth0_setup.md)를 따른다.
+
+### 재보충 계산과 생산 계획의 연결
+
+완제품 부족은 `planning_policies`의 수집 기간·예측 기간·안전재고와 주문 이력으로 계산한다. `bom_versions`·`bom_components`를 따라 반제품과 원재료의 필요량·필요일을 전개하고, 현재 LOT와 예정 입고를 차감한 다음 `supplier_material_terms`로 원재료 구매 후보를 비교한다. `measurement_units`는 성분과 구매 단위의 차원·환산율을 검증한다.
+
+반제품 실제 사용 이력은 `production_product_inputs`에서 생산 기록과 원본 생산 LOT을 연결한다. 원재료의 기존 `production_ingredients` 경로는 유지한다. 출고 LOT 합계·제품 잔량·입고별 원재료 LOT 합계·생산 투입 후 잔량이 일치하지 않으면 계획 계산을 거부한다.
+
+`planning_cases`·`replenishment_plans`에 거점별 업무와 불변 계획 버전을 저장한다. 실행 중인 SUPPLY_CHAIN 권한과 사람이 정한 범위를 검증한 뒤 저장하며, 계산 자체는 발주·생산·입고·재고를 변경하지 않는다. 목표 접수는 실제 인간과 초기 QUEUED Run을 기록한다. Work Item의 서버 소유 최신 계산 결과가 READY일 때만 계산 완료를 인정하며, 이전 정상 계획 뒤의 실패를 숨기지 않는다.
+
+대기 저장과 Run 종료·후속 이벤트를 원자적으로 처리한다. 임대가 만료되거나 권한이 바뀐 실행은 뒤늦은 변경을 할 수 없다. MANAGER 승인·발주 적용과 후속 입고 관찰은 로컬에서 검증했다. 실제 모델 호출·인간 클라이언트 인수는 남아 있으며, [ERD §8~9](03_erd.md), [계산 구현 안내](12_replenishment_calculation.md), [실행 연결 안내](13_execution_and_plan_api.md)를 함께 따른다.
+
+
+### 일반 인간 확인 요청의 답변
+
+직원은 Case 상세에서 질문·버전·답변 범위를 확인한 뒤 일반 답변을 남긴다. 답변은 THIS_ACTION/THIS_CASE의 인간 결정과 원 질문 참조로 저장한다. 질문이 바뀌었으면 이전 버전의 답변을 거부한다. 구매 연결 요청과 AUTHORITY_REQUIRED는 이 경로에서 처리하지 않는다.
+
+답변 후에도 다른 주의 요청·활성 대기·실행이 남아 있으면 현재 상태를 보존한다. 재개할 수 있는 해당 BLOCKED 에이전트 업무만 READY·QUEUED로 연결하며, 답변·결정·이벤트·예약은 함께 커밋한다. Case 상세는 저장된 인간·에이전트 담당과 모든 활성 대기를 보여주고, 발주 완료를 품절 해소로 확대하지 않는다.
+
+
+### 검증된 구매 완료 이후
+
+구매 완료를 기록할 때 원 계획에 연결된 서버 관리 후속 업무를 함께 저장한다. Case는 WAITING이며 ORCHESTRATOR가 조정 책임을 가진다. 발주 상세의 납기일이 끝난 뒤 실제 입고·LOT을 대조하고, 미충족 상세의 대기를 유지하거나 다음 기한으로 이동한다. 같은 관찰에는 주의 요청·이벤트를 반복 생성하지 않는다.
+
+입고가 모두 확인돼도 생산·재고 확인 의무는 남는다. 구매가 필요 없는 계획에는 가짜 발주나 납기를 만들지 않는다. 일반 실행 예약과 답변으로 전용 후속 업무를 모델 실행으로 바꾸지 않으며, 인간 답변은 보존한다. 기존 LOT 추적 데이터는 읽을 뿐 생산·입고 수량을 변경하지 않는다.

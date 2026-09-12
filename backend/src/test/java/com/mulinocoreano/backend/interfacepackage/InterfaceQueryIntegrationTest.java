@@ -1,5 +1,6 @@
 package com.mulinocoreano.backend.interfacepackage;
 
+import com.mulinocoreano.backend.security.WithTestActor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,6 +17,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+@WithTestActor(role = "VIEWER", capabilities = "erp:read")
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -85,6 +87,20 @@ class InterfaceQueryIntegrationTest {
                 .andExpect(jsonPath("$.truncated").isBoolean())
                 .andExpect(jsonPath("$.provenance").value(
                         "sources=stock,products,warehouses;generated_by=inventory_search"));
+    }
+
+    @Test
+    void searchTreatsSqlSyntaxAndWildcardCharactersAsLiteralText() throws Exception {
+        long warehouseId = warehouse("Literal search");
+        String marker = shortId();
+        String query = marker + " %_ ' OR 1=1 --";
+        stock("Item " + query, "LITERAL-" + marker, warehouseId, 7);
+        stock("Unrelated " + marker, "OTHER-" + marker, warehouseId, 9);
+
+        mockMvc.perform(get("/api/v1/ask").param("q", query))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalLocationCount").value(1))
+                .andExpect(jsonPath("$.inventory[0].sku").value("LITERAL-" + marker));
     }
 
     @Test

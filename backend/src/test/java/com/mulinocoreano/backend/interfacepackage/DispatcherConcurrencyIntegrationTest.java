@@ -1,6 +1,7 @@
 package com.mulinocoreano.backend.interfacepackage;
 
 import org.junit.jupiter.api.Test;
+import com.mulinocoreano.backend.followup.ReplenishmentFollowupService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -30,6 +31,15 @@ class DispatcherConcurrencyIntegrationTest {
     JdbcClient jdbc;
 
     @Autowired
+    ReplenishmentFollowupService followups;
+
+    @Autowired
+    DispatcherRepository dispatcherRepository;
+
+    @Autowired
+    RunSchedulingRepository scheduling;
+
+    @Autowired
     ObjectMapper objectMapper;
 
     @Autowired
@@ -49,10 +59,10 @@ class DispatcherConcurrencyIntegrationTest {
         CountDownLatch deactivationStarted = new CountDownLatch(1);
         AtomicLong deactivationBackendPid = new AtomicLong();
         RunService pausingRunService = new PausingRunService(
-                jdbc, objectMapper, contextSnapshotService,
+                scheduling, objectMapper, contextSnapshotService,
                 schedulingReached, continueScheduling);
         DispatcherService dispatcher = new DispatcherService(
-                jdbc, objectMapper, new WaitingConditionMatcher(), pausingRunService);
+                dispatcherRepository, objectMapper, new WaitingConditionMatcher(), pausingRunService, followups);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {
@@ -209,10 +219,10 @@ class DispatcherConcurrencyIntegrationTest {
         private final CountDownLatch continueScheduling;
 
         private PausingRunService(
-                JdbcClient jdbc, ObjectMapper objectMapper,
+                RunSchedulingRepository repository, ObjectMapper objectMapper,
                 ContextSnapshotService contextSnapshotService,
                 CountDownLatch schedulingReached, CountDownLatch continueScheduling) {
-            super(jdbc, objectMapper, contextSnapshotService);
+            super(repository, objectMapper, contextSnapshotService);
             this.schedulingReached = schedulingReached;
             this.continueScheduling = continueScheduling;
         }
