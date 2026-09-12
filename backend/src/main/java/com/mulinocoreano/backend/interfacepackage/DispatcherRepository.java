@@ -394,6 +394,7 @@ public class DispatcherRepository {
                         a.ATTENTION_REQUEST_ID
                                 .eq(id)
                                 .and(a.STATUS.eq(AttentionRequestStatus.ANSWERED))
+                                .and(a.REASON_TYPE.eq(AttentionReasonType.AUTHORITY_REQUIRED))
                                 .and(a.RESOLVED_BY_USER_ID.isNotNull())
                                 .and(a.GOVERNANCE_ACTION_ID.isNull()))
                 .forShare()

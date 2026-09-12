@@ -37,6 +37,7 @@ class AttentionAnswerIntegrationTest {
     @Autowired Flyway flyway;
     @Autowired JdbcClient jdbc;
     @Autowired AttentionAnswerService service;
+    @Autowired DispatcherService dispatcher;
     @Autowired CaseOverviewService overviews;
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
@@ -214,6 +215,38 @@ class AttentionAnswerIntegrationTest {
         assertThat(count("runs")).isZero();
         assertThat(count("purchase_orders")).isZero();
         assertThat(count("governance_decisions")).isZero();
+    }
+
+    @Test
+    void generalContextAnswerCannotBecomeAnApprovalThroughEventIngestion() {
+        jdbc.sql("UPDATE work_items SET status='WAITING' WHERE work_item_id=:id")
+                .param("id", work).update();
+        jdbc.sql("""
+                INSERT INTO waiting_conditions
+                    (waiting_ref,work_item_id,condition_type,condition_payload,reason)
+                VALUES('WAIT-CONTEXT',:work,'APPROVAL',
+                       jsonb_build_object('attention_request_id',:attention),'Human approval required')
+                """).param("work", work).param("attention", attention).update();
+        var operator = new HumanActor("https://test.invalid/", "operator", user,
+                "Operator", "OPERATOR", Set.of("work:write", "erp:read"));
+        service.answer(attention,
+                new AttentionAnswerRequest("Approved", 1, AttentionAnswerRequest.Scope.THIS_ACTION),
+                operator, "ordinary-context-answer");
+        long eventsBefore = count("events");
+
+        assertThatThrownBy(() -> dispatcher.ingest(new CreateEventRequest(
+                "CHANGE_REQUEST_APPROVED", "context-is-not-approval", null, null,
+                Map.of("attentionRequestId", attention))))
+                .isInstanceOf(InvalidInterfaceRequestException.class)
+                .hasMessageContaining("human approval");
+
+        assertThat(jdbc.sql("SELECT status::text FROM waiting_conditions")
+                .query(String.class).single()).isEqualTo("ACTIVE");
+        assertThat(jdbc.sql("SELECT status::text FROM work_items WHERE work_item_id=:id")
+                .param("id", work).query(String.class).single()).isEqualTo("WAITING");
+        assertThat(count("events")).isEqualTo(eventsBefore);
+        assertThat(count("runs")).isZero();
+        assertThat(count("purchase_orders")).isZero();
     }
 
     @Test
