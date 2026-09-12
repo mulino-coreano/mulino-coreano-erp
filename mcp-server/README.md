@@ -65,7 +65,7 @@ npm start
 | `list_attention` | 인간의 권한·판단이 필요한 항목 조회 | `erp:read` | 예 |
 | `monitor_status` | 저장된 운영 현황의 읽기 전용 snapshot | `erp:read` | 예 |
 
-기존 5개 도구의 입력과 업무 응답 필드를 유지합니다. 질문은 자동으로 Case를 만들지 않습니다. 구매 승인·발주 도구 및 실행기 API는 이번 단계의 MCP 도구에 추가하지 않습니다. `monitor_status`는 backend의 재판정·Run dispatch를 실행하지 않습니다.
+기존 조회·목표 접수 도구에 인간 신원 확인, Case·계획·승인안·발주 조회, 구매 결정과 일반 질문 답변을 추가했습니다. 질문은 자동으로 Case를 만들지 않습니다. 실행기 API는 인간 MCP에 노출하지 않으며 `monitor_status`는 backend의 재판정·Run dispatch를 실행하지 않습니다.
 
 ### 목표 접수와 재보충 범위
 

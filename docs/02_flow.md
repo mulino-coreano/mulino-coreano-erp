@@ -261,7 +261,7 @@ flowchart TD
 - `waiting_conditions.resolved_by_event_id`와 `runs.trigger_event_id`가 재개 원인을 보존한다. 증거와 Claim의 지지/반증 관계는 검증된 동일 Case 안에 기록한다.
 - `decisions`와 `attention_requests`가 Work Item을 참조하면 같은 Case여야 한다. 인간 답변의 `answer_scope`/결정의 `scope`는 컨텍스트에 보존하며 자동으로 전사 정책으로 확대하지 않는다.
 - Work Item의 `metadata.businessRef`는 ERP 행을 가리키는 인덱스다. 운영 Case의 생성이나 승인 Event 수신이 발주·입고·리콜 등 ERP 쓰기 권한을 대신하지 않는다. 해당 변경은 위 거버넌스 승인 매트릭스를 그대로 따른다.
-- Run의 QUEUED/lease·완료·대기·실패 API와 Node 실행기, 최소 Zig CLI·Codex 이미지를 구현했다. 구매 제안·MANAGER 결정·원자적 발주 반영 REST 경로도 추가했다. 실제 로그인·모델 업무 수행, 인간 대화의 승인 도구 연결과 그 외 ERP 변경 capability는 후속이다. 명령·이미지 검증은 [실행 이미지 안내](14_cli_and_runtime.md)를 따른다.
+- Run의 QUEUED/lease·완료·대기·실패 API와 Node 실행기, 최소 Zig CLI·Codex 이미지를 구현했다. 구매 제안·MANAGER 결정·원자적 발주 반영 REST 경로도 추가했다. 인간 대화의 조회·구매 결정·일반 답변 도구도 연결했다. 실제 로그인·모델 업무 수행·두 클라이언트의 명시적 승인 UX 인수와 그 외 ERP 변경 capability는 남아 있다. 명령·이미지 검증은 [실행 이미지 안내](14_cli_and_runtime.md)를 따른다.
 
 ### 구매 승인 구현 경로
 
@@ -285,7 +285,7 @@ Auth0의 `(issuer, subject)`는 `external_identities`를 통해 사전 등록된
 
 `planning_cases`·`replenishment_plans`에 거점별 업무와 불변 계획 버전을 저장한다. 실행 중인 SUPPLY_CHAIN 권한과 사람이 정한 범위를 검증한 뒤 저장하며, 계산 자체는 발주·생산·입고·재고를 변경하지 않는다. 목표 접수는 실제 인간과 초기 QUEUED Run을 기록한다. Work Item의 서버 소유 최신 계산 결과가 READY일 때만 계산 완료를 인정하며, 이전 정상 계획 뒤의 실패를 숨기지 않는다.
 
-대기 저장과 Run 종료·후속 이벤트를 원자적으로 처리한다. 임대가 만료되거나 권한이 바뀐 실행은 뒤늦은 변경을 할 수 없다. 실제 모델 호출·MANAGER 승인·발주 적용은 후속이며, [ERD §8~9](03_erd.md), [계산 구현 안내](12_replenishment_calculation.md), [실행 연결 안내](13_execution_and_plan_api.md)를 함께 따른다.
+대기 저장과 Run 종료·후속 이벤트를 원자적으로 처리한다. 임대가 만료되거나 권한이 바뀐 실행은 뒤늦은 변경을 할 수 없다. MANAGER 승인·발주 적용과 후속 입고 관찰은 로컬에서 검증했다. 실제 모델 호출·인간 클라이언트 인수는 남아 있으며, [ERD §8~9](03_erd.md), [계산 구현 안내](12_replenishment_calculation.md), [실행 연결 안내](13_execution_and_plan_api.md)를 함께 따른다.
 
 
 ### 일반 인간 확인 요청의 답변
