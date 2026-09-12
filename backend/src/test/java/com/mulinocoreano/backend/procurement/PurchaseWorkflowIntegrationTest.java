@@ -344,6 +344,40 @@ class PurchaseWorkflowIntegrationTest {
     }
 
     @Test
+    void approvalEvidenceKeepsItsImmutablePlanAfterErpAndLatestPlanChange() throws Exception {
+        var proposal = propose();
+        long id = proposal.path("approvalId").asLong();
+        var actor = new HumanActor("https://fixture.example/", "viewer", operatorId,
+                "Viewer", "VIEWER", Set.of("erp:read"));
+        var auth = UsernamePasswordAuthenticationToken.authenticated(actor, null,
+                List.of(new SimpleGrantedAuthority("erp:read")));
+        String path = "/api/v1/approvals/" + id;
+        var before = exactJson.readTree(mvc.perform(get(path).with(authentication(auth)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        var evidence = before.path("planEvidence");
+        assertThat(evidence.path("planRef").asText()).isEqualTo(plan.ref());
+        assertThat(evidence.path("result")).isEqualTo(exactJson.readTree(exactJson.write(plan.result())));
+        assertThat(evidence.path("supply")).isEqualTo(plan.sourceSnapshot().path("supply"));
+        assertThat(evidence.path("sourceRefs")).isNotEmpty();
+        assertThat(before.path("noActionConsequence").asText()).contains("목표 재고");
+        assertThat(java.util.stream.StreamSupport.stream(evidence.path("supply").spliterator(), false)
+                .anyMatch(l -> l.path("projected").asBoolean())).isTrue();
+        assertThat(java.util.stream.StreamSupport.stream(evidence.path("supply").spliterator(), false)
+                .anyMatch(l -> !l.path("projected").asBoolean())).isTrue();
+        String stored = exactJson.write(plans.get(plan.ref()));
+        jdbc.sql("UPDATE supplier_material_terms SET unit_price=123456789012.123456").update();
+        jdbc.sql("UPDATE stock SET quantity=quantity+999").update();
+        jdbc.sql("INSERT INTO replenishment_plans(plan_ref,case_id,warehouse_id,version,as_of,horizon_days,target_date,source_snapshot,result,source_hash,plan_hash,created_by_work_item_id) SELECT 'PLAN-LATER-APPROVAL-READ',case_id,warehouse_id,version+1,as_of,horizon_days,target_date,'{}','{}',source_hash,plan_hash,created_by_work_item_id FROM replenishment_plans WHERE plan_ref=:ref")
+                .param("ref", plan.ref()).update();
+        var after = exactJson.readTree(mvc.perform(get(path).with(authentication(auth)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(after).isEqualTo(before);
+        assertThat(exactJson.write(plans.get(plan.ref()))).isEqualTo(stored);
+        assertThat(count("purchase_orders")).isEqualTo(originalOrders);
+        assertThat(count("governance_decisions")).isZero();
+    }
+
+    @Test
     void proposalWaitsWithoutPurchaseAndManagerAppliesExactlyOnce() throws Exception {
         JsonNode proposal = propose();
         long approvalId = proposal.path("approvalId").asLong();

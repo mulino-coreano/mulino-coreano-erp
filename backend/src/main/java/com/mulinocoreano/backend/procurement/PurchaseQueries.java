@@ -1,6 +1,7 @@
 package com.mulinocoreano.backend.procurement;
 
 import static com.mulinocoreano.backend.generated.Tables.AGENTS;
+import static com.mulinocoreano.backend.generated.Tables.ATTENTION_REQUESTS;
 import static com.mulinocoreano.backend.generated.Tables.CASES;
 import static com.mulinocoreano.backend.generated.Tables.GOVERNANCE_ACTIONS;
 import static com.mulinocoreano.backend.generated.Tables.GOVERNANCE_DECISIONS;
@@ -76,6 +77,17 @@ public class PurchaseQueries {
                                 jsonEntry("requestedAt", g.REQUESTED_AT),
                                 jsonEntry("expiresAt", g.EXPIRES_AT),
                                 jsonEntry("proposal", g.PAYLOAD),
+                                jsonEntry("planEvidence", jsonbObject(
+                                        jsonEntry("planRef", p.PLAN_REF),
+                                        jsonEntry("version", p.VERSION),
+                                        jsonEntry("asOf", p.AS_OF),
+                                        jsonEntry("horizonDays", p.HORIZON_DAYS),
+                                        jsonEntry("targetDate", p.TARGET_DATE),
+                                        jsonEntry("sourceHash", p.SOURCE_HASH),
+                                        jsonEntry("planHash", p.PLAN_HASH),
+                                        jsonEntry("sourceSnapshot", p.SOURCE_SNAPSHOT),
+                                        jsonEntry("result", p.RESULT)).nullOnNull()),
+                                jsonEntry("noActionConsequence", approvalConsequence(g.GOVERNANCE_ACTION_ID)),
                                 jsonEntry("decision", latestDecision(g.GOVERNANCE_ACTION_ID)),
                                 jsonEntry("applicationId", app.PURCHASE_APPLICATION_ID),
                                 jsonEntry(
@@ -101,7 +113,7 @@ public class PurchaseQueries {
                 .leftJoin(app)
                 .on(app.GOVERNANCE_ACTION_ID.eq(g.GOVERNANCE_ACTION_ID))
                 .where(g.GOVERNANCE_ACTION_ID.eq(id))
-                .fetchOptional(record -> json.readTree(record.value1().data()))
+                .fetchOptional(record -> ApprovalEvidenceProjection.project(json.readTree(record.value1().data())))
                 .orElseThrow(() -> notFound("Purchase approval is not available"));
     }
 
@@ -144,6 +156,13 @@ public class PurchaseQueries {
                 .where(po.PURCHASE_ORDER_ID.eq(id))
                 .fetchOptional(record -> json.readTree(record.value1().data()))
                 .orElseThrow(() -> notFound("Purchase order is not available"));
+    }
+
+    private Field<String> approvalConsequence(Field<Long> approvalId) {
+        var a = ATTENTION_REQUESTS.as("approval_attention");
+        return field(select(a.CONSEQUENCE).from(a)
+                .where(a.GOVERNANCE_ACTION_ID.eq(approvalId))
+                .orderBy(a.ATTENTION_REQUEST_ID.desc()).limit(1));
     }
 
     private Field<JSONB> latestDecision(Field<Long> approvalId) {

@@ -29,6 +29,26 @@ class PurchaseReadIntegrationTest {
     @Autowired CanonicalJson json;
 
     @Test
+    void evidenceProjectionPreservesExactDecimalsAndExplicitlyMissingFields() {
+        var document = json.readTree("""
+                {"planEvidence":{"sourceSnapshot":{"supply":[
+                  {"quantity":123456789012345.123456789,"projected":false},
+                  {"quantity":0.000001,"projected":true}]},
+                  "result":{"totalAmount":123456789012345.123456789}}}
+                """);
+        var evidence = ApprovalEvidenceProjection.project(document).path("planEvidence");
+        assertThat(evidence.path("supply").get(0).path("quantity").decimalValue())
+                .isEqualByComparingTo("123456789012345.123456789");
+        assertThat(evidence.path("supply").get(1).path("quantity").decimalValue())
+                .isEqualByComparingTo("0.000001");
+        assertThat(evidence.path("result").path("totalAmount").decimalValue())
+                .isEqualByComparingTo("123456789012345.123456789");
+        assertThat(evidence.path("sourceRefs").isNull()).isTrue();
+        assertThat(evidence.path("boms").isNull()).isTrue();
+        assertThat(evidence.has("sourceSnapshot")).isFalse();
+    }
+
+    @Test
     void employeeCanReadExistingPurchaseWithoutInventingAnApprovalOrBuyUnit() throws Exception {
         var actor =
                 (HumanActor) SecurityContextHolder.getContext().getAuthentication().getPrincipal();

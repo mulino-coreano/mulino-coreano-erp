@@ -34,11 +34,34 @@ export function rejectUnknown(args, allowed) {
 const show = value => value === null || value === undefined ? "미제공" : typeof value === "object" ? JSON.stringify(value) : String(value);
 const rows = values => (values ?? []).map(value => `- ${show(value)}`).join("\n") || "없음";
 const lineText = line => `${show(line.materialName)} (자재 ${show(line.materialId)}, 계약 ${show(line.sourceTermId)}): ${show(line.buyQuantity)} ${show(line.buyUnit)} × ${show(line.buyUnitPrice)}원 = ${show(line.lineAmountKrw)}원; 기준 ${show(line.baseQuantity)} ${show(line.baseUnit)}, 환산 ${show(line.baseUnitsPerBuyUnit)}, 기준단가 ${show(line.baseUnitPrice)}원; 납기 ${show(line.expectedDeliveryDate)}`;
+const selectionReason = value => ({ SELECTED: "공급 조건을 충족한 후보 선정", NO_ELIGIBLE_SUPPLIER: "적격 공급사 없음", NO_PURCHASE_REQUIRED: "추가 구매 불필요" })[value] ?? show(value);
+const evidenceNotes = values => values == null ? "미제공" : values.length === 0 ? "기록된 항목 없음" : values.map(v => `${show(v.code)}${v.detail ? `: ${v.detail}` : ""}${v.resourceRef ? ` (${v.resourceRef})` : ""}`).join("; ");
+function approvalEvidenceText(e) {
+  if (!e) return "계획 근거 미제공";
+  const result = e.result ?? {};
+  const supply = e.supply;
+  const lots = projected => Array.isArray(supply) ? rows(supply.filter(l => l.projected === projected).map(l => `${show(l.sourceRef)}: ${show(l.quantity)} ${show(l.item?.unit)} / 가용일 ${show(l.availableOn)} / 만료일 ${show(l.expiresOn)} / 제외 사유 ${show(l.exclusionReason)}`)) : "미제공";
+  return `저장된 계획 근거: ${show(e.planRef)} / 계획 버전 ${show(e.version)} / 기준 시각 ${show(e.asOf)} / 목표일 ${show(e.targetDate)}
+출처 해시: ${show(e.sourceHash)} / 계획 해시: ${show(e.planHash)}
+출처 참조: ${Array.isArray(e.sourceRefs) ? e.sourceRefs.join(", ") : "미제공"}
+수요 근거: ${result.forecasts == null ? "미제공" : rows(Object.entries(result.forecasts).map(([id, f]) => `제품 ${id}: 이력 ${show(f.historyWindowStart)}~${show(f.historyEnd)}, 일평균 ${show(f.dailyMean)}, 안전재고 ${show(f.safetyQuantity)}`))}
+자재 계산: ${result.requirements?.materials == null ? "미제공" : rows(result.requirements.materials.map(m => `자재 ${show(m.material?.id)}: 총소요 ${show(m.grossQuantity)}, 공급 반영 ${show(m.suppliedQuantity)}, 순소요 ${show(m.netQuantity)} ${show(m.material?.unit)} / 필요일 ${show(m.needDate)}`))}
+추천 이유: ${result.purchases == null ? "미제공" : rows(result.purchases.map(p => `자재 ${show(p.material?.id)}: ${selectionReason(p.selection?.reason)} / 선정 공급사 ${show(p.selection?.chosen?.supplierId)}
+  비교 후보: ${p.selection?.feasibleCandidates == null ? "미제공" : p.selection.feasibleCandidates.map(c => `공급사 ${show(c.supplierId)} 총액 ${show(c.totalAmount)}원, 예상 도착 ${show(c.expectedArrival)}`).join("; ") || "없음"}
+  제외 후보: ${p.selection?.rejectedCandidates == null ? "미제공" : p.selection.rejectedCandidates.map(c => `공급사 ${show(c.supplierId)}: ${(c.reasons ?? []).join(", ")}`).join("; ") || "없음"}`))}
+계획 기준 재고 (제외 사유가 있으면 사용 가능 재고로 해석하지 않음):
+${lots(false)}
+예상 공급 (계획 당시 미입고·미완료):
+${lots(true)}
+남은 불확실성: 계산 이슈 ${evidenceNotes(result.issues)} / 공급사 경고 ${result.purchases == null ? "미제공" : result.purchases.map(p => `자재 ${show(p.material?.id)}: ${evidenceNotes(p.selection?.warnings)}`).join("; ") || "기록된 항목 없음"}
+이 근거는 저장 당시 자료입니다. 현재 재고와 이후 입고·생산 이행, 실제 수요는 별도 확인해야 하며 예상 공급은 현재 재고가 아닙니다.`;
+}
 export function approvalText(data) {
   if (data.error) return `구매 결정 미완료: ${show(data.error)}\n현재 승인안을 다시 조회하고 변경된 버전과 내용을 확인하세요.`;
   const proposal = data.proposal;
   return `승인 ${show(data.ref ?? data.id)}: ${show(data.status)}\nCase: ${show(data.caseRef)} / 계획: ${show(data.planRef)}\n필요 권한: ${show(data.requiredRole)} (구매 결정: MANAGER)\n제안 버전: ${show(data.version)}\n제안 해시: ${show(data.proposalHash)}\n만료: ${show(data.expiresAt)}\n`
     + (proposal ? `창고: ${show(proposal.warehouseId)} / 목표일: ${show(proposal.targetDate)}\n${(proposal.orders ?? []).map(order => `공급사: ${show(order.supplierName)} (${show(order.supplierId)}), 통화 ${show(order.currency)}, 납기 ${show(order.expectedDeliveryDate)}\n${(order.lines ?? []).map(lineText).join("\n")}\n공급사 합계: ${show(order.totalKrw)}원`).join("\n")}\n총액: ${show(proposal.totalKrw)}원` : "제안 근거 미제공")
+    + `\n${approvalEvidenceText(data.planEvidence)}\n미조치 시: ${show(data.noActionConsequence)}`
     + `\n최종 결정: ${show(data.decision)}\n발주 ID: ${show(data.purchaseOrderIds)}\n다음 행동: 대기 중이면 표시된 버전·해시와 구매 내용을 확인한 인간의 명시적 승인 또는 차단 선택이 필요합니다. 생산·입고의 이행 여부는 별도로 확인해야 합니다.`;
 }
 const followupStatus = { AWAITING_RECEIPT: "입고 확인 대기", RECEIPT_REVIEW_REQUIRED: "입고 예외 확인 필요", PRODUCTION_REVIEW_REQUIRED: "생산/재고 검토 필요", STOCK_REVIEW_REQUIRED: "재고 검토 필요" };
@@ -61,7 +84,7 @@ function caseText(data) {
 export const conversationTools = [
   read("get_case", "Case의 목표, 인간·에이전트 참여자, 작업·대기, 근거, 승인 및 남은 의무를 조회합니다. 조회는 실행을 시작하지 않습니다.", "caseRef", a => `/cases/${encodeURIComponent(a.caseRef)}/overview`, caseText),
   read("get_plan", "계획의 불변 버전, 원본 근거와 계산 결과를 조회합니다. 금액을 다시 계산하거나 작업을 실행하지 않습니다.", "planRef", a => `/plans/${encodeURIComponent(a.planRef)}`, d => `계획 ${show(d.ref)} / Case ${show(d.caseRef)}\n버전: ${show(d.version)} / 기준 시각: ${show(d.asOf)} / 목표일: ${show(d.targetDate)}\n원본 해시: ${show(d.sourceHash)}\n계획 해시: ${show(d.hash)}\n계산 결과: ${show(d.result)}\n주의 요청: ${show(d.attention)}\n다음 행동: 구매가 필요하면 Case의 승인안을 확인하세요. 계획은 발주·생산·입고 완료를 뜻하지 않습니다.`),
-  read("get_approval", "구매 승인안의 정확한 공급사별 품목·수량·단가·합계, 버전·해시와 MANAGER 권한을 확인합니다.", "approvalId", a => `/approvals/${a.approvalId}`, approvalText, true),
+  read("get_approval", "구매 승인안의 정확한 품목·금액·버전·해시, 저장된 계획의 계산·출처·기준 시각, 예상 공급·불확실성·미조치 영향과 MANAGER 권한을 확인합니다.", "approvalId", a => `/approvals/${a.approvalId}`, approvalText, true),
   read("get_purchase_order", "실제 발주 상태와 품목, 수량·단가, 입고 수량 및 승인 근거를 조회합니다.", "purchaseOrderId", a => `/purchase-orders/${a.purchaseOrderId}`, d => `발주 ${show(d.id)}: ${show(d.status)}\n공급사: ${show(d.supplierName)} (${show(d.supplierId)})\nCase: ${show(d.caseRef)} / 계획: ${show(d.planRef)} / 승인: ${show(d.approvalId)}\n${(d.items ?? []).map(line => `${lineText(line)}; 입고 수량 ${show(line.receivedBaseQuantity)} ${show(line.baseUnit)}`).join("\n")}\n다음 행동: 납기·입고와 생산 이행을 별도 확인하세요.`, true),
   { name: "decide_purchase", scope: "procurement:decide", write: true,
     description: "MANAGER의 구매 승인 또는 차단 결정을 기록합니다. get_approval로 표시한 정확한 구매 내용·버전·해시에 대해 매번 인간의 명시적 선택을 받은 뒤만 호출하세요. 저장된 정책·과거 동의로 자동 승인하지 마세요. 서버는 클라이언트의 확인 절차를 증명하지 못합니다. APPROVE는 ERP 발주를 생성할 수 있습니다. 자동 재시도 금지.",
