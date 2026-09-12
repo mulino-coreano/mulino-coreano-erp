@@ -48,6 +48,8 @@ Procurement 완료는 실제 발주와 불변 승인 내용을 비교하거나 �
 
 ## 실행 권한과 수명주기
 
+`RunExecutionService`는 실행 트랜잭션과 상태 전이 순서를 소유한다. 모델 대기 조건은 `RunWaitingPolicy`, 역할별 완료 근거는 `RunCompletionPolicy`가 같은 트랜잭션 안에서 검증한다. 완료 검증 뒤 구매 후속 책임을 저장하고 lease를 다시 확인한 다음 Run·업무 상태와 종료 이벤트를 반영한다. 정책 객체는 별도 트랜잭션이나 상태 변경을 시작하지 않는다.
+
 ```mermaid
 flowchart LR
     Intake[목표 접수 / 이벤트] --> Queued[QUEUED]

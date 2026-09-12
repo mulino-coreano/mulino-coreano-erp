@@ -37,7 +37,7 @@ public class RunExecutionService {
     private final RunService runs;
     private final DispatcherService dispatcher;
     private final ObjectMapper mapper;
-    private final ObjectProvider<ProcurementCompletionVerifier> procurementCompletion;
+    private final RunCompletionPolicy completionPolicy;
 
     public RunExecutionService(
             RunExecutionRepository repository,
@@ -59,7 +59,8 @@ public class RunExecutionService {
         this.runs = runs;
         this.dispatcher = dispatcher;
         this.mapper = mapper;
-        this.procurementCompletion = procurementCompletion;
+        this.completionPolicy =
+                new RunCompletionPolicy(repository, followupRepository, procurementCompletion);
         claimTransaction = new TransactionTemplate(transactionManager);
         claimTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         claimTransaction.setTimeout(30);
@@ -230,7 +231,7 @@ public class RunExecutionService {
         else if (trustedApproval && !"WAITING".equals(outcome)) throw invalidResult();
         else if (!"WAITING".equals(outcome) && !waits.isEmpty()) throw invalidResult();
         if ("DONE".equals(outcome)) {
-            validateCompletion(row);
+            completionPolicy.validate(row);
             if ("PROCUREMENT".equals(row.agentKey()))
                 followups.ensureForVerifiedCompletion(row.caseId(), row.workId());
         }
@@ -261,22 +262,6 @@ public class RunExecutionService {
         return new Receipt(row.ref(), runStatus, outcome, row.expiresAt(), false);
     }
 
-    private void validateCompletion(RunLeaseRepository.RunRow row) {
-        if ("SUPPLY_CHAIN".equals(row.agentKey())) {
-            boolean latestReady = repository.hasLatestReadyPlan(row.workId(), row.caseId());
-            if (!latestReady) throw completionNotVerified();
-        } else if ("ORCHESTRATOR".equals(row.agentKey())) {
-            boolean responsible =
-                    followupRepository.hasResponsibility(row.workId(), row.caseId())
-                            || repository.hasResponsibleChild(row.caseId(), row.workId(), row.workRef());
-            if (!responsible) throw completionNotVerified();
-        } else if ("PROCUREMENT".equals(row.agentKey())) {
-            var verifier = procurementCompletion.getIfAvailable();
-            if (verifier == null || !verifier.verified(row.caseId(), row.workId()))
-                throw completionNotVerified();
-        } else throw completionNotVerified();
-    }
-
     private boolean hasActiveWait(long workId) {
         return repository.hasActiveWait(workId);
     }
@@ -287,10 +272,6 @@ public class RunExecutionService {
 
     private static ResponseStatusException invalidResult() {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_RESULT");
-    }
-
-    private static ResponseStatusException completionNotVerified() {
-        return new ResponseStatusException(HttpStatus.CONFLICT, "COMPLETION_NOT_VERIFIED");
     }
 
     private RunLeaseRepository.RunRow workerLease(String ref, String workerId, String token) {
