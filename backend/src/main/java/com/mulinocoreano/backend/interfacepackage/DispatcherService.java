@@ -42,6 +42,9 @@ public class DispatcherService {
     @Transactional
     public EventDispatchResponse ingest(CreateEventRequest request) {
         String eventType = normalizeEventType(request.eventType());
+        if (MANUAL_DISPATCH_EVENT.equals(eventType) || MONITOR_DISPATCH_EVENT.equals(eventType)) {
+            throw new InvalidInterfaceRequestException("eventType is reserved for internal dispatch");
+        }
 
         String externalRef = normalizeExternalRef(request.externalRef());
         if (externalRef == null) {
@@ -180,6 +183,9 @@ public class DispatcherService {
 
         Instant now = Instant.now();
         for (WaitingCandidate candidate : candidates) {
+            String caseStatus = jdbc.sql("SELECT status::text FROM cases WHERE case_id=:id FOR SHARE")
+                    .param("id", candidate.caseId()).query(String.class).single();
+            if (Set.of("RESOLVED", "CLOSED").contains(caseStatus)) continue;
             WaitingCondition condition = new WaitingCondition(candidate.conditionType(), candidate.conditionPayload());
             DispatchEvent candidateEvent = enrichManualDependencyState(condition, event);
             if (!matcher.matches(condition, candidateEvent, now)) {
@@ -387,6 +393,7 @@ public class DispatcherService {
                 WHERE wc.status='ACTIVE'
                   AND wc.resolved_by_event_id IS NULL
                   AND wi.status='WAITING'
+                  AND c.status NOT IN ('RESOLVED','CLOSED')
                 """);
         boolean dependencyEvent = event != null
                 && "WORK_ITEM_STATUS_CHANGED".equals(event.eventType());

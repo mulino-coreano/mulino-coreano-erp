@@ -51,6 +51,11 @@ public class RunService {
     private Optional<CreatedRun> insertRun(CreateRunRequest request, Long triggerEventId) {
         ValidatedRunRequest validated = validateRequest(request);
         ResolvedRunTarget target = resolveTarget(validated);
+        String caseStatus = jdbc.sql("SELECT status::text FROM cases WHERE case_id=:id FOR SHARE")
+                .param("id", target.caseId()).query(String.class).single();
+        if (Set.of("RESOLVED", "CLOSED").contains(caseStatus)) {
+            throw new InvalidInterfaceRequestException("Cannot schedule a Run for a terminal Case");
+        }
         return jdbc.sql("""
                 INSERT INTO runs
                     (run_ref, agent_id, case_id, work_item_id, runtime, trigger_event_id, status)

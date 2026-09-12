@@ -162,12 +162,17 @@ public class InterfaceService {
     public List<WorkItemDto> listWorkItems(String caseRef) {
         return jdbc.sql("""
                 SELECT w.work_item_id, w.work_item_ref, w.title, w.status::text,
-                       COALESCE(a.display_name, '(미배정)') AS agent_name,
+                       CASE WHEN w.assigned_user_id IS NOT NULL THEN NULL ELSE COALESCE(a.display_name, '(미배정)') END AS agent_name,
                        wc.reason AS waiting_reason,
-                       w.due_at
+                       w.due_at,
+                       CASE WHEN w.assigned_user_id IS NOT NULL THEN 'USER'
+                            WHEN w.assigned_agent_id IS NOT NULL THEN 'AGENT' ELSE 'UNASSIGNED' END AS assignee_type,
+                       COALESCE(w.assigned_user_id,w.assigned_agent_id) AS assignee_id,
+                       COALESCE(u.name,a.display_name,'(미배정)') AS assignee_name
                 FROM work_items w
                 JOIN cases c ON c.case_id = w.case_id
                 LEFT JOIN agents a ON a.agent_id = w.assigned_agent_id
+                LEFT JOIN users u ON u.user_id = w.assigned_user_id
                 LEFT JOIN LATERAL (
                     SELECT reason FROM waiting_conditions x
                     WHERE x.work_item_id = w.work_item_id AND x.status='ACTIVE'
@@ -180,7 +185,8 @@ public class InterfaceService {
                 .query((rs, i) -> new WorkItemDto(
                         rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4),
                         rs.getString(5), rs.getString(6),
-                        rs.getTimestamp(7) == null ? null : rs.getTimestamp(7).toInstant()))
+                        rs.getTimestamp(7) == null ? null : rs.getTimestamp(7).toInstant(),
+                        rs.getString(8), rs.getObject(9, Long.class), rs.getString(10)))
                 .list();
     }
 

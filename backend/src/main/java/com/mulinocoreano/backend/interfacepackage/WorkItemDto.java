@@ -9,5 +9,8 @@ public record WorkItemDto(
         String status,
         String assignedAgent,
         String waitingReason,
-        Instant dueAt
+        Instant dueAt,
+        String assigneeType,
+        Long assigneeId,
+        String assigneeName
 ) {}
