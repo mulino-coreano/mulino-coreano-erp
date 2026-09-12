@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const runner = fileURLToPath(new URL('..', import.meta.url));
 const cli = resolve(runner, '../cli');
-const tag = process.argv[2] ?? 'mulino-codex-runtime:0.151.0';
+const tag = process.argv[2] ?? 'mulino-codex-runtime:0.154.0';
 const env = { PATH: process.env.PATH, HOME: process.env.HOME };
 const capture = (cmd, args) => execFileSync(cmd, args, { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const run = (cmd, args, options = {}) => {

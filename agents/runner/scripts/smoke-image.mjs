@@ -8,7 +8,7 @@ import { codexConfiguration } from '../src/runtime-config.js';
 
 const exec = promisify(execFile);
 const authVolume = `mulino-smoke-${randomUUID()}`;
-const image = process.argv[2] ?? 'mulino-codex-runtime:0.151.0';
+const image = process.argv[2] ?? 'mulino-codex-runtime:0.154.0';
 const claim = { runRef: 'RUN-SMOKE', caseRef: 'CASE-SMOKE', workItemRef: 'WI-SMOKE',
   agentKey: 'SUPPLY_CHAIN', capabilityToken: 'smoke-capability-only', leaseToken: 'smoke-lease-host-only', context: {} };
 const executor = new DockerExecutor({ image, authVolume, model: 'smoke-model' });

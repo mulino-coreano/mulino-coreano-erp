@@ -21,7 +21,7 @@ node --env-file=.env src/main.js
 
 ## 런타임 이미지 계약
 
-`node scripts/build-image.mjs`는 기본적으로 `mulino-codex-runtime:0.151.0` 이미지를 만듭니다. Codex 0.151.0, Linux 정적 `mulino`, 역할 스킬, CA 인증서와 `/opt/mulino/result.schema.json`을 포함합니다. `node scripts/smoke-image.mjs`는 네트워크를 차단하고 임시 로그인 볼륨으로 물리적 격리·CLI·설정·취소를 확인합니다. 실제 실행에는 전용 로그인 볼륨과 `MULINO_CODEX_MODEL` 설정이 필요합니다.
+`node scripts/build-image.mjs`는 기본적으로 `mulino-codex-runtime:0.154.0` 이미지를 만듭니다. Codex 0.154.0, Linux 정적 `mulino`, 역할 스킬, CA 인증서와 `/opt/mulino/result.schema.json`을 포함합니다. `node scripts/smoke-image.mjs`는 네트워크를 차단하고 임시 로그인 볼륨으로 물리적 격리·CLI·설정·취소를 확인합니다. 실제 실행에는 전용 로그인 볼륨과 `MULINO_CODEX_MODEL` 설정이 필요합니다.
 
 실행기는 읽기 전용 root filesystem, `/work`·`/tmp` tmpfs, 일반 사용자, 모든 Linux capability 제거, `no-new-privileges`, PID·메모리·CPU 제한을 적용합니다. 유일한 mount는 `MULINO_CODEX_AUTH_VOLUME` named volume입니다. 사용자 홈·저장소·Docker socket을 mount하지 않습니다. 전용 볼륨에는 해당 실행 환경의 Codex 로그인만 준비합니다. `--strict-config`, `--ignore-user-config`, `--ignore-rules`, `mcp_servers={}`와 고정 역할 지침을 적용합니다. 중첩 bwrap의 namespace 권한 오류를 실제 확인하여 Docker를 격리 경계로 삼고 내부 Codex는 `--sandbox=danger-full-access`로 실행합니다. 호스트에서 이 설정을 직접 실행하거나 Docker를 privileged로 바꾸는 경로는 없습니다. 신규 `codex exec --ephemeral --json --output-schema ... -`에 claim 맥락을 stdin으로 전달합니다.
 

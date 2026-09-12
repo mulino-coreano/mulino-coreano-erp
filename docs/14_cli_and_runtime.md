@@ -1,6 +1,6 @@
 # 역할 CLI와 Codex 실행 이미지
 
-현재 Zig CLI는 인증된 Case·계획·자재·발주 조회, 공급망 계획 계산, 구매 제안, Orchestrator의 후속 업무 생성과 현재 업무 전이를 제공한다. Docker 이미지에는 이 Linux 실행 파일과 Codex 0.151.0, 역할 지침, 결과 JSON 스키마를 넣었다. **인간 대화 도구와 서버 관리 후속 책임을 연결했으며 실제 로그인·모델 실행 인수는 아직 남아 있다.**
+현재 Zig CLI는 인증된 Case·계획·자재·발주 조회, 공급망 계획 계산, 구매 제안, Orchestrator의 후속 업무 생성과 현재 업무 전이를 제공한다. Docker 이미지에는 이 Linux 실행 파일과 Codex 0.154.0, 역할 지침, 결과 JSON 스키마를 넣었다. **인간 대화 도구와 서버 관리 후속 책임을 연결했다. 전용 Codex 로그인 볼륨으로 모델 연결을 시도했으나 워크스페이스 크레딧 부족으로 실제 모델 업무 수행 인수는 남아 있다.**
 
 ## 구현 범위
 
@@ -33,10 +33,10 @@ node agents/runner/scripts/smoke-image.mjs
 docker volume create mulino-codex-auth
 docker run --rm -it --user=10001:10001 \
   --mount type=volume,src=mulino-codex-auth,dst=/home/mulino/.codex \
-  mulino-codex-runtime:0.151.0 login --device-auth
+  mulino-codex-runtime:0.154.0 login --device-auth
 ```
 
-위 로그인 명령은 준비 방법이며 이번 검증에서 실행하지 않았다. 실행기의 `.env.example`을 바탕으로 gitignored `.env`에 환경별 값을 설정한다. `MULINO_CODEX_MODEL`은 명시적으로 지정해야 실행기를 시작할 수 있다. `MULINO_RUNTIME_IMAGE`에는 방금 만든 이미지, `MULINO_CODEX_AUTH_VOLUME`에는 전용 볼륨을 지정한다.
+전용 볼륨의 로그인으로 모델 연결을 시도했으며 결과와 남은 인수 범위는 아래 검증 범위를 따른다. 실행기의 `.env.example`을 바탕으로 gitignored `.env`에 환경별 값을 설정한다. `MULINO_CODEX_MODEL`은 명시적으로 지정해야 실행기를 시작할 수 있다. `MULINO_RUNTIME_IMAGE`에는 방금 만든 이미지, `MULINO_CODEX_AUTH_VOLUME`에는 전용 볼륨을 지정한다.
 
 ```bash
 cd agents/runner
@@ -59,4 +59,5 @@ Worker API 응답의 소수·지수·JavaScript 안전 범위 밖 정수는 원�
 - 부분 본문 제한 시간 시험에서 Zig 0.16.0 `Client.fetch` 취소 경로의 비정상 종료를 재현했다. 하위 request/response API로 교체한 뒤 정상 JSON 오류·exit 2를 확인했다.
 - ARM64와 AMD64 Linux 정적 바이너리를 빌드했다. 실제 Docker 실행 검증은 ARM64에서 수행했다.
 - 이미지 smoke는 가짜 capability와 별도 임시 볼륨으로 사용자·파일·권한·환경·CA·CLI·정확한 JSON·Codex 설정 파싱과 취소 시 컨테이너 삭제를 확인한다. 외부 네트워크는 차단하며 모델 요청은 0건이다.
+- Codex 0.151.0의 `gpt-6-astra` 요청은 최신 Codex가 필요하다는 HTTP 400으로 실패하여 패키지와 이미지 기본 태그를 0.154.0으로 올렸다. 2026-09-12 ARM64 이미지 빌드·격리 smoke와 Node 실행기 48개 테스트가 통과했다. 전용 로그인 볼륨의 `gpt-6-astra` 최소 응답 요청은 버전 오류 대신 `Your workspace is out of credits. Add credits to continue.`로 종료했다. 성공한 모델 응답이나 실제 업무 수행을 확인한 것은 아니다.
 - Node 실행기 자동 테스트와 최신 Backend 검증은 [실행·계획 API 안내](13_execution_and_plan_api.md)를 따른다. 실제 Auth0/ChatGPT/Codex 로그인·갱신, 실제 모델 업무 수행과 발주 승인 인수를 이 결과로 대체하지 않는다.
