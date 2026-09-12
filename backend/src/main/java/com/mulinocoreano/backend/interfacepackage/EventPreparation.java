@@ -21,6 +21,9 @@ final class EventPreparation {
 
     PreparedEvent prepare(CreateEventRequest request) {
         String eventType = normalizeEventType(request.eventType());
+        if ("DISPATCH_REQUESTED".equals(eventType) || "DISPATCH_SWEEP_TRIGGERED".equals(eventType)) {
+            throw new InvalidInterfaceRequestException("eventType is reserved for internal dispatch");
+        }
 
         String externalRef = normalizeExternalRef(request.externalRef());
         if (externalRef == null) {

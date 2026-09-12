@@ -43,6 +43,22 @@ class RunSchedulingIntegrationTest {
     @Autowired
     Validator validator;
 
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"RESOLVED", "CLOSED"})
+    void terminalCaseRejectsBothWorkAndCaseRunScheduling(String caseStatus) {
+        Fixture fixture = fixture();
+        jdbc.sql("UPDATE cases SET status=:status::case_status,resolved_at=CURRENT_TIMESTAMP WHERE case_ref=:ref")
+                .param("status", caseStatus).param("ref", fixture.caseRef()).update();
+        for (String workRef : new String[] {fixture.workItemRef(), null}) {
+            assertThatThrownBy(() -> runService.createRun(new CreateRunRequest(
+                    fixture.agentKey(), fixture.caseRef(), workRef, "CODEX"), null))
+                    .isInstanceOf(InvalidInterfaceRequestException.class)
+                    .hasMessageContaining("terminal");
+        }
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM runs r JOIN cases c ON c.case_id=r.case_id WHERE c.case_ref=:ref")
+                .param("ref", fixture.caseRef()).query(Long.class).single()).isZero();
+    }
+
     @Test
     void atomicSchedulingReturnsEmptyWhenWorkItemAlreadyHasRunningRun() {
         Fixture fixture = fixture();

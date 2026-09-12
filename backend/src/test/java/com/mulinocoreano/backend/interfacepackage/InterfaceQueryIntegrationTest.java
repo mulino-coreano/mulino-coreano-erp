@@ -30,6 +30,32 @@ class InterfaceQueryIntegrationTest {
     JdbcClient jdbc;
 
     @Test
+    void workItemsIdentifyHumanAgentAndUnassignedResponsibility() throws Exception {
+        String ref = "CASE-" + shortId();
+        long caseId = jdbc.sql("INSERT INTO cases(case_ref,title,objective,intent_type) VALUES(:ref,'Owners','Owners','ACT') RETURNING case_id")
+                .param("ref", ref).query(Long.class).single();
+        long userId = jdbc.sql("INSERT INTO users(name,email,password,role) VALUES('Human owner',:email,'test-only','OPERATOR') RETURNING user_id")
+                .param("email", shortId()+"@owners.invalid").query(Long.class).single();
+        jdbc.sql("INSERT INTO work_items(work_item_ref,case_id,title,assigned_user_id) VALUES(:ref,:caseId,'Human',:userId)")
+                .param("ref", "WI-"+shortId()).param("caseId", caseId).param("userId", userId).update();
+        jdbc.sql("INSERT INTO work_items(work_item_ref,case_id,title,assigned_agent_id) SELECT :ref,:caseId,'Agent',agent_id FROM agents WHERE agent_key='ORCHESTRATOR'")
+                .param("ref", "WI-"+shortId()).param("caseId", caseId).update();
+        jdbc.sql("INSERT INTO work_items(work_item_ref,case_id,title) VALUES(:ref,:caseId,'Unassigned')")
+                .param("ref", "WI-"+shortId()).param("caseId", caseId).update();
+        mockMvc.perform(get("/api/v1/cases/{caseRef}/work-items", ref))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].assigneeType").value("USER"))
+                .andExpect(jsonPath("$[0].assigneeId").value(userId))
+                .andExpect(jsonPath("$[0].assigneeName").value("Human owner"))
+                .andExpect(jsonPath("$[0].assignedAgent").doesNotExist())
+                .andExpect(jsonPath("$[1].assigneeType").value("AGENT"))
+                .andExpect(jsonPath("$[1].assigneeId").isNumber())
+                .andExpect(jsonPath("$[1].assignedAgent").isString())
+                .andExpect(jsonPath("$[2].assigneeType").value("UNASSIGNED"))
+                .andExpect(jsonPath("$[2].assigneeId").doesNotExist());
+    }
+
+    @Test
     void askInventoryUsesExplicitProductOrSkuSearchTerm() throws Exception {
         long warehouseId = warehouse("Query warehouse");
         String marker = shortId();

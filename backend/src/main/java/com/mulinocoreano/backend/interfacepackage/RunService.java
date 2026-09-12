@@ -57,6 +57,9 @@ public class RunService {
     private Optional<CreatedRun> insertRun(CreateRunRequest request, Long triggerEventId) {
         ValidatedRunRequest validated = validateRequest(request);
         ResolvedRunTarget target = resolveTarget(validated);
+        if (!repository.lockCaseIsActive(target.caseId())) {
+            throw new InvalidInterfaceRequestException("Cannot schedule a Run for a terminal Case");
+        }
         return repository
                 .enqueue(
                         nextRunRef(),

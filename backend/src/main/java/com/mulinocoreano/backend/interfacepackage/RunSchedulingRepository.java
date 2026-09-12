@@ -64,6 +64,13 @@ public class RunSchedulingRepository {
                 .fetchOptional(RUNS.RUN_ID);
     }
 
+    public boolean lockCaseIsActive(long caseId) {
+        var status = dsl.select(CASES.STATUS).from(CASES)
+                .where(CASES.CASE_ID.eq(caseId)).forShare().fetchOne(CASES.STATUS);
+        return status != null && status != com.mulinocoreano.backend.generated.enums.CaseStatus.RESOLVED
+                && status != com.mulinocoreano.backend.generated.enums.CaseStatus.CLOSED;
+    }
+
     public Optional<CaseTarget> caseTarget(String ref) {
         return dsl.select(CASES.CASE_ID, CASES.CASE_REF)
                 .from(CASES)

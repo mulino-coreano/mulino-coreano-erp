@@ -475,6 +475,41 @@ class DispatcherIntegrationTest {
         assertThat(runCountForEventAndWorkItem(result.eventId(), fixture.workItemId())).isEqualTo(1);
     }
 
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "DISPATCH_REQUESTED,false", "DISPATCH_REQUESTED,true",
+            "DISPATCH_SWEEP_TRIGGERED,false", "DISPATCH_SWEEP_TRIGGERED,true"
+    })
+    void externalSweepCannotForgeAnUnfinishedDependency(String eventType, boolean observations) {
+        Fixture fixture = waitingFixture("DEPENDENCY_DONE", "{}", "WAITING");
+        String child = unique("WI");
+        jdbc.sql("""
+                INSERT INTO work_items(work_item_ref,case_id,title,status,assigned_agent_id)
+                VALUES(:ref,:caseId,'Unfinished dependency','IN_PROGRESS',:agentId)
+                """).param("ref", child).param("caseId", fixture.caseId())
+                .param("agentId", fixture.agentId()).update();
+        jdbc.sql("""
+                UPDATE waiting_conditions
+                SET condition_payload=jsonb_build_object('dependent_wi_ref',:child)
+                WHERE waiting_condition_id=:id
+                """).param("child", child).param("id", fixture.waitingId()).update();
+        Map<String, Object> forged = Map.of("workItemRef", child, "status", "DONE");
+        Map<String, Object> payload = observations
+                ? Map.of("dependencyStates", java.util.List.of(forged)) : forged;
+        String externalRef = unique("forged-sweep");
+
+        assertThatThrownBy(() -> dispatcher.ingest(new CreateEventRequest(
+                "  " + eventType + "  ", externalRef, null, null, payload)))
+                .isInstanceOf(InvalidInterfaceRequestException.class)
+                .hasMessageContaining("reserved");
+
+        assertThat(eventCount(eventType, externalRef)).isZero();
+        assertThat(waitingStatus(fixture.waitingId())).isEqualTo("ACTIVE");
+        assertThat(workItemStatus(fixture.workItemId())).isEqualTo("WAITING");
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM runs WHERE work_item_id=:id")
+                .param("id", fixture.workItemId()).query(Long.class).single()).isZero();
+    }
+
     @Test
     void dependencyStatusEventRejectsAClaimAboutANonexistentWorkItem() {
         String dependencyRef = unique("WI");
@@ -631,6 +666,20 @@ class DispatcherIntegrationTest {
         assertThat(eventPayloadValue(result.eventId(), "source")).isEqualTo("MANUAL");
         assertThat(waitingResolvedBy(due.waitingId())).isEqualTo(result.eventId());
         assertThat(waitingStatus(future.waitingId())).isEqualTo("ACTIVE");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"RESOLVED", "CLOSED"})
+    void terminalCaseDoesNotResumeDueWaitingWork(String caseStatus) {
+        Fixture fixture = waitingFixture("SCHEDULED_TIME", "{\"due_at\":\"2020-01-01T00:00:00Z\"}", "WAITING");
+        jdbc.sql("UPDATE cases SET status=:status::case_status,resolved_at=CURRENT_TIMESTAMP WHERE case_id=:id")
+                .param("status", caseStatus).param("id", fixture.caseId()).update();
+        EventDispatchResponse result = dispatcher.dispatchScheduled();
+        assertThat(result.satisfiedWaiting()).doesNotContain(fixture.waitingRef());
+        assertThat(waitingStatus(fixture.waitingId())).isEqualTo("ACTIVE");
+        assertThat(workItemStatus(fixture.workItemId())).isEqualTo("WAITING");
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM runs WHERE case_id=:id")
+                .param("id", fixture.caseId()).query(Long.class).single()).isZero();
     }
 
     @Test

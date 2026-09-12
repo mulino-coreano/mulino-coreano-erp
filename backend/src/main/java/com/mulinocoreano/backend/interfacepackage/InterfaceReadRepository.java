@@ -1,6 +1,9 @@
 package com.mulinocoreano.backend.interfacepackage;
 
 import static com.mulinocoreano.backend.generated.Tables.AGENTS;
+import static com.mulinocoreano.backend.generated.Tables.USERS;
+import static org.jooq.impl.DSL.when;
+import static org.jooq.impl.DSL.inline;
 import static com.mulinocoreano.backend.generated.Tables.REPLENISHMENT_FOLLOWUPS;
 import static com.mulinocoreano.backend.generated.Tables.ATTENTION_REQUESTS;
 import static com.mulinocoreano.backend.generated.Tables.CASES;
@@ -114,14 +117,19 @@ public class InterfaceReadRepository {
                         w.WORK_ITEM_REF,
                         w.TITLE,
                         w.STATUS,
-                        coalesce(a.DISPLAY_NAME, "(미배정)"),
+                        when(w.ASSIGNED_USER_ID.isNotNull(), (String) null).otherwise(coalesce(a.DISPLAY_NAME, "(미배정)")),
                         reason,
-                        w.DUE_AT)
+                        w.DUE_AT,
+                        when(w.ASSIGNED_USER_ID.isNotNull(), "USER")
+                                .when(w.ASSIGNED_AGENT_ID.isNotNull(), "AGENT").otherwise("UNASSIGNED"),
+                        coalesce(w.ASSIGNED_USER_ID,w.ASSIGNED_AGENT_ID),
+                        coalesce(USERS.NAME,a.DISPLAY_NAME,inline("(미배정)")))
                 .from(w)
                 .join(c)
                 .on(c.CASE_ID.eq(w.CASE_ID))
                 .leftJoin(a)
                 .on(a.AGENT_ID.eq(w.ASSIGNED_AGENT_ID))
+                .leftJoin(USERS).on(USERS.USER_ID.eq(w.ASSIGNED_USER_ID))
                 .where(c.CASE_REF.eq(caseRef))
                 .orderBy(w.WORK_ITEM_ID)
                 .fetch(
@@ -133,7 +141,7 @@ public class InterfaceReadRepository {
                                         r.value4().getLiteral(),
                                         r.value5(),
                                         r.value6(),
-                                        instant(r.value7())));
+                                        instant(r.value7()), r.value8(), r.value9(), r.value10()));
     }
 
     public List<AttentionDto> attention(Integer limit) {

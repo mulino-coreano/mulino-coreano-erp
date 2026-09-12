@@ -144,6 +144,7 @@ public class DispatcherService {
 
         Instant now = Instant.now();
         for (WaitingCandidate candidate : candidates) {
+            if (!repository.lockCaseIsActive(candidate.caseId())) continue;
             WaitingCondition condition =
                     new WaitingCondition(candidate.conditionType(), candidate.conditionPayload());
             DispatchEvent candidateEvent = enrichManualDependencyState(condition, event);

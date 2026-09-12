@@ -35,6 +35,9 @@ Dispatcher는 다음 두 경로에서 실행된다.
 
 ### 1-B. 명시적 재실행 (pull)
 
+- `DISPATCH_REQUESTED`와 `DISPATCH_SWEEP_TRIGGERED`는 내부 전용이며 외부 `/events` 인입에서 거부한다. 호출자가 미완료 의존 업무를 완료 상태로 위조할 수 없게 한다.
+- `RESOLVED`·`CLOSED` Case는 대기 판정 대상에서 제외하고, 대기 변경과 Run 생성 직전에 Case를 잠가 상태를 재확인한다.
+- Attention 기반 승인 이벤트는 `AUTHORITY_REQUIRED` 요청의 인간 승인만 근거로 삼는다. 일반 질문에 대한 답변은 승인으로 해석하지 않는다.
 - `POST /api/v1/dispatch` — 허용된 실행기 서비스의 `worker:dispatch` 권한으로 호출하는 관리·테스트용 트리거. 호출 사실을 `DISPATCH_REQUESTED`(`source=MANUAL`)로 항상 기록한다.
 - `GET /api/v1/monitor`는 인증된 조회이며 이벤트·대기·Run을 변경하지 않는다.
 - Node 실행기의 기본 5초 poll이 호출하는 `/api/v1/internal/runs/claim`은 lease 복구와 `dispatchScheduledIfActionable()`을 수행한다. 기한 도래나 이미 완료된 의존 업무가 있을 때만 `DISPATCH_SWEEP_TRIGGERED`를 기록한다. 인간 모니터 조회를 재판정 트리거로 사용하지 않는다.
@@ -107,6 +110,7 @@ Dispatcher는 다음 두 경로에서 실행된다.
 - **여러 WI → 여러 에이전트**: WI마다 배정 에이전트가 다르면 각각 독립 Run으로 스케줄한다. 한 에이전트의 여러 WI는 1회 실행으로 묶는 것을 기본으로 하되, 이는 최적화 옵션(기본: WI당 1 Run).
 - 실행 자체는 기존 `createRun()` 계약을 재사용하고, `trigger_event_id`에 이벤트를 기록해 "이 Run은 이 이벤트 때문에 시작됐다"를 감사 가능하게 한다.
 - Work Item Run은 잠근 WI가 `READY`이고, 사용자 배정이 없으며, 요청한 에이전트가 현재 배정된 활성 에이전트와 일치할 때만 생성한다. 예약 API의 런타임 값은 `CLAUDE` 또는 `CODEX`이며, 현재 자동 실행기는 Work Item에 연결된 `CODEX` 예약만 claim한다. Claude 자동 실행 어댑터는 이 데모 범위 밖이다.
+- Work Item 조회는 `assigneeType`(USER/AGENT/UNASSIGNED), `assigneeId`, `assigneeName`으로 실제 담당을 반환한다. 기존 `assignedAgent`는 에이전트 이름을 유지하되 인간 담당에는 null을 반환한다.
 - 대기 해소 시 에이전트와 사용자 모두 미배정인 WI는 `READY` 상태와 함께 `MISSING_HUMAN_CONTEXT` attention을 생성한다. 사용자에게 직접 배정된 WI는 Run 없이 `READY`가 정상이다.
 - 배정 에이전트가 비활성화된 경우에도 수신 Event와 대기 해소·READY 전이는 보존한다. 실행을 예약하지 않고 중복 없는 `MISSING_HUMAN_CONTEXT` attention을 열어 담당 복구를 요청한다.
 - 컨텍스트 재구성에 최종 실패한 Run은 `FAILED`로 종료하고 응답의 `failedRuns`에만 포함한다. Dispatcher는 해당 WI에 중복되지 않는 `MATERIAL_EXCEPTION` attention을 열어 운영자에게 복구 필요성을 노출한다.

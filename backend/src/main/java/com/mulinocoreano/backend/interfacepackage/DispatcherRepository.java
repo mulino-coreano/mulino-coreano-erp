@@ -220,6 +220,13 @@ public class DispatcherRepository {
                                         observedAt.toString()));
     }
 
+    public boolean lockCaseIsActive(long caseId) {
+        var status = dsl.select(CASES.STATUS).from(CASES)
+                .where(CASES.CASE_ID.eq(caseId)).forShare().fetchOne(CASES.STATUS);
+        return status != null && status != com.mulinocoreano.backend.generated.enums.CaseStatus.RESOLVED
+                && status != com.mulinocoreano.backend.generated.enums.CaseStatus.CLOSED;
+    }
+
     List<WaitingCandidate> loadCandidates(
             EventScope scope, boolean dependencyEvent, String dependencyRef, boolean lockRows) {
         var wc = WAITING_CONDITIONS.as("wc");
@@ -231,6 +238,7 @@ public class DispatcherRepository {
                         .eq(WaitingStatus.ACTIVE)
                         .and(wc.RESOLVED_BY_EVENT_ID.isNull())
                         .and(wi.STATUS.eq(WorkItemStatus.WAITING))
+                        .and(c.STATUS.notIn(CaseStatus.RESOLVED, CaseStatus.CLOSED))
                         .and(notExists(selectOne().from(REPLENISHMENT_FOLLOWUPS)
                                 .where(REPLENISHMENT_FOLLOWUPS.WORK_ITEM_ID.eq(wi.WORK_ITEM_ID))));
         // Dependency events intentionally find waiting items across all Cases.
