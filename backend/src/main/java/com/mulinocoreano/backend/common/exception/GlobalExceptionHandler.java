@@ -21,14 +21,14 @@ public class GlobalExceptionHandler {
         List<FieldError> errors = e.getBindingResult().getFieldErrors().stream()
                 .map(fe -> new FieldError(fe.getField(), fe.getDefaultMessage()))
                 .toList();
-        log.warn("Validation failed: {}", errors);
+        log.info("Validation failed: {}", errors);
         return ResponseEntity
                 .status(CommonErrorCode.VALIDATION_FAILED.getStatus())
                 .body(ApiError.of(CommonErrorCode.VALIDATION_FAILED, errors));
     }
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiError> handleNotReadable(HttpMessageNotReadableException e) {
-        log.warn("Malformed HttpMessageNotReadableException: {}", e.getMessage());
+        log.info("Malformed HttpMessageNotReadableException: {}", e.getMessage());
         return ResponseEntity
                 .status(CommonErrorCode.MALFORMED_JSON.getStatus())
                 .body(ApiError.of(CommonErrorCode.MALFORMED_JSON));
@@ -36,7 +36,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException e) {
-        log.warn("Invalid input: {}", e.getMessage());
+        log.info("Invalid input: {}", e.getMessage());
         return ResponseEntity
                 .status(CommonErrorCode.INVALID_INPUT_VALUE.getStatus())
                 .body(ApiError.of(CommonErrorCode.INVALID_INPUT_VALUE, e.getMessage()));

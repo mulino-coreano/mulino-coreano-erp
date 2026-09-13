@@ -2,7 +2,6 @@ package com.mulinocoreano.backend.common.error;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
-import org.springframework.http.ResponseEntity;
 
 import java.util.List;
 
