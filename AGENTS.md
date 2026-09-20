@@ -94,6 +94,37 @@ Carrying out an issue is the `backlog` skill; changing what the goals are is the
 - Skills live in `.agents/skills/` — dev-workflow skills (`backlog` to carry out an issue, `goals` to change what the goals are) as real directories, ERP role skills as symlinks to `agents/skills/`, which stays their SSOT (the L2 product layer). Codex discovers that directory natively.
 - Claude Code does **not** read `.agents/skills/`, so `.claude/skills/` mirrors it with one symlink per skill. Add a skill in both places, and point the `.claude/skills/` link at the skill's real directory — never at another symlink.
 
+## Prose (Korean text deliverables)
+
+Commit messages, PR bodies, issue bodies and `docs/` all hold to the same standard,
+and under Claude Code they are not written by the session doing the work.
+
+- **Claude Code** — delegate to the `prose` subagent (`.claude/agents/prose.md`,
+  pinned to `claude-sonnet-4-6`). Hand it the issue number or the branch; it reads
+  the diff itself. Do **not** pass a `model` argument when invoking it — that
+  overrides the pin and silently routes to a different model.
+- **Codex** — has no equivalent subagent pinning. Write the prose yourself, to the
+  rules below. They are the same rules the subagent follows.
+- A cold subagent sees the diff, not the conversation. Cross-cutting rationale — why
+  this approach over another, what a reviewer will object to — has to be handed to it
+  in the prompt or it will not appear in the text.
+
+### Voice
+
+Korean, plain declarative (`-다`), no honorifics.
+
+- **Why before what.** A body that only lists changed files is a worse `git diff
+  --stat`. Lead with the reason the change exists — the wrong behaviour, the false
+  assumption, the thing that broke.
+- **Bullets are concrete.** Name the file, then what changed in it — not `문서 수정`.
+- **Evidence goes in.** Commands run, output observed, versions checked. A claim with
+  nothing behind it does not belong in the body.
+- **Admit what you did not do.** Skipped verification, a known gap, a deliberate
+  shortcut — write it down rather than letting the reader find it.
+- Technical terms stay in English (`symlink`, `discovery`, `branch protection`). Do
+  not force them into awkward Korean.
+- No marketing tone, no 이모지. Wrap bodies at 72 columns.
+
 ## Issue/PR templates (mandatory)
 
 Templates live in `.github/`. When creating issues or PRs, the session must follow the structure of the relevant template exactly — do not omit sections or invent your own format.

@@ -101,6 +101,11 @@ When CI exists, defer to it and drop this step.
 Korean title, Korean body, `.github/pull_request_template.md` structure exactly
 — all four sections, all three checklist items, none renamed or dropped.
 
+Do not write the body yourself. Delegate it per `AGENTS.md` § Prose — under Claude
+Code that is the `prose` subagent, which reads the branch diff on its own. Give it
+the issue number and any rationale the diff cannot show; the verification output
+from step 5 goes in verbatim, not summarized.
+
 ```bash
 gh pr create --title "<prefix>(<scope>): <한국어 제목>" --body-file <draft> \
   --label "<issue labels>"
