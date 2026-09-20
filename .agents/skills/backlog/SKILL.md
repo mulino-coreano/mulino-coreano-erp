@@ -76,7 +76,7 @@ Run the checks that match what you touched, and paste the real output:
 | Touched | Run |
 |---|---|
 | `backend/` | `cd backend && ./gradlew test` |
-| `database/` | the numbered `psql` sequence in `CLAUDE.md` |
+| `database/` | the numbered `psql` sequence in `AGENTS.md` |
 | docs only | no command — say so plainly |
 
 There is no CI on this repository yet. Local output is the only evidence a

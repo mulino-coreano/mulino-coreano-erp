@@ -5,9 +5,9 @@ One directory per agent role, each holding a `SKILL.md`. These are authored here
 ## Required sections in every SKILL.md
 
 1. **Mission** — the role's one-paragraph purpose
-2. **Allowed commands** — which `mulino` subcommands this role may use (see `../cli/CLAUDE.md` for the contract)
+2. **Allowed commands** — which `mulino` subcommands this role may use (see `../cli/AGENTS.md` for the contract)
 3. **Governance expectations** — which of its writes return `PENDING_APPROVAL` and what to do then (e.g. Procurement: PO creation always pends MANAGER approval — never treat it as failure)
-4. **Korea localization invariants it guards** — from the root `CLAUDE.md`
+4. **Korea localization invariants it guards** — from the root `AGENTS.md`
 5. **Hand-off triggers** — situations where the role reports back to the orchestrator for another role to take over
 
 The orchestrator skill additionally defines the dispatch table: which role subagent handles which situation, and how results flow back.

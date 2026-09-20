@@ -1,12 +1,12 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file is the operating guide for agent sessions working in this repository. Claude Code and Codex both read `AGENTS.md`, so it is the only instruction file — there is no `CLAUDE.md`, and directory-scoped guidance lives in a nested `AGENTS.md`.
 
 ## Project Overview
 
 A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Italian food brand) enters the Korean market. A SAP consulting portfolio project that localizes a EU-standard ERP to Korean food regulations (Food Traceability Act, 22 allergens, electronic tax invoices, etc.).
 
-**Current status**: Phase 4 in progress (L0 backend · interface). On `main`: a Spring Boot application with Flyway migrations `V1`–`V7`, a common response/exception layer and Swagger. `governance/` and `dashboard/` are still empty scaffolds; `agents/` holds the role skills and layout guidance (AGENTS.md) only — the `mulino` CLI is not built yet. What remains in Phase 4, and every Phase after it, lives on the project board rather than in this file. All documentation is written in Korean.
+**Current status**: Phase 4 in progress (L0 backend · interface). On `main`: a Spring Boot application with Flyway migrations `V1`–`V7`, a common response/exception layer and Swagger. `governance/` and `dashboard/` are still empty scaffolds; `agents/` holds the role skills and layout guidance only — the `mulino` CLI is not built yet. What remains in Phase 4, and every Phase after it, lives on the project board rather than in this file. All documentation is written in Korean.
 
 ## Commands
 
@@ -41,7 +41,7 @@ psql -d mulino_coreano -f database/seed/allergens.sql
 |---|---|---|
 | L0 | `database/`, `backend/` | PostgreSQL 18 (30 tables) + Spring Boot REST API (single entry point for CLI and dashboard) |
 | L1 | `governance/` | Intercept action-bearing API calls → approve / block / hold + audit log. **Reads pass through; only writes are gated** |
-| L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude Code and Codex are both supported agent runtimes; the orchestrator dispatches role subagents. See `agents/CLAUDE.md` |
+| L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude Code and Codex are both supported agent runtimes; the orchestrator dispatches role subagents. See `agents/AGENTS.md` |
 | L3 | `dashboard/` | Natural-language query → Intent Parsing → chart generation |
 
 ### Governance approval matrix (follow when implementing L1)
@@ -95,7 +95,7 @@ The full flow and agent intervention points are the single source of truth (SSOT
 
 ## Issue/PR templates (mandatory)
 
-Templates live in `.github/`. When creating issues or PRs, Codex must follow the structure of the relevant template exactly — do not omit sections or invent your own format.
+Templates live in `.github/`. When creating issues or PRs, the session must follow the structure of the relevant template exactly — do not omit sections or invent your own format.
 
 **PR**: `.github/pull_request_template.md` — 4 sections (작업 내용 / 변경 사항 / 체크리스트 / 리뷰 요청 사항). The 3 checklist items (verify local run, do not commit secrets, update related docs) must appear in the PR body.
 
