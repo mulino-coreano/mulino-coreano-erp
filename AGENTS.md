@@ -6,11 +6,19 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Italian food brand) enters the Korean market. A SAP consulting portfolio project that localizes a EU-standard ERP to Korean food regulations (Food Traceability Act, 22 allergens, electronic tax invoices, etc.).
 
-**Current status**: Phase 3 complete (planning / ERD / DDL / documentation). `backend/`, `governance/`, `dashboard/` are empty scaffolds; `agents/` holds layout and AGENTS.md guidance only — no runnable code yet. All documentation is written in Korean.
+**Current status**: Phase 4 in progress (L0 backend · interface). On `main`: a Spring Boot application with Flyway migrations `V1`–`V7`, a common response/exception layer and Swagger. `governance/` and `dashboard/` are still empty scaffolds; `agents/` holds the role skills and layout guidance (AGENTS.md) only — the `mulino` CLI is not built yet. What remains in Phase 4, and every Phase after it, lives on the project board rather than in this file. All documentation is written in Korean.
 
 ## Commands
 
-No build/test tooling yet. The only runnable target is the DDL:
+Backend (Gradle wrapper, Java 21) — needs a reachable PostgreSQL:
+
+```bash
+cd backend
+./gradlew test
+./gradlew bootRun
+```
+
+The application applies Flyway migrations (`backend/src/main/resources/db/migration/`, `V1`–`V7`) on startup. The standalone DDL in `database/ddl/` is the schema's readable SSOT and must stay in sync with them. To build a database from the DDL directly:
 
 ```bash
 # After creating the DB, run in FK-dependency order (file number order is mandatory)
@@ -62,6 +70,18 @@ Reverse tracing (root-cause analysis) follows this chain backwards. Core invaria
 
 The full flow and agent intervention points are the single source of truth (SSOT) in `docs/02_flow.md`. For the table list and SAP module mapping, see `docs/01_project_overview.txt`.
 
+## 작업은 보드에서 온다
+
+이 저장소의 목표는 전부 GitHub 에 있다. 보드는 [Mulino Coreano — ERP & Agent Governance](https://github.com/orgs/mulino-coreano/projects/1) 하나이며, 운영 규칙은 `docs/06_labels.md` 에 있고 그쪽이 우선한다.
+
+- **목표 단위는 마일스톤(Phase)과 이슈다.** 문서에만 적힌 목표는 추적되지 않는 목표다.
+- **세션을 시작하면 보드부터 확인한다.** `.agents/skills/goals/board.sh` 로 현재 Phase 와 목표를, `.agents/skills/backlog/next-issue.sh` 로 다음 작업 후보를 본다. 이 파일이나 `docs/` 의 진행 상태 서술보다 보드가 최신이다.
+- **이슈 없는 작업은 시작하지 않는다.** 대응하는 이슈가 없으면 멈추고 사람에게 묻는다 — 이슈를 임의로 만들어 진행하지 않는다. 질문·조사·오타 수정은 예외다.
+- **현재 Phase 밖의 일을 자발적으로 시작하지 않는다.** 필요해 보이면 제안하고, 판단은 사람이 한다.
+- **보드 Status 는 손대지 않는다.** 이슈·PR 상태에서 자동으로 정해진다.
+
+작업 수행 절차는 `backlog` 스킬, 목표 추가·조정 대화는 `goals` 스킬 (둘 다 `.agents/skills/`).
+
 ## Git rules
 
 - **No direct commit/push to main** — work on a separate branch, then open a PR to merge (force push is strictly forbidden)
@@ -71,7 +91,7 @@ The full flow and agent intervention points are the single source of truth (SSOT
 - The issue/PR label scheme is in `docs/06_labels.md` (category + `L0-db`~`L3-dashboard` layer labels)
 - Never commit secrets (`application-local.yml`, `.env`) — already in `.gitignore`
 - On schema changes, keep `docs/02_flow.md` consistent with the ERD (Phase 1 required "flow diagram–ERD 100% consistency" as an acceptance criterion)
-- Dev-workflow skills (issue intake, release chores — not ERP roles) live in `.agents/skills/`, which both Claude Code and Codex discover natively. ERP role skills stay in `agents/skills/` with the existing `.claude/` and `.codex/` symlinks.
+- Dev-workflow skills (`backlog` for carrying out an issue, `goals` for changing what the goals are — not ERP roles) live in `.agents/skills/`, which both Claude Code and Codex discover natively. ERP role skills stay in `agents/skills/` with the existing `.claude/` and `.codex/` symlinks.
 
 ## Issue/PR templates (mandatory)
 

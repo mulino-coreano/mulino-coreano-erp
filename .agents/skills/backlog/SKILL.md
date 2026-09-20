@@ -30,6 +30,10 @@ Show the pick to the human and wait for a yes. Never start on an issue
 because it looked available — an issue can be unblocked on the board and
 still be the wrong thing to do this week.
 
+If the work you were asked to do has no issue, stop and ask — do not create
+one and carry on. Changing what the goals are is the `goals` skill's job and
+the human's decision.
+
 ## 2. Claim
 
 ```bash
