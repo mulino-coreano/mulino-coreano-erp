@@ -1,6 +1,6 @@
 # agents/skills/ — agent role skills
 
-One directory per agent role, each holding a `SKILL.md`. These are authored here as the SSOT and symlinked into `.claude/skills/` (Claude Code) and `.codex/skills/` (Codex) so sessions auto-discover them. The contracts below are already in effect even though the `mulino` CLI is not built yet — treat `mulino` references as the command surface these roles will be bound to, not as runnable today.
+One directory per agent role, each holding a `SKILL.md`. These are authored here as the SSOT and symlinked into `.agents/skills/`, the single directory both Claude Code and Codex read, so sessions auto-discover them. The contracts below are already in effect even though the `mulino` CLI is not built yet — treat `mulino` references as the command surface these roles will be bound to, not as runnable today.
 
 ## Required sections in every SKILL.md
 
@@ -15,5 +15,5 @@ The orchestrator skill additionally defines the dispatch table: which role subag
 ## Rules
 
 - Role duties come from the agent intervention summary in `docs/02_flow.md` (SSOT) — don't invent new duties in a skill without updating the flow doc.
-- Adding an agent = new folder + `SKILL.md` + symlink. No code.
+- Adding an agent = new folder + `SKILL.md` + one symlink into `.agents/skills/`. No code.
 - Skills contain role knowledge only — no credentials, no endpoint URLs (that's `MULINO_API_URL`), no SQL.

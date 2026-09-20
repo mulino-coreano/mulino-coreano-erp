@@ -91,7 +91,7 @@ The full flow and agent intervention points are the single source of truth (SSOT
 - The issue/PR label scheme is in `docs/06_labels.md` (category + `L0-db`~`L3-dashboard` layer labels)
 - Never commit secrets (`application-local.yml`, `.env`) — already in `.gitignore`
 - On schema changes, keep `docs/02_flow.md` consistent with the ERD (Phase 1 required "flow diagram–ERD 100% consistency" as an acceptance criterion)
-- Dev-workflow skills (`backlog` for carrying out an issue, `goals` for changing what the goals are — not ERP roles) live in `.agents/skills/`, which both Claude Code and Codex discover natively. ERP role skills stay in `agents/skills/` with the existing `.claude/` and `.codex/` symlinks.
+- Every skill is discovered through `.agents/skills/`, the one directory both Claude Code and Codex read — there is no `.claude/skills/` or `.codex/skills/`. Dev-workflow skills (`backlog` to carry out an issue, `goals` to change what the goals are) live there as real directories; ERP role skills stay authored in `agents/skills/` (the L2 product layer) and are symlinked in.
 
 ## Issue/PR templates (mandatory)
 
