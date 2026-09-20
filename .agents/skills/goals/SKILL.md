@@ -61,7 +61,9 @@ Ask enough to write a real issue — vague goals produce vague work:
 
 Then create it from the matching template in `.github/ISSUE_TEMPLATE/`
 (`feature` / `bug` / `qc` / `research`), Korean body, with the milestone and
-labels set. **Add it to the board** — there is no auto-add workflow, so an
+labels set. Write the body per `AGENTS.md` § Prose — under Claude Code, delegate
+to the `prose` subagent, handing it the answers to the questions above, since a
+new issue has no diff for it to read. **Add it to the board** — there is no auto-add workflow, so an
 issue that is not added stays invisible to every session:
 
 ```bash
