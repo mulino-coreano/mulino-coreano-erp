@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file is the operating guide for agent sessions working in this repository. Claude Code and Codex both read `AGENTS.md`, so it is the only instruction file — there is no `CLAUDE.md`, and directory-scoped guidance lives in a nested `AGENTS.md`.
+This file is the operating guide for agent sessions working in this repository, and the only place this guidance is written. Codex reads it natively; Claude Code does not, so root `CLAUDE.md` is a symlink to it rather than a second copy. Directory-scoped guidance lives in a nested `AGENTS.md`.
 
 ## Project Overview
 
@@ -91,7 +91,8 @@ Carrying out an issue is the `backlog` skill; changing what the goals are is the
 - The issue/PR label scheme is in `docs/06_labels.md` (category + `L0-db`~`L3-dashboard` layer labels)
 - Never commit secrets (`application-local.yml`, `.env`) — already in `.gitignore`
 - On schema changes, keep `docs/02_flow.md` consistent with the ERD (Phase 1 required "flow diagram–ERD 100% consistency" as an acceptance criterion)
-- Every skill is discovered through `.agents/skills/`, the one directory both Claude Code and Codex read — there is no `.claude/skills/` or `.codex/skills/`. Dev-workflow skills (`backlog` to carry out an issue, `goals` to change what the goals are) live there as real directories; ERP role skills stay authored in `agents/skills/` (the L2 product layer) and are symlinked in.
+- Skills live in `.agents/skills/` — dev-workflow skills (`backlog` to carry out an issue, `goals` to change what the goals are) as real directories, ERP role skills as symlinks to `agents/skills/`, which stays their SSOT (the L2 product layer). Codex discovers that directory natively.
+- Claude Code does **not** read `.agents/skills/`, so `.claude/skills/` mirrors it with one symlink per skill. Add a skill in both places, and point the `.claude/skills/` link at the skill's real directory — never at another symlink.
 
 ## Issue/PR templates (mandatory)
 
