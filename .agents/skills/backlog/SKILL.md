@@ -16,18 +16,31 @@ Its operating rules are in `docs/06_labels.md` and they outrank anything here.
 ## 1. Select
 
 ```bash
-.agents/skills/backlog/next-issue.sh
+# Board status — which issues are Todo. Carries no labels and no milestone.
+gh project item-list 1 --owner mulino-coreano --limit 200 --format json
+
+# Labels and milestones — the board JSON has neither, so this is a required join.
+gh issue list --repo mulino-coreano/mulino-coreano-erp --state open --limit 200 \
+  --json number,title,labels,milestone,assignees
 ```
 
-Open `Todo` issues, `blocked` and `duplicate` dropped, ranked by milestone
-phase then priority. The arrow marks the pick.
+Join the two on issue number, then apply these rules yourself — they are the
+whole point of this step, so do not eyeball the JSON and guess:
 
-The board has no auto-add workflow, so a new issue does not appear on it by
-itself. The script lists any open issue it could not find on the board — add
-those before ranking, or they stay invisible to every session.
+1. **Keep** only items whose board status is `Todo` and whose content type is
+   an issue.
+2. **Drop** anything labelled `blocked` or `duplicate`. Check every candidate's
+   labels explicitly; a blocked issue looks identical to an available one until
+   you read them.
+3. **Rank** by milestone Phase number ascending (`Phase 4` before `Phase 5`),
+   then `priority: high` > `medium` > `low` > none, then issue number.
+4. **Report separately** any open issue that appears in the issue list but not
+   on the board. The board has no auto-add workflow, so those are invisible to
+   every session until someone adds them:
+   `gh project item-add 1 --owner mulino-coreano --url <issue url>`
 
-Show the pick to the human and wait for a yes. Never start on an issue
-because it looked available — an issue can be unblocked on the board and
+Show the top candidate to the human and wait for a yes. Never start on an
+issue because it looked available — an issue can be unblocked on the board and
 still be the wrong thing to do this week.
 
 If the work you were asked to do has no issue, stop and ask — do not create

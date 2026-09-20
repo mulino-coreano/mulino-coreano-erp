@@ -70,17 +70,17 @@ Reverse tracing (root-cause analysis) follows this chain backwards. Core invaria
 
 The full flow and agent intervention points are the single source of truth (SSOT) in `docs/02_flow.md`. For the table list and SAP module mapping, see `docs/01_project_overview.txt`.
 
-## 작업은 보드에서 온다
+## Work comes from the board
 
-이 저장소의 목표는 전부 GitHub 에 있다. 보드는 [Mulino Coreano — ERP & Agent Governance](https://github.com/orgs/mulino-coreano/projects/1) 하나이며, 운영 규칙은 `docs/06_labels.md` 에 있고 그쪽이 우선한다.
+Every goal this project has lives in GitHub. There is one board — [Mulino Coreano — ERP & Agent Governance](https://github.com/orgs/mulino-coreano/projects/1) — and its operating rules are in `docs/06_labels.md`, which outranks this file.
 
-- **목표 단위는 마일스톤(Phase)과 이슈다.** 문서에만 적힌 목표는 추적되지 않는 목표다.
-- **세션을 시작하면 보드부터 확인한다.** `.agents/skills/goals/board.sh` 로 현재 Phase 와 목표를, `.agents/skills/backlog/next-issue.sh` 로 다음 작업 후보를 본다. 이 파일이나 `docs/` 의 진행 상태 서술보다 보드가 최신이다.
-- **이슈 없는 작업은 시작하지 않는다.** 대응하는 이슈가 없으면 멈추고 사람에게 묻는다 — 이슈를 임의로 만들어 진행하지 않는다. 질문·조사·오타 수정은 예외다.
-- **현재 Phase 밖의 일을 자발적으로 시작하지 않는다.** 필요해 보이면 제안하고, 판단은 사람이 한다.
-- **보드 Status 는 손대지 않는다.** 이슈·PR 상태에서 자동으로 정해진다.
+- **Goals are milestones (Phases) and issues.** A goal written only in a doc is an untracked goal.
+- **Check the board when a session starts.** The `goals` skill has the commands for the current Phase and its goals; the `backlog` skill has the commands for the next candidate. The board is more current than the status described in this file or in `docs/`.
+- **Do not start work that has no issue.** If nothing on the board covers it, stop and ask — do not create an issue and carry on by yourself. Questions, investigation and typo fixes are exempt.
+- **Do not start work outside the current Phase on your own initiative.** Propose it; the human decides.
+- **Never set the board's Status field by hand.** Automation derives it from issue and PR state.
 
-작업 수행 절차는 `backlog` 스킬, 목표 추가·조정 대화는 `goals` 스킬 (둘 다 `.agents/skills/`).
+Carrying out an issue is the `backlog` skill; changing what the goals are is the `goals` skill (both in `.agents/skills/`).
 
 ## Git rules
 

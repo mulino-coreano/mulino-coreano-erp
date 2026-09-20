@@ -14,13 +14,29 @@ lives in GitHub. A goal discussed in chat and not written down did not happen.
 ## 1. Ground the conversation first
 
 ```bash
-.agents/skills/goals/board.sh
+# Phases — milestones are the goal unit.
+gh api 'repos/mulino-coreano/mulino-coreano-erp/milestones?state=all' --paginate
+
+# Open goals with their labels and milestone.
+gh issue list --repo mulino-coreano/mulino-coreano-erp --state open --limit 200 \
+  --json number,title,labels,milestone,assignees
+
+# Board status per item.
+gh project item-list 1 --owner mulino-coreano --limit 200 --format json
 ```
 
-Phases with their open goals, what is in flight, what is blocked, what is not
-tracked. Run it before answering any question about project state. Never
-describe the project's direction from memory or from `docs/` alone — those
-lag the board, sometimes by a whole Phase.
+Group the issues by milestone and read out, per Phase: what is open, what is
+in flight, what carries `blocked`, and what is unresolved. Two things are easy
+to miss and matter most, so check for them every time:
+
+- **Issues with no milestone** — a goal outside every Phase, which the doctrine
+  below says is not yet a goal.
+- **Open issues absent from the board** — invisible to every session, because
+  there is no auto-add workflow.
+
+Run these before answering any question about project state. Never describe
+the project's direction from memory or from `docs/` alone — those lag the
+board, sometimes by a whole Phase.
 
 ## 2. The doctrine you are working inside
 
