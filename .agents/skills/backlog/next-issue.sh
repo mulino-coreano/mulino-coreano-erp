@@ -46,6 +46,17 @@ for number, item in todo.items():
 
 rows.sort(key=lambda r: (r[0], r[1], r[2]))
 
+# The board has no auto-add workflow, so an issue can exist and never appear
+# here. Say so rather than silently under-reporting the available work.
+missing = [n for n in issues if n not in {i["content"]["number"] for i in board
+                                          if i.get("content", {}).get("number")}]
+if missing:
+    print("Open issues NOT on the board (add them, or they stay invisible):")
+    for n in sorted(missing):
+        print(f"   #{n}  {issues[n]['title']}")
+    print("   gh project item-add 1 --owner mulino-coreano --url <issue url>")
+    print()
+
 if not rows:
     print("No unblocked Todo issues on the board.")
     raise SystemExit(0)

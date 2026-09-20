@@ -22,6 +22,10 @@ Its operating rules are in `docs/06_labels.md` and they outrank anything here.
 Open `Todo` issues, `blocked` and `duplicate` dropped, ranked by milestone
 phase then priority. The arrow marks the pick.
 
+The board has no auto-add workflow, so a new issue does not appear on it by
+itself. The script lists any open issue it could not find on the board — add
+those before ranking, or they stay invisible to every session.
+
 Show the pick to the human and wait for a yes. Never start on an issue
 because it looked available — an issue can be unblocked on the board and
 still be the wrong thing to do this week.
