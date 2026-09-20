@@ -37,3 +37,14 @@
 |---|---|---|
 | `blocked` | 검정 (#000000) | 의존성/이슈로 막힘 |
 | `in progress` | 노랑 (#fbca04) | 진행 중 |
+
+## 프로젝트 보드 운영 규칙
+
+보드는 [Mulino Coreano — ERP & Agent Governance](https://github.com/orgs/mulino-coreano/projects/1) 하나를 사용한다.
+
+- **마일스톤 = Phase.** `docs/00_timeline.md` 의 Phase 가 유일한 목표 단위다. 별도의 Phase 필드를 만들지 않는다.
+- **이슈 = 목표 1개.** 문서에만 적힌 목표는 추적되지 않는 목표다. 인수 조건은 이슈로 옮긴다.
+- **보드 Status 는 손으로 고치지 않는다.** 이슈·PR 상태에서 워크플로가 자동으로 정한다.
+- **닫는 방식이 의미를 가진다.** completed = 실제로 끝남, not planned = 폐기. 끝나지 않은 일을 not planned 로 닫지 않는다.
+- **외부 요인으로 막힌 일은 `blocked`** 를 붙이고 사유를 코멘트로 남긴다.
+- **중복 이슈는 `duplicate`** 를 붙이고 원본 번호를 코멘트로 남긴 뒤 보드에서 제거한다.
