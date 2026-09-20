@@ -70,7 +70,7 @@ git switch -c <type>/<slug>
 | `feature` | `feat` |
 | `bug` | `fix` |
 | `docs` | `docs` |
-| `qc`, `chore` | `chore` |
+| `qc`, `chore`, `research` | `chore` |
 
 ## 4. Work
 
@@ -124,5 +124,5 @@ Report the branch, the PR URL, and the verification output. Then hand back.
 ## Board fields you read but never write
 
 `Scenario`, `Work Stage`, `Verification Gate`, `Layer` — context for
-understanding where an issue sits in the demo narrative. The selection script
-prints them. Writing them is a human's call.
+understanding where an issue sits in the demo narrative. They come back in the
+`gh project item-list` output above. Writing them is a human's call.
