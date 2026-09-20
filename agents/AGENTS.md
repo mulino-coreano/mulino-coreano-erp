@@ -18,4 +18,4 @@ Claude Code and Codex sessions (Cowork) are both supported agent runtimes. This 
 
 The CLI's command surface is derived from the backend REST endpoints (Phase 4). Do not implement `cli/` before those endpoints exist; skills reference CLI commands, so they firm up last (Phase 6).
 
-Role duties are specified in the agent intervention summary of `docs/02_flow.md` (SSOT). The governance approval matrix is in the root `CLAUDE.md`.
+Role duties are specified in the agent intervention summary of `docs/02_flow.md` (SSOT). The governance approval matrix is in the root `AGENTS.md`.

@@ -1,16 +1,24 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file is the operating guide for agent sessions working in this repository. Claude Code and Codex both read `AGENTS.md`, so it is the only instruction file — there is no `CLAUDE.md`, and directory-scoped guidance lives in a nested `AGENTS.md`.
 
 ## Project Overview
 
 A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Italian food brand) enters the Korean market. A SAP consulting portfolio project that localizes a EU-standard ERP to Korean food regulations (Food Traceability Act, 22 allergens, electronic tax invoices, etc.).
 
-**Current status**: Phase 3 complete (planning / ERD / DDL / documentation). `backend/`, `governance/`, `dashboard/` are empty scaffolds; `agents/` holds layout and AGENTS.md guidance only — no runnable code yet. All documentation is written in Korean.
+**Current status**: Phase 4 in progress (L0 backend · interface). On `main`: a Spring Boot application with Flyway migrations `V1`–`V7`, a common response/exception layer and Swagger. `governance/` and `dashboard/` are still empty scaffolds; `agents/` holds the role skills and layout guidance only — the `mulino` CLI is not built yet. What remains in Phase 4, and every Phase after it, lives on the project board rather than in this file. All documentation is written in Korean.
 
 ## Commands
 
-No build/test tooling yet. The only runnable target is the DDL:
+Backend (Gradle wrapper, Java 21) — needs a reachable PostgreSQL:
+
+```bash
+cd backend
+./gradlew test
+./gradlew bootRun
+```
+
+The application applies Flyway migrations (`backend/src/main/resources/db/migration/`, `V1`–`V7`) on startup. The standalone DDL in `database/ddl/` is the schema's readable SSOT and must stay in sync with them. To build a database from the DDL directly:
 
 ```bash
 # After creating the DB, run in FK-dependency order (file number order is mandatory)
@@ -33,7 +41,7 @@ psql -d mulino_coreano -f database/seed/allergens.sql
 |---|---|---|
 | L0 | `database/`, `backend/` | PostgreSQL 18 (30 tables) + Spring Boot REST API (single entry point for CLI and dashboard) |
 | L1 | `governance/` | Intercept action-bearing API calls → approve / block / hold + audit log. **Reads pass through; only writes are gated** |
-| L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude Code and Codex are both supported agent runtimes; the orchestrator dispatches role subagents. See `agents/CLAUDE.md` |
+| L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude Code and Codex are both supported agent runtimes; the orchestrator dispatches role subagents. See `agents/AGENTS.md` |
 | L3 | `dashboard/` | Natural-language query → Intent Parsing → chart generation |
 
 ### Governance approval matrix (follow when implementing L1)
@@ -62,6 +70,18 @@ Reverse tracing (root-cause analysis) follows this chain backwards. Core invaria
 
 The full flow and agent intervention points are the single source of truth (SSOT) in `docs/02_flow.md`. For the table list and SAP module mapping, see `docs/01_project_overview.txt`.
 
+## Work comes from the board
+
+Every goal this project has lives in GitHub. There is one board — [Mulino Coreano — ERP & Agent Governance](https://github.com/orgs/mulino-coreano/projects/1) — and its operating rules are in `docs/06_labels.md`, which outranks this file.
+
+- **Goals are milestones (Phases) and issues.** A goal written only in a doc is an untracked goal.
+- **Check the board when a session starts.** The `goals` skill has the commands for the current Phase and its goals; the `backlog` skill has the commands for the next candidate. The board is more current than the status described in this file or in `docs/`.
+- **Do not start work that has no issue.** If nothing on the board covers it, stop and ask — do not create an issue and carry on by yourself. Questions, investigation and typo fixes are exempt.
+- **Do not start work outside the current Phase on your own initiative.** Propose it; the human decides.
+- **Never set the board's Status field by hand.** Automation derives it from issue and PR state.
+
+Carrying out an issue is the `backlog` skill; changing what the goals are is the `goals` skill (both in `.agents/skills/`).
+
 ## Git rules
 
 - **No direct commit/push to main** — work on a separate branch, then open a PR to merge (force push is strictly forbidden)
@@ -71,10 +91,11 @@ The full flow and agent intervention points are the single source of truth (SSOT
 - The issue/PR label scheme is in `docs/06_labels.md` (category + `L0-db`~`L3-dashboard` layer labels)
 - Never commit secrets (`application-local.yml`, `.env`) — already in `.gitignore`
 - On schema changes, keep `docs/02_flow.md` consistent with the ERD (Phase 1 required "flow diagram–ERD 100% consistency" as an acceptance criterion)
+- Every skill is discovered through `.agents/skills/`, the one directory both Claude Code and Codex read — there is no `.claude/skills/` or `.codex/skills/`. Dev-workflow skills (`backlog` to carry out an issue, `goals` to change what the goals are) live there as real directories; ERP role skills stay authored in `agents/skills/` (the L2 product layer) and are symlinked in.
 
 ## Issue/PR templates (mandatory)
 
-Templates live in `.github/`. When creating issues or PRs, Codex must follow the structure of the relevant template exactly — do not omit sections or invent your own format.
+Templates live in `.github/`. When creating issues or PRs, the session must follow the structure of the relevant template exactly — do not omit sections or invent your own format.
 
 **PR**: `.github/pull_request_template.md` — 4 sections (작업 내용 / 변경 사항 / 체크리스트 / 리뷰 요청 사항). The 3 checklist items (verify local run, do not commit secrets, update related docs) must appear in the PR body.
 

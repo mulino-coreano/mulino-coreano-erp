@@ -27,6 +27,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# ===== Zig (agents/cli) =====
+.zig-cache/
+zig-out/
+
 # ===== Python (agents, 스크립트) =====
 __pycache__/
 *.py[cod]

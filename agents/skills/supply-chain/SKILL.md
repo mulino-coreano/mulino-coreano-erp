@@ -14,7 +14,7 @@ traces completely — every link in the chain or nothing. Duties SSOT:
 
 ## Allowed commands
 
-All work goes through the `mulino` CLI (contract: `../../cli/CLAUDE.md`),
+All work goes through the `mulino` CLI (contract: `../../cli/AGENTS.md`),
 read-heavy:
 
 - `mulino lot trace <lot> [--reverse]` — full bidirectional trace
