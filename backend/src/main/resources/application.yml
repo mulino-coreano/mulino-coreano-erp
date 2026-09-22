@@ -8,10 +8,22 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
-# 설정이 없으면 시작을 거부한다. 무인증 개발 profile은 제공하지 않는다.
+# Auth0 설정이 없으면 기본 profile 시작을 거부한다. PoC 로컬은 spring.profiles.active=local 스텁을 쓴다.
 mulino:
   auth:
     issuer: ${MULINO_AUTH_ISSUER:}
     audience: ${MULINO_API_AUDIENCE:urn:mulino:erp-api}
     jwks-uri: ${MULINO_AUTH_JWKS_URI:}
     worker-client-id: ${MULINO_WORKER_CLIENT_ID:}
+
+---
+# PoC 로컬 스텁 (spring.profiles.active=local). Auth0 없이 고정 Actor만 쓴다.
+spring:
+  config:
+    activate:
+      on-profile: local
+
+mulino:
+  local-auth:
+    default-role: MANAGER
+    issuer: https://local.mulino.test/

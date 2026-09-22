@@ -5,6 +5,7 @@ import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
@@ -12,6 +13,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Component
+@Profile("!local")
 public class ActorJwtConverter implements Converter<Jwt, AbstractAuthenticationToken> {
     static final String ERP_ACCESS_DENIED = "erp_access_denied";
     private final ExternalIdentityRepository identities;
