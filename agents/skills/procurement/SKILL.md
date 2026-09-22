@@ -15,7 +15,7 @@ purchase orders, and propose alternatives when deliveries slip. Duties SSOT:
 
 ## Allowed commands
 
-All work goes through the `mulino` CLI (contract: `../../cli/CLAUDE.md`):
+All work goes through the `mulino` CLI (contract: `../../cli/AGENTS.md`):
 
 - `mulino supplier` / `mulino cert` (list, expiry views)
 - `mulino po` (create draft, list, delivery status)

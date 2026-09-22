@@ -14,7 +14,7 @@ registration), STEP 4 (inbound), STEP 10 (recall).
 
 ## Allowed commands
 
-All work goes through the `mulino` CLI (contract: `../../cli/CLAUDE.md`):
+All work goes through the `mulino` CLI (contract: `../../cli/AGENTS.md`):
 
 - `mulino material` (allergen mapping views)
 - `mulino inbound` (list, temperature logs, block/hold requests)
