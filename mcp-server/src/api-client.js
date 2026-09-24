@@ -1,11 +1,12 @@
-export function createApiClient({ token, base = process.env.MULINO_API_BASE ?? "http://localhost:8080/api/v1", timeoutMs = Number(process.env.MULINO_API_TIMEOUT_MS ?? "10000") }) {
+export function createApiClient({ role, base = process.env.MULINO_API_BASE ?? "http://localhost:8080/api/v1", timeoutMs = Number(process.env.MULINO_API_TIMEOUT_MS ?? "10000") }) {
   const timeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 10000;
   return async (path, opts = {}) => {
     const method = (opts.method ?? "GET").toUpperCase();
     try {
       const res = await fetch(base.replace(/\/$/, "") + path, {
         ...opts,
-        headers: { ...opts.headers, Authorization: `Bearer ${typeof token === "function" ? await token() : token}` },
+        // PoC 로컬 신원: 백엔드가 이 역할로 사람 Actor를 만든다. Auth0/OAuth는 #21·#22에서 보류했다.
+        headers: { ...opts.headers, "X-Mulino-Local-Role": role },
         signal: AbortSignal.timeout(timeout),
         redirect: "error",
       });

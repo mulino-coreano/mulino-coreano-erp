@@ -12,7 +12,7 @@ await assert.rejects(access('/var/run/docker.sock'));
 await writeFile('/work/allowed', 'ok');
 await writeFile('/tmp/allowed', 'ok');
 await writeFile('/home/mulino/.codex/volume-check', 'ok');
-for (const name of ['MULINO_WORKER_CLIENT_SECRET', 'DB_PASSWORD', 'OPENAI_API_KEY', 'MULINO_LEASE_TOKEN'])
+for (const name of ['MULINO_WORKER_TOKEN', 'DB_PASSWORD', 'OPENAI_API_KEY', 'MULINO_LEASE_TOKEN'])
   assert.equal(process.env[name], undefined);
 assert.equal(process.env.MULINO_TOKEN, 'smoke-capability-only');
 assert.ok((await readFile('/etc/ssl/certs/ca-certificates.crt', 'utf8')).includes('BEGIN CERTIFICATE'));

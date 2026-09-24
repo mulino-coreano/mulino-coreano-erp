@@ -22,31 +22,28 @@ export function validInstant(value) {
   return Number.isFinite(Date.parse(value));
 }
 
-export function safeUrl(value, { issuer = false, container = false } = {}) {
+export function safeUrl(value, { container = false } = {}) {
   let url;
   try { url = new URL(value); } catch { throw new Error('INVALID_URL'); }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
     || (container && url.hostname === 'host.docker.internal');
-  require((url.protocol === 'https:' || (!issuer && local && url.protocol === 'http:'))
+  require((url.protocol === 'https:' || (local && url.protocol === 'http:'))
     && !url.username && !url.password && !url.search && !url.hash, 'UNSAFE_URL');
-  if (issuer) require(url.pathname === '/', 'INVALID_ISSUER_PATH');
   return url.toString().replace(/\/$/, '');
 }
 
 export function readConfig(env = process.env) {
-  const issuer = safeUrl(env.MULINO_AUTH_ISSUER, { issuer: true });
-  const clientId = env.MULINO_WORKER_CLIENT_ID;
-  const clientSecret = env.MULINO_WORKER_CLIENT_SECRET;
+  const workerToken = env.MULINO_WORKER_TOKEN;
   const image = env.MULINO_RUNTIME_IMAGE;
   const authVolume = env.MULINO_CODEX_AUTH_VOLUME;
   const workerId = env.MULINO_WORKER_ID;
   const model = env.MULINO_CODEX_MODEL;
-  require(string(clientId) && string(clientSecret, 8192) && string(workerId, 128), 'MISSING_WORKER_CONFIG');
+  require(string(workerToken, 8192) && string(workerId, 128), 'MISSING_WORKER_CONFIG');
   require(string(image) && /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/.test(image), 'INVALID_RUNTIME_IMAGE');
   require(string(authVolume) && /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(authVolume), 'INVALID_AUTH_VOLUME');
   require(string(model, 128) && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(model), 'MISSING_MODEL');
-  return { issuer, clientId, clientSecret, workerId, image, authVolume, model,
-    audience: 'urn:mulino:erp-api', apiBase: safeUrl(env.MULINO_API_BASE ?? 'http://127.0.0.1:8080/api/v1'),
+  return { workerToken, workerId, image, authVolume, model,
+    apiBase: safeUrl(env.MULINO_API_BASE ?? 'http://127.0.0.1:8080/api/v1'),
     agentApiUrl: safeUrl(env.MULINO_AGENT_API_URL ?? 'http://host.docker.internal:8080/api/v1', { container: true }) };
 }
 

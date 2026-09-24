@@ -2,16 +2,10 @@ package com.mulinocoreano.backend.demo;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import com.mulinocoreano.backend.planning.ReplenishmentDemoFixture;
-import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
-import com.sun.net.httpserver.HttpsServer;
-import com.sun.net.httpserver.HttpsConfigurator;
 import java.nio.file.*;
-import java.security.KeyStore;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import javax.net.ssl.*;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,39 +25,17 @@ import tools.jackson.databind.ObjectMapper;
     "spring.datasource.hikari.schema=demo_e2e", "spring.main.allow-bean-definition-overriding=true"})
 class DemoE2eTest {
     static final Path temp;
-    static final SSLContext originalSsl;
-    static final SSLSocketFactory originalSocketFactory;
-    static final HttpsServer jwks;
-    static final RSAKey key;
+    static final String WORKER_TOKEN = "demo-worker-token";
     static {
         try {
-            originalSsl = SSLContext.getDefault();
-            originalSocketFactory = HttpsURLConnection.getDefaultSSLSocketFactory();
             String db = System.getenv("DB_URL");
             if (db == null || !db.matches("jdbc:postgresql://(127\\.0\\.0\\.1|localhost):[0-9]+/mulino_demo_e2e"))
                 throw new IllegalStateException("Requires explicit loopback mulino_demo_e2e disposable database");
             temp = Files.createTempDirectory("mulino-demo-e2e-");
-            run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", temp.resolve("key.pem").toString(), "-out", temp.resolve("cert.pem").toString(), "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1");
-            run("openssl", "pkcs12", "-export", "-inkey", temp.resolve("key.pem").toString(), "-in", temp.resolve("cert.pem").toString(), "-out", temp.resolve("tls.p12").toString(), "-passout", "pass:fixture-only");
-            KeyStore ks = KeyStore.getInstance("PKCS12");
-            try (var in = Files.newInputStream(temp.resolve("tls.p12"))) { ks.load(in, "fixture-only".toCharArray()); }
-            KeyManagerFactory km = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-            km.init(ks, "fixture-only".toCharArray());
-            TrustManagerFactory tm = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()); tm.init(ks);
-            SSLContext ssl = SSLContext.getInstance("TLS"); ssl.init(km.getKeyManagers(), tm.getTrustManagers(), null);
-            SSLContext.setDefault(ssl); HttpsURLConnection.setDefaultSSLSocketFactory(ssl.getSocketFactory());
-            key = new RSAKeyGenerator(2048).keyID("demo-fixture").generate();
-            jwks = HttpsServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
-            jwks.setHttpsConfigurator(new HttpsConfigurator(ssl));
-            jwks.createContext("/jwks", exchange -> { byte[] bytes = ("{\"keys\":[" + key.toPublicJWK().toJSONString() + "]}").getBytes(java.nio.charset.StandardCharsets.UTF_8); exchange.getResponseHeaders().set("Content-Type", "application/json"); exchange.sendResponseHeaders(200, bytes.length); try(var out=exchange.getResponseBody()){out.write(bytes);} });
-            jwks.start();
         } catch (Exception e) { throw new ExceptionInInitializerError(e); }
     }
-    static void run(String... command) throws Exception { var p = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start(); if (!p.waitFor(30, TimeUnit.SECONDS) || p.exitValue()!=0) throw new IllegalStateException("Fixture prerequisite failed: " + command[0]); }
     @DynamicPropertySource static void properties(DynamicPropertyRegistry r) {
-        r.add("mulino.auth.issuer", () -> "https://demo-auth.invalid/");
-        r.add("mulino.auth.jwks-uri", () -> "https://localhost:" + jwks.getAddress().getPort() + "/jwks");
-        r.add("mulino.auth.worker-client-id", () -> "demo-worker");
+        r.add("mulino.local-auth.worker-token", () -> WORKER_TOKEN);
     }
     static final java.util.concurrent.atomic.AtomicReference<Instant> businessNow = new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2026-09-05T00:00:00Z"));
     @TestConfiguration static class Time {
@@ -139,7 +111,7 @@ class DemoE2eTest {
         Path root = Path.of("..").toAbsolutePath().normalize();
         assertThat(Files.isExecutable(root.resolve("agents/cli/zig-out/bin/mulino"))).as("Run zig build in agents/cli first").isTrue();
         Path config = temp.resolve("scenario.json");
-        Files.writeString(config, mapper.writeValueAsString(Map.of("api", "http://127.0.0.1:"+port+"/api/v1", "privateJwk", key.toJSONObject(), "warehouseId", warehouse, "productIds", products)));
+        Files.writeString(config, mapper.writeValueAsString(Map.of("api", "http://127.0.0.1:"+port+"/api/v1", "workerToken", WORKER_TOKEN, "warehouseId", warehouse, "productIds", products)));
         return config;
     }
 
@@ -161,11 +133,8 @@ class DemoE2eTest {
 
     void resetFixture() throws Exception {
         assertThat(flyway.getConfiguration().getSchemas()).containsExactly("demo_e2e");
+        // MANAGER·OPERATOR 사용자는 첫 요청 때 로컬 신원(역할 헤더)이 만든다.
         flyway.clean(); flyway.migrate(); ReplenishmentDemoFixture.load(jdbc);
-        for (String role : List.of("MANAGER", "OPERATOR")) {
-            long id = jdbc.sql("INSERT INTO users(name,email,role) VALUES(:name,:email,CAST(:role AS user_role)) RETURNING user_id").param("name", "demo-" + role).param("email", role+"@demo.invalid").param("role", role).query(Long.class).single();
-            jdbc.sql("INSERT INTO external_identities(issuer,subject,user_id) VALUES('https://demo-auth.invalid/',:sub,:id)").param("sub", "auth0|"+role).param("id", id).update();
-        }
     }
     void launch(Path root, Path config, String phase) throws Exception {
         Path log = temp.resolve("scenario-" + phase + ".log");
@@ -177,5 +146,5 @@ class DemoE2eTest {
         System.out.println(Files.readString(log));
         assertThat(process.exitValue()).as(phase).isZero();
     }
-    @AfterAll static void cleanup() throws Exception { jwks.stop(0); SSLContext.setDefault(originalSsl); HttpsURLConnection.setDefaultSSLSocketFactory(originalSocketFactory); try(var paths=Files.walk(temp)){for(var p:paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(p);} }
+    @AfterAll static void cleanup() throws Exception { try(var paths=Files.walk(temp)){for(var p:paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(p);} }
 }

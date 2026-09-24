@@ -34,8 +34,7 @@ test('role paths come from an allowlist and cannot be supplied by Case content',
 });
 
 test('production runner requires an explicit model before it can claim work', () => {
-  const env = { MULINO_AUTH_ISSUER: 'https://tenant.example/', MULINO_WORKER_CLIENT_ID: 'worker',
-    MULINO_WORKER_CLIENT_SECRET: 'worker-secret', MULINO_WORKER_ID: 'worker-1',
+  const env = { MULINO_WORKER_TOKEN: 'worker-secret', MULINO_WORKER_ID: 'worker-1',
     MULINO_RUNTIME_IMAGE: config.image, MULINO_CODEX_AUTH_VOLUME: config.authVolume };
   assert.throws(() => readConfig(env), /MISSING_MODEL/);
   assert.equal(readConfig({ ...env, MULINO_CODEX_MODEL: 'demo-model' }).model, 'demo-model');

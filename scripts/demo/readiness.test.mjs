@@ -3,13 +3,10 @@ import assert from 'node:assert/strict';
 import { runReadiness, dbTarget, command } from './readiness.mjs';
 const env = {
   DB_URL: 'jdbc:postgresql://127.0.0.1:5432/demo_only', DB_USERNAME: 'fixture_user', DB_PASSWORD: 'secret-password',
-  MULINO_API_BASE: 'http://127.0.0.1:8080/api/v1', MULINO_DEMO_HUMAN_API_TOKEN: 'secret-human-token',
-  MULINO_AUTH_ISSUER: 'https://issuer.example/', MULINO_PUBLIC_ORIGIN: 'https://mcp.example',
-  MULINO_AUTH0_CLIENT_ID: 'obo-client', MULINO_AUTH0_CLIENT_SECRET: 'secret-obo',
-  MULINO_WORKER_CLIENT_ID: 'worker-client', MULINO_WORKER_CLIENT_SECRET: 'secret-worker', MULINO_WORKER_ID: 'fixture-worker',
+  MULINO_API_BASE: 'http://127.0.0.1:8080/api/v1',
+  MULINO_WORKER_TOKEN: 'secret-worker', MULINO_WORKER_ID: 'fixture-worker',
   MULINO_AGENT_API_URL: 'http://host.docker.internal:8080/api/v1', MULINO_RUNTIME_IMAGE: 'mulino:test',
   MULINO_CODEX_AUTH_VOLUME: 'dedicated-demo-auth', MULINO_CODEX_MODEL: 'fixture-model',
-  MULINO_CHATGPT_CIMD_URL: 'https://chatgpt.example/client', MULINO_CODEX_CIMD_URL: 'https://codex.example/client',
 };
 function fixture(overrides = {}) {
   const calls = [];
@@ -24,19 +21,7 @@ function fixture(overrides = {}) {
     },
     fetch: async (url, options) => {
       calls.push({ url, options });
-      let body;
-      if (url.endsWith('/me')) body = { actorType: 'HUMAN', role: 'MANAGER', capabilities: ['erp:read', 'procurement:decide'] };
-      else if (url.includes('openid-configuration')) body = { issuer: env.MULINO_AUTH_ISSUER,
-        response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'],
-        code_challenge_methods_supported: ['S256'], client_id_metadata_document_supported: true,
-        authorization_response_iss_parameter_supported: true, authorization_endpoint: 'https://issuer.example/authorize',
-        token_endpoint: 'https://issuer.example/token', jwks_uri: 'https://issuer.example/jwks' };
-      else if (url.includes('oauth-protected-resource')) body = { resource: 'https://mcp.example/mcp',
-        authorization_servers: [env.MULINO_AUTH_ISSUER], scopes_supported: ['erp:read', 'work:write', 'procurement:decide', 'offline_access'],
-        bearer_methods_supported: ['header'] };
-      else body = { client_id: url, grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'],
-        token_endpoint_auth_method: 'none', redirect_uris: ['http://127.0.0.1:3210/callback'] };
-      return Response.json(body);
+      return Response.json({ actorType: 'HUMAN', role: 'MANAGER', capabilities: ['erp:read', 'procurement:decide'] });
     }, ...overrides,
   } };
 }
@@ -50,7 +35,8 @@ test('complete configuration is only software PASS, never live acceptance; check
   for (const call of calls) {
     if (call.url) {
       assert.equal(call.options.method, 'GET'); assert.equal(call.options.redirect, 'error');
-      assert.equal(Boolean(call.options.headers.Authorization), call.url.endsWith('/me'));
+      assert.equal(call.options.headers['X-Mulino-Local-Role'], 'MANAGER');
+      assert.equal(call.options.headers.Authorization, undefined);
     } else if (call.file === 'docker') assert(['version', 'image', 'volume'].includes(call.args[0]));
   }
   const probe = calls.find(call => call.file === 'psql');
@@ -84,29 +70,18 @@ test('PG major or Flyway mismatch fails', async () => {
     assert.equal(status(report, 'database'), 'FAILED');
   }
 });
-test('unsafe public URL and credentialed API URL cannot send tokens', async () => {
+test('credentialed API URL is never contacted', async () => {
   const { calls, deps } = fixture();
-  const report = await runReadiness({ ...env, MULINO_PUBLIC_ORIGIN: 'http://mcp.example', MULINO_API_BASE: 'https://user:secret@api.example/api/v1' }, deps);
-  assert.equal(status(report, 'mcp-metadata'), 'FAILED');
+  const report = await runReadiness({ ...env, MULINO_API_BASE: 'https://user:secret@api.example/api/v1' }, deps);
   assert.equal(status(report, 'backend-human'), 'FAILED');
-  assert(!calls.some(call => call.url?.includes('/me') || call.url?.includes('oauth-protected-resource')));
-});
-test('metadata must advertise procurement decision scope', async () => {
-  const base = fixture();
-  const report = await runReadiness(env, { ...base.deps, fetch: async (url, options) => {
-    const response = await base.deps.fetch(url, options);
-    const body = await response.json();
-    if (body.scopes_supported) body.scopes_supported = ['erp:read', 'work:write', 'offline_access'];
-    return Response.json(body);
-  } });
-  assert.equal(status(report, 'mcp-metadata'), 'FAILED');
+  assert(!calls.some(call => call.url?.includes('/me')));
 });
 test('provider errors and command errors never leak bodies, tokens, DSNs or env values', async () => {
   const leak = Object.values(env).join(' ');
   const { deps } = fixture({ command: async () => { throw new Error(leak); }, fetch: async () => new Response(leak, { status: 401 }) });
   const report = await runReadiness(env, deps);
   const text = JSON.stringify(report);
-  for (const value of [env.DB_URL, env.DB_PASSWORD, env.MULINO_DEMO_HUMAN_API_TOKEN, env.MULINO_WORKER_CLIENT_SECRET]) assert(!text.includes(value));
+  for (const value of [env.DB_URL, env.DB_PASSWORD, env.MULINO_WORKER_TOKEN]) assert(!text.includes(value));
   assert.equal(status(report, 'backend-human'), 'FAILED');
 });
 test('stalled command and stalled HTTP body are bounded', async () => {
@@ -117,7 +92,7 @@ test('stalled command and stalled HTTP body are bounded', async () => {
     fetch: async () => new Response(new ReadableStream({ start() {} })),
   });
   assert(Date.now() - started < 1500);
-  assert.equal(status(report, 'issuer-discovery'), 'FAILED');
+  assert.equal(status(report, 'backend-human'), 'FAILED');
   assert.equal(status(report, 'java'), 'FAILED');
 });
 test('native command timeout kills a child and returns a fixed error', async () => {
@@ -141,21 +116,4 @@ test('redirected response, service identity and oversized metadata fail', async 
     const { deps } = fixture({ fetch: async () => response() });
     assert.equal(status(await runReadiness(env, deps), 'backend-human'), 'FAILED');
   }
-});
-
-test('noncanonical issuer fails the deployed MCP config contract without issuer or resource probes', async () => {
-  for (const issuer of ['https://issuer.example', 'https://ISSUER.example/', 'https://issuer.example:443/']) {
-    const { calls, deps } = fixture();
-    const report = await runReadiness({ ...env, MULINO_AUTH_ISSUER: issuer }, deps);
-    assert.equal(status(report, 'mcp-config'), 'FAILED');
-    assert.equal(status(report, 'issuer-discovery'), 'FAILED');
-    assert.equal(status(report, 'mcp-metadata'), 'FAILED');
-    assert.equal(report.softwareConfigurationChecksPassed, false);
-    assert(!calls.some(call => call.url?.includes('openid-configuration') || call.url?.includes('oauth-protected-resource')));
-  }
-});
-test('MCP configuration checks use the actual startup validator', async () => {
-  const { deps } = fixture();
-  const report = await runReadiness({ ...env, MULINO_PORT: '65536' }, deps);
-  assert.equal(status(report, 'mcp-config'), 'FAILED');
 });

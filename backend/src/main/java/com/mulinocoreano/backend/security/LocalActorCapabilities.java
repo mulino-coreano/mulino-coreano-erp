@@ -4,7 +4,7 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 
-/** 로컬 스텁용. Auth0 scope가 모두 있다고 가정한 역할→capability 매핑. */
+/** PoC 로컬 신원의 역할→capability 매핑. */
 final class LocalActorCapabilities {
     private LocalActorCapabilities() {}
 
@@ -19,13 +19,14 @@ final class LocalActorCapabilities {
         String normalized = normalizeRole(role);
         Set<String> capabilities = new HashSet<>();
         capabilities.add("erp:read");
+        // 제거한 Auth0 경로와 같은 규칙: 업무 쓰기는 OPERATOR·MANAGER, 구매 결정은 MANAGER만.
         switch (normalized) {
-            case "ADMIN", "MANAGER" -> {
+            case "MANAGER" -> {
                 capabilities.add("work:write");
                 capabilities.add("procurement:decide");
             }
-            case "OPERATOR", "QC" -> capabilities.add("work:write");
-            case "VIEWER" -> {}
+            case "OPERATOR" -> capabilities.add("work:write");
+            case "ADMIN", "QC", "VIEWER" -> {}
             default -> throw new IllegalArgumentException("Unsupported local role: " + normalized);
         }
         return Set.copyOf(capabilities);

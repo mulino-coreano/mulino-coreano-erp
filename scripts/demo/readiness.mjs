@@ -6,27 +6,12 @@ import { constants } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { readConfig, safeUrl } from '../../agents/runner/src/protocol.js';
-import { readHttpConfig } from '../../mcp-server/src/auth/config.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const requiredRunner = ['MULINO_AUTH_ISSUER', 'MULINO_WORKER_CLIENT_ID', 'MULINO_WORKER_CLIENT_SECRET',
-  'MULINO_WORKER_ID', 'MULINO_API_BASE', 'MULINO_AGENT_API_URL', 'MULINO_RUNTIME_IMAGE',
+const requiredRunner = ['MULINO_WORKER_TOKEN', 'MULINO_WORKER_ID', 'MULINO_API_BASE', 'MULINO_AGENT_API_URL', 'MULINO_RUNTIME_IMAGE',
   'MULINO_CODEX_AUTH_VOLUME', 'MULINO_CODEX_MODEL'];
-const scopes = ['erp:read', 'work:write', 'procurement:decide', 'offline_access'];
 const present = value => typeof value === 'string' && value.trim().length > 0;
 function assert(ok) { if (!ok) throw new Error('CHECK_FAILED'); }
-function https(value, originOnly = false) {
-  const url = new URL(value);
-  assert(url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash
-    && (!originOnly || url.pathname === '/'));
-  return url;
-}
-function exactIssuer(value) {
-  const url = https(value, true);
-  // Match the deployed MCP validator: issuer identifiers are exact, never normalized.
-  assert(value === `${url.origin}/`);
-  return url;
-}
 export function dbTarget(env) {
   // libpq query parameters can load files or change startup options: reject them all.
   const url = new URL(env.DB_URL?.replace(/^jdbc:/, ''));
@@ -71,11 +56,11 @@ export async function runReadiness(env = process.env, deps = {}) {
     if (absent.length) add(component, 'MISSING', `필요한 환경 변수: ${absent.join(', ')}`);
     return absent.length > 0;
   }
-  async function json(url, token) {
+  async function json(url, headers = {}) {
     const abort = new AbortController();
     return bounded(async () => {
       const response = await fetchImpl(url, { method: 'GET', redirect: 'error', signal: abort.signal,
-        headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+        headers: { Accept: 'application/json', ...headers } });
       assert(response.ok && !response.redirected);
       assert(Number(response.headers.get('content-length') ?? 0) <= 262144);
       const reader = response.body.getReader();
@@ -111,50 +96,13 @@ export async function runReadiness(env = process.env, deps = {}) {
     const lines = output.trim().split(/\s+/);
     assert(lines.length === 3 && /^18\d{4}$/.test(lines[0]) && Number(lines[1]) === latest && lines[2] === '0');
   });
-  if (!missing('backend-human', ['MULINO_API_BASE', 'MULINO_DEMO_HUMAN_API_TOKEN'])) await check('backend-human', async () => {
+  // PoC 로컬 신원: 역할 헤더로 MANAGER가 구매 결정 권한을 받는지만 본다. Auth0는 #21·#22에서 보류했다.
+  if (!missing('backend-human', ['MULINO_API_BASE'])) await check('backend-human', async () => {
     const base = safeUrl(env.MULINO_API_BASE);
-    assert(!/[\r\n]/.test(env.MULINO_DEMO_HUMAN_API_TOKEN));
-    const me = await json(`${base}/me`, env.MULINO_DEMO_HUMAN_API_TOKEN);
+    const me = await json(`${base}/me`, { 'X-Mulino-Local-Role': 'MANAGER' });
     assert(me.actorType === 'HUMAN' && me.role === 'MANAGER' && me.capabilities?.includes('erp:read')
       && me.capabilities?.includes('procurement:decide'));
   });
-  if (!missing('mcp-metadata', ['MULINO_PUBLIC_ORIGIN', 'MULINO_AUTH_ISSUER'])) await check('mcp-metadata', async () => {
-    const origin = https(env.MULINO_PUBLIC_ORIGIN, true).origin;
-    const issuer = exactIssuer(env.MULINO_AUTH_ISSUER).href;
-    assert(!env.MULINO_MCP_AUDIENCE || env.MULINO_MCP_AUDIENCE === `${origin}/mcp`);
-    assert(!env.MULINO_API_AUDIENCE || env.MULINO_API_AUDIENCE === 'urn:mulino:erp-api');
-    const metadata = await json(`${origin}/.well-known/oauth-protected-resource/mcp`);
-    assert(metadata.resource === `${origin}/mcp` && metadata.authorization_servers?.includes(issuer)
-      && scopes.every(scope => metadata.scopes_supported?.includes(scope)) && metadata.bearer_methods_supported?.includes('header'));
-  });
-  if (!missing('issuer-discovery', ['MULINO_AUTH_ISSUER'])) await check('issuer-discovery', async () => {
-    const issuer = exactIssuer(env.MULINO_AUTH_ISSUER);
-    const metadata = await json(`${issuer.href}.well-known/openid-configuration`);
-    assert(metadata.issuer === issuer.href && metadata.response_types_supported?.includes('code')
-      && metadata.grant_types_supported?.includes('authorization_code') && metadata.grant_types_supported?.includes('refresh_token')
-      && metadata.code_challenge_methods_supported?.includes('S256')
-      && metadata.client_id_metadata_document_supported === true && metadata.authorization_response_iss_parameter_supported === true);
-    for (const name of ['authorization_endpoint', 'token_endpoint', 'jwks_uri']) assert(https(metadata[name]).origin === issuer.origin);
-  });
-  for (const client of ['CHATGPT', 'CODEX']) {
-    const name = `MULINO_${client}_CIMD_URL`;
-    if (!missing(`${client.toLowerCase()}-cimd`, [name])) await check(`${client.toLowerCase()}-cimd`, async () => {
-      const url = https(env[name]).href;
-      const document = await json(url);
-      assert(document.client_id === url && document.grant_types?.includes('authorization_code')
-        && document.grant_types?.includes('refresh_token') && document.response_types?.includes('code')
-        && ['none', 'private_key_jwt'].includes(document.token_endpoint_auth_method)
-        && Array.isArray(document.redirect_uris) && document.redirect_uris.length > 0);
-      for (const redirect of document.redirect_uris) {
-        const target = new URL(redirect);
-        assert(!target.username && !target.password && !target.hash && (target.protocol === 'https:'
-          || (target.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(target.hostname))));
-      }
-    });
-  }
-  if (!missing('mcp-config', ['MULINO_PUBLIC_ORIGIN', 'MULINO_AUTH_ISSUER', 'MULINO_AUTH0_CLIENT_ID', 'MULINO_AUTH0_CLIENT_SECRET'])) {
-    await check('mcp-config', () => { readHttpConfig(env); });
-  }
   if (!missing('runner-config', requiredRunner)) await check('runner-config', () => { readConfig(env); });
   for (const [component, variable, kind] of [['runtime-image', 'MULINO_RUNTIME_IMAGE', 'image'], ['auth-volume', 'MULINO_CODEX_AUTH_VOLUME', 'volume']]) {
     if (!missing(component, [variable])) await check(component, async () => {
@@ -165,7 +113,7 @@ export async function runReadiness(env = process.env, deps = {}) {
   if (!missing('model-selection', ['MULINO_CODEX_MODEL'])) await check('model-selection', () => {
     assert(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(env.MULINO_CODEX_MODEL));
   });
-  for (const component of ['auth0-tenant-obo', 'codex-volume-login', 'live-model-execution', 'chatgpt-codex-login-refresh', 'per-decision-confirmation']) {
+  for (const component of ['codex-volume-login', 'live-model-execution', 'per-decision-confirmation']) {
     add(component, 'UNVERIFIED', '실제 외부 인수 증거 필요. 이 점검은 로그인·모델 호출·결정 요청을 실행하지 않습니다.');
   }
   checks.sort((a, b) => a.component.localeCompare(b.component));

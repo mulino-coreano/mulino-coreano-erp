@@ -41,7 +41,7 @@ BEGIN
        OR EXISTS (SELECT 1 FROM suppliers) OR EXISTS (SELECT 1 FROM raw_materials)
        OR EXISTS (SELECT 1 FROM warehouses) OR EXISTS (SELECT 1 FROM customers)
        OR EXISTS (SELECT 1 FROM orders) OR EXISTS (SELECT 1 FROM purchase_orders)
-       OR EXISTS (SELECT 1 FROM production_lots) OR EXISTS (SELECT 1 FROM external_identities)
+       OR EXISTS (SELECT 1 FROM production_lots)
        OR EXISTS (SELECT 1 FROM cases) THEN
         RAISE EXCEPTION 'replenishment_demo requires an empty disposable ERP database';
     END IF;

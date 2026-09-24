@@ -1,22 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readConfig, redact, validateClaim, validateResult } from '../src/protocol.js';
-import { Auth0TokenClient, WorkerApi } from '../src/http.js';
+import { WorkerApi } from '../src/http.js';
 import { claim, server, json } from './helpers.js';
 
 const env = {
-  MULINO_AUTH_ISSUER: 'https://tenant.example/', MULINO_WORKER_CLIENT_ID: 'worker-client',
-  MULINO_WORKER_CLIENT_SECRET: 'worker-secret', MULINO_RUNTIME_IMAGE: 'mulino-runtime:local', MULINO_CODEX_MODEL: 'demo-model',
+  MULINO_WORKER_TOKEN: 'worker-secret', MULINO_RUNTIME_IMAGE: 'mulino-runtime:local', MULINO_CODEX_MODEL: 'demo-model',
   MULINO_CODEX_AUTH_VOLUME: 'mulino-codex-auth', MULINO_WORKER_ID: 'worker-1',
 };
 
-test('configuration requires HTTPS Auth0 and restricts plaintext API to loopback', () => {
+test('configuration requires a worker token and restricts plaintext API to loopback', () => {
   assert.equal(readConfig(env)?.apiBase, 'http://127.0.0.1:8080/api/v1');
   assert.equal(readConfig({ ...env, MULINO_API_BASE: 'https://erp.example/api/v1' })?.apiBase, 'https://erp.example/api/v1');
   for (const bad of [
-    { MULINO_AUTH_ISSUER: 'http://tenant.example' }, { MULINO_API_BASE: 'http://remote.example/api/v1' },
+    { MULINO_API_BASE: 'http://remote.example/api/v1' },
     { MULINO_API_BASE: 'https://user:password@erp.example/api/v1' }, { MULINO_CODEX_AUTH_VOLUME: '/Users/me' },
-    { MULINO_WORKER_CLIENT_SECRET: '' }, { MULINO_RUNTIME_IMAGE: '--privileged' },
+    { MULINO_WORKER_TOKEN: '' }, { MULINO_RUNTIME_IMAGE: '--privileged' },
   ]) assert.throws(() => readConfig({ ...env, ...bad }));
 });
 
@@ -46,15 +45,9 @@ test('strict schema result accepts null reference and inconsistent terminal rece
   assert.equal(terminalReceipt({ status: 'COMPLETED', outcome: 'FAILED' }), false);
 });
 
-test('HTTP rejects oversized response and Auth0 rejects missing expiry', async t => {
-  const app = await server((req, res) => {
-    if (req.url === '/oauth/token') return json(res, { access_token: 'unsafe-no-expiry', token_type: 'Bearer' });
-    json(res, { context: 'x'.repeat(524289) });
-  });
+test('HTTP rejects oversized response', async t => {
+  const app = await server((req, res) => json(res, { context: 'x'.repeat(524289) }));
   t.after(app.close);
-  const tokens = new Auth0TokenClient({ issuer: env.MULINO_AUTH_ISSUER, clientId: 'id', clientSecret: 'secret',
-    fetchImpl: (url, options) => fetch(`${app.url}/oauth/token`, options) });
-  await assert.rejects(tokens.getToken(), /INVALID_AUTH_TOKEN_RESPONSE/);
   const api = new WorkerApi({ baseUrl: `${app.url}/api/v1`, tokenClient: { getToken: async () => 'access' } });
   await assert.rejects(api.post('claim', {}, { idempotencyKey: 'k' }), /HTTP_RESPONSE_TOO_LARGE/);
 });
@@ -63,31 +56,6 @@ test('redaction covers nested known secrets and JWT/bearer-like material', () =>
   const result = redact({ summary: 'worker-secret lease-token cap-token Bearer aaa.bbb.ccc', nested: ['worker-secret'] },
     ['worker-secret', 'lease-token', 'cap-token']);
   assert.doesNotMatch(JSON.stringify(result), /worker-secret|lease-token|cap-token|aaa\.bbb\.ccc/);
-});
-
-test('Auth0 cache coalesces requests, requests dispatch scope, and renews before expiry', async t => {
-  const bodies = [];
-  const app = await server((req, res, body) => {
-    bodies.push(body); json(res, { access_token: `access-${bodies.length}`, token_type: 'Bearer', expires_in: 100, scope: 'worker:dispatch' });
-  });
-  t.after(app.close);
-  let now = 1000;
-  const tokens = new Auth0TokenClient({ issuer: env.MULINO_AUTH_ISSUER, clientId: 'id', clientSecret: 'secret',
-    now: () => now, fetchImpl: (url, options) => fetch(`${app.url}/oauth/token`, options) });
-  assert.deepEqual(await Promise.all([tokens.getToken(), tokens.getToken()]), ['access-1', 'access-1']);
-  assert.equal(bodies.length, 1);
-  assert.equal(bodies[0].audience, 'urn:mulino:erp-api');
-  assert.equal(bodies[0].scope, 'worker:dispatch');
-  now += 95_000;
-  assert.equal(await tokens.getToken(), 'access-2');
-});
-
-test('Auth0 rejects malformed token and does not leak its response body', async t => {
-  const app = await server((req, res) => json(res, { error: 'secret-in-response' }, 401));
-  t.after(app.close);
-  const tokens = new Auth0TokenClient({ issuer: env.MULINO_AUTH_ISSUER, clientId: 'id', clientSecret: 'secret',
-    fetchImpl: (url, options) => fetch(`${app.url}/oauth/token`, options) });
-  await assert.rejects(tokens.getToken(), error => !error.message.includes('secret-in-response'));
 });
 
 test('worker HTTP uses bearer and preserves idempotency key across token refresh', async t => {

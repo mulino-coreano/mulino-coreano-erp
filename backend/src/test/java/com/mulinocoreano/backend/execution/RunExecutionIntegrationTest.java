@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(properties = {"mulino.auth.worker-client-id=test-worker", "spring.flyway.schemas=execution_it", "spring.datasource.hikari.schema=execution_it"})
+@SpringBootTest(properties = {"spring.flyway.schemas=execution_it", "spring.datasource.hikari.schema=execution_it"})
 @AutoConfigureMockMvc
 @Transactional
 @WithTestActor(service=true, capabilities="worker:dispatch")

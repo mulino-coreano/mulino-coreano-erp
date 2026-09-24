@@ -34,46 +34,8 @@ async function readJson(response, maxBytes, preserveNumbers = false) {
   } finally { reader.releaseLock(); }
 }
 
-export class Auth0TokenClient {
-  constructor({ issuer, clientId, clientSecret, audience = 'urn:mulino:erp-api', fetchImpl = fetch,
-    now = Date.now, timeoutMs = 10_000, onToken = () => {} }) {
-    this.issuer = safeUrl(issuer, { issuer: true });
-    if (!clientId || !clientSecret || audience !== 'urn:mulino:erp-api') throw new Error('INVALID_AUTH_CONFIG');
-    Object.assign(this, { clientId, clientSecret, audience, fetchImpl, now, timeoutMs, onToken });
-    this.cached = null;
-    this.pending = null;
-  }
-
-  async getToken({ signal, forceRefresh = false } = {}) {
-    if (!forceRefresh && this.cached && this.now() < this.cached.refreshAt) return this.cached.token;
-    if (!this.pending) this.pending = this.requestToken(signal).finally(() => { this.pending = null; });
-    return this.pending;
-  }
-
-  async requestToken(signal) {
-    this.cached = null;
-    try {
-      const response = await this.fetchImpl(`${this.issuer}/oauth/token`, {
-        method: 'POST', redirect: 'error', signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(this.timeoutMs)]),
-        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ grant_type: 'client_credentials',
-          client_id: this.clientId, client_secret: this.clientSecret, audience: this.audience, scope: 'worker:dispatch' }),
-      });
-      if (!response.ok) { await response.body?.cancel(); throw new HttpError('AUTH_TOKEN_REJECTED', response.status); }
-      const body = await readJson(response, 65536);
-      if (typeof body.access_token !== 'string' || !body.access_token || body.access_token.length > 16384
-        || body.token_type?.toLowerCase() !== 'bearer' || !Number.isFinite(body.expires_in) || body.expires_in <= 0
-        || (body.scope !== undefined && (typeof body.scope !== 'string' || !body.scope.split(' ').includes('worker:dispatch')))) {
-        throw new HttpError('INVALID_AUTH_TOKEN_RESPONSE');
-      }
-      const lifetime = Math.min(body.expires_in * 1000, 3_600_000);
-      this.cached = { token: body.access_token, refreshAt: this.now() + lifetime - Math.min(30_000, lifetime / 10) };
-      this.onToken(body.access_token);
-      return body.access_token;
-    } catch (error) {
-      throw error instanceof HttpError ? error : new HttpError('AUTH_TOKEN_UNAVAILABLE');
-    }
-  }
-}
+/** PoC 로컬 실행기 토큰. Auth0 M2M(#21·#22에서 보류)을 대신하는 고정 bearer이다. */
+export const staticToken = token => ({ getToken: async () => token });
 
 export class WorkerApi {
   constructor({ baseUrl, tokenClient, fetchImpl = fetch, timeoutMs = 10_000 }) {

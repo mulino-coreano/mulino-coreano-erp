@@ -20,7 +20,7 @@ test('real child gets explicit env only and known tokens are redacted from outpu
   const handle = executor('env').start(claim, { secrets: ['cap-secret', 'lease-secret', 'secret-from-stderr'] });
   assert.ok(handle);
   const result = await handle.result;
-  assert.doesNotMatch(result.summary, /cap-secret|lease-secret|MULINO_WORKER_CLIENT_SECRET|HOME|PATH/);
+  assert.doesNotMatch(result.summary, /cap-secret|lease-secret|MULINO_WORKER_TOKEN|HOME|PATH/);
   assert.match(result.summary, /REDACTED/);
 });
 

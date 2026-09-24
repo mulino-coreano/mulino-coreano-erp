@@ -38,6 +38,5 @@ class ReplenishmentDemoFixtureIntegrationTest {
                 JOIN inbound i USING(inbound_id) WHERE m.name='DEMO 밀가루' AND i.status='RELEASED'
                 """).query(BigDecimal.class).single()).isEqualByComparingTo("3");
         assertThat(jdbc.sql("SELECT sum(quantity-received_quantity) FROM purchase_order_items i JOIN purchase_orders p USING(purchase_order_id) WHERE p.status='ORDERED' AND p.expected_delivery_date='2026-09-07'").query(BigDecimal.class).single()).isEqualByComparingTo("2");
-        assertThat(jdbc.sql("SELECT count(*) FROM external_identities i JOIN users u USING(user_id) WHERE u.email='replenishment-demo@example.invalid'").query(Integer.class).single()).isZero();
     }
 }

@@ -1,102 +1,23 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { importJWK, SignJWT, jwtVerify } from "jose";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { createHttpServer, readHttpConfig } from "../../src/http.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Runner } from "../../../agents/runner/src/runner.js";
 import { ProcessExecutor } from "../../../agents/runner/src/executor.js";
-import {
-  Auth0TokenClient,
-  WorkerApi,
-} from "../../../agents/runner/src/http.js";
+import { staticToken, WorkerApi } from "../../../agents/runner/src/http.js";
 const cfg = JSON.parse(await readFile(process.argv[2], "utf8"));
-const issuer = "https://demo-auth.invalid/",
-  resource = "https://demo-mcp.invalid/mcp",
-  audience = "urn:mulino:erp-api";
-const key = await importJWK(cfg.privateJwk, "RS256"),
-  publicJwk = Object.fromEntries(
-    Object.entries(cfg.privateJwk).filter(([k]) =>
-      ["kty", "n", "e", "kid"].includes(k),
-    ),
-  ),
-  publicKey = await importJWK(publicJwk, "RS256");
-const token = (sub, aud, scope, extra = {}) =>
-  new SignJWT({ sub, aud, iss: issuer, scope, ...extra })
-    .setProtectedHeader({ alg: "RS256", kid: cfg.privateJwk.kid })
-    .setIssuedAt()
-    .setExpirationTime("5m")
-    .sign(key);
-let obo = 0,
-  m2m = 0;
-const authFetch = async (url, init) => {
-  const u = new URL(url);
-  assert.equal(u.origin, "https://demo-auth.invalid");
-  if (u.pathname === "/.well-known/jwks.json")
-    return Response.json({ keys: [publicJwk] });
-  assert.equal(u.pathname, "/oauth/token");
-  const p =
-    init.headers["content-type"] === "application/json"
-      ? JSON.parse(init.body)
-      : Object.fromEntries(new URLSearchParams(init.body));
-  if (p.grant_type === "client_credentials") {
-    m2m++;
-    assert.equal(p.client_id, "demo-worker");
-    return Response.json({
-      access_token: await token(
-        "demo-worker@clients",
-        audience,
-        "worker:dispatch",
-        { gty: "client-credentials", azp: "demo-worker" },
-      ),
-      token_type: "Bearer",
-      expires_in: 300,
-    });
-  }
-  obo++;
-  const { payload } = await jwtVerify(p.subject_token, publicKey, {
-    issuer,
-    audience: resource,
-  });
-  return Response.json({
-    access_token: await token(payload.sub, audience, p.scope),
-    token_type: "Bearer",
-    expires_in: 300,
-    issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
-  });
-};
-const server = createHttpServer(
-  readHttpConfig({
-    MULINO_AUTH_ISSUER: issuer,
-    MULINO_PUBLIC_ORIGIN: "https://demo-mcp.invalid",
-    MULINO_AUTH0_CLIENT_ID: "demo-obo",
-    MULINO_AUTH0_CLIENT_SECRET: "test-obo-only",
-    MULINO_API_BASE: cfg.api,
-  }),
-  { authFetch },
-);
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const clients = [];
+// PoC 로컬 신원: 역할마다 실제 stdio MCP 서버를 띄운다. Auth0/OBO는 #21·#22에서 보류했다.
 async function session(role) {
-  const jwt = await token(
-    `auth0|${role}`,
-    resource,
-    "erp:read work:write procurement:decide",
-  );
   const c = new Client({ name: "demo-e2e", version: "1" });
   clients.push(c);
   await c.connect(
-    new StreamableHTTPClientTransport(
-      new URL(`http://127.0.0.1:${server.address().port}/mcp`),
-      {
-        fetch: (u, i) => {
-          const h = new Headers(i?.headers);
-          h.set("Authorization", `Bearer ${jwt}`);
-          return fetch(u, { ...i, headers: h });
-        },
-      },
-    ),
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [fileURLToPath(new URL("../../src/index.js", import.meta.url))],
+      env: { PATH: process.env.PATH, MULINO_LOCAL_ROLE: role, MULINO_API_BASE: cfg.api },
+    }),
   );
   return c;
 }
@@ -126,12 +47,7 @@ const executor = new ProcessExecutor({
 const runner = new Runner({
   api: new WorkerApi({
     baseUrl: cfg.api,
-    tokenClient: new Auth0TokenClient({
-      issuer,
-      clientId: "demo-worker",
-      clientSecret: "test-m2m-only",
-      fetchImpl: authFetch,
-    }),
+    tokenClient: staticToken(cfg.workerToken),
   }),
   executor,
   workerId: "demo-e2e-worker",
@@ -282,8 +198,6 @@ try {
           (w) => w.title === "Demo PROCUREMENT" && w.status === "DONE",
         ),
       );
-      assert.ok(obo > 0);
-      assert.ok(m2m > 0);
       await writeFile(process.argv[2] + ".result", JSON.stringify({ caseRef }));
       console.log("DEMO_E2E_RESTART_RESUME_PASS");
     }
@@ -370,8 +284,4 @@ try {
   }
 } finally {
   await Promise.all(clients.map((c) => c.close()));
-  await new Promise((r) => {
-    server.close(r);
-    server.closeAllConnections();
-  });
 }

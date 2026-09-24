@@ -20,7 +20,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(properties = {"mulino.auth.worker-client-id=test-worker", "spring.flyway.schemas=agent_work_it", "spring.datasource.hikari.schema=agent_work_it"})
+@SpringBootTest(properties = {"spring.flyway.schemas=agent_work_it", "spring.datasource.hikari.schema=agent_work_it"})
 @AutoConfigureMockMvc @Transactional
 @WithTestActor(service=true,capabilities="worker:dispatch")
 class AgentWorkIntegrationTest {

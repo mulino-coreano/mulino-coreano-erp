@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { Runner } from '../src/runner.js';
-import { Auth0TokenClient, WorkerApi } from '../src/http.js';
+import { staticToken, WorkerApi } from '../src/http.js';
 import { ProcessExecutor } from '../src/executor.js';
 import { claim, server, json, ManualClock, until } from './helpers.js';
 
@@ -211,31 +211,22 @@ test('known lease credentials are redacted even when echoed in server reference 
   assert.doesNotMatch(JSON.stringify(logs), /lease-token|cap-token/);
 });
 
-test('loopback Auth0 and backend coordinate a complete real-child run with M2M kept outside it', async t => {
-  const credentials = [];
+test('loopback backend coordinates a complete real-child run with the worker token kept outside it', async t => {
   const finishes = [];
-  const auth = await server((req, res, body) => {
-    credentials.push(body);
-    json(res, { access_token: 'worker-m2m-only', token_type: 'Bearer', expires_in: 60, scope: 'worker:dispatch' });
-  });
   const backend = await server((req, res, body) => {
-    assert.equal(req.headers.authorization, 'Bearer worker-m2m-only');
+    assert.equal(req.headers.authorization, 'Bearer worker-token-only');
     if (req.url.endsWith('/claim')) json(res, claim());
     else { finishes.push(body); json(res, receipt()); }
   });
-  t.after(auth.close); t.after(backend.close);
-  const tokenClient = new Auth0TokenClient({ issuer: 'https://auth.fixture/', clientId: 'worker-id', clientSecret: 'm2m-secret',
-    fetchImpl: (url, options) => fetch(`${auth.url}/oauth/token`, options) });
-  const api = new WorkerApi({ baseUrl: `${backend.url}/api/v1`, tokenClient });
+  t.after(backend.close);
+  const api = new WorkerApi({ baseUrl: `${backend.url}/api/v1`, tokenClient: staticToken('worker-token-only') });
   const executor = new ProcessExecutor({ invocation: () => ({ command: process.execPath, args: [fixture, 'env'],
     env: { MULINO_TOKEN: 'cap-token', MULINO_API_URL: 'http://127.0.0.1:8080/api/v1' } }) });
-  const runner = new Runner({ api, executor, workerId: 'w', secrets: ['worker-m2m-only', 'm2m-secret'] });
+  const runner = new Runner({ api, executor, workerId: 'w', secrets: ['worker-token-only'] });
   t.after(() => runner.stop());
   assert.equal((await runner.runOnce()).outcome, 'DONE');
-  assert.equal(credentials.length, 1);
-  assert.equal(credentials[0].client_secret, 'm2m-secret');
   assert.equal(finishes.length, 1);
-  assert.doesNotMatch(finishes[0].summary, /worker-m2m-only|m2m-secret|lease-token|cap-token/);
+  assert.doesNotMatch(finishes[0].summary, /worker-token-only|lease-token|cap-token/);
   assert.match(finishes[0].summary, /REDACTED/);
 });
 

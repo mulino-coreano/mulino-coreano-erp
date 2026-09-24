@@ -7,19 +7,21 @@ import org.junit.jupiter.api.Test;
 
 class LocalActorCapabilitiesTest {
     @Test
-    void managerAndAdminCanDecideProcurement() {
+    void onlyManagerCanDecideProcurement() {
         assertThat(LocalActorCapabilities.forRole("MANAGER"))
-                .containsExactlyInAnyOrder("erp:read", "work:write", "procurement:decide");
-        assertThat(LocalActorCapabilities.forRole("ADMIN"))
                 .containsExactlyInAnyOrder("erp:read", "work:write", "procurement:decide");
     }
 
     @Test
-    void qcAndOperatorCanWriteButNotDecide() {
-        assertThat(LocalActorCapabilities.forRole("QC"))
-                .containsExactlyInAnyOrder("erp:read", "work:write");
+    void operatorCanWriteButNotDecide() {
         assertThat(LocalActorCapabilities.forRole("OPERATOR"))
                 .containsExactlyInAnyOrder("erp:read", "work:write");
+    }
+
+    @Test
+    void adminAndQcAreReadOnlyLikeTheRemovedAuth0Rules() {
+        assertThat(LocalActorCapabilities.forRole("ADMIN")).containsExactly("erp:read");
+        assertThat(LocalActorCapabilities.forRole("QC")).containsExactly("erp:read");
     }
 
     @Test

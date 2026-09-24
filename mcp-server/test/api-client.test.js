@@ -12,7 +12,7 @@ test("ERP decimals and large identifiers retain their exact source digits", asyn
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   t.after(() => new Promise((resolve) => server.close(resolve)));
-  const api = createApiClient({ base: `http://127.0.0.1:${server.address().port}`, token: "test-only" });
+  const api = createApiClient({ base: `http://127.0.0.1:${server.address().port}`, role: "VIEWER" });
   const data = await api("/inventory");
   assert.equal(data.quantity, "999999999999.999999");
   assert.equal(data.smallQuantity, "0.000001");

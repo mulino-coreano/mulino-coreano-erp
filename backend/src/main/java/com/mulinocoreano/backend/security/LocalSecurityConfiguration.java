@@ -5,7 +5,6 @@ import jakarta.servlet.DispatcherType;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authorization.AuthorizationDecision;
@@ -15,7 +14,6 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 
 @Configuration
-@Profile("local")
 @EnableConfigurationProperties(LocalAuthProperties.class)
 public class LocalSecurityConfiguration {
     @Bean
@@ -91,7 +89,9 @@ public class LocalSecurityConfiguration {
                                                 (authentication, context) ->
                                                         new AuthorizationDecision(
                                                                 authentication.get().getPrincipal()
-                                                                        instanceof ServiceActor))
+                                                                                instanceof ServiceActor service
+                                                                        && service.capabilities()
+                                                                                .contains("worker:dispatch")))
                                         .requestMatchers(
                                                 HttpMethod.POST,
                                                 "/api/v1/events",

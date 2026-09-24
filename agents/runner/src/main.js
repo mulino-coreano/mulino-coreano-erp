@@ -1,17 +1,12 @@
 import { readConfig } from './protocol.js';
-import { Auth0TokenClient, WorkerApi } from './http.js';
+import { staticToken, WorkerApi } from './http.js';
 import { DockerExecutor } from './executor.js';
 import { Runner } from './runner.js';
 
 try {
   const config = readConfig();
-  // Redaction retains a bounded set of recently issued tokens only in this process.
-  const secrets = [config.clientSecret];
-  const tokenClient = new Auth0TokenClient({ ...config, onToken: token => {
-    secrets.push(token);
-    if (secrets.length > 17) secrets.splice(1, secrets.length - 17);
-  } });
-  const api = new WorkerApi({ baseUrl: config.apiBase, tokenClient });
+  const secrets = [config.workerToken];
+  const api = new WorkerApi({ baseUrl: config.apiBase, tokenClient: staticToken(config.workerToken) });
   const executor = new DockerExecutor(config);
   const runner = new Runner({ api, executor, workerId: config.workerId, secrets,
     logger: event => process.stdout.write(`${JSON.stringify(event)}\n`) });

@@ -1,11 +1,9 @@
 package com.mulinocoreano.backend.security;
 
-import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
 @Component
-@Profile("local")
 public class LocalActorDirectory {
     private final JdbcClient jdbc;
     private final LocalAuthProperties properties;
