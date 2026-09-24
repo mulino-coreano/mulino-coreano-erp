@@ -574,19 +574,7 @@ erDiagram
 
 ## 7. 외부 로그인 신원
 
-`database/ddl/10_external_identities.sql`과 Flyway V18은 인증 신원 테이블 1개를 추가한다. ERP 30개·인터페이스 13개 테이블의 거래 및 추적 관계는 유지한다.
-
-```mermaid
-erDiagram
-    users ||--o{ external_identities : "user_id"
-    external_identities {
-        bigint external_identity_id PK
-        text issuer UK
-        text subject UK
-        bigint user_id FK
-        timestamptz created_at
-    }
-```
+`database/ddl/10_users_without_password.sql`과 Flyway V18은 `users.password`에 NULL을 허용하도록 ALTER한다. PoC 로컬 신원 모델은 비밀번호 없이 `local-{role}@mulino.local` 형태로 사용자를 upsert한다. `external_identities` 테이블은 삭제됐으며, 외부 신원 제공자 연결은 #21·#22에서 추가한다. ERP 30개·인터페이스 13개 테이블의 거래 및 추적 관계는 유지한다.
 
 - `(issuer, subject)` 조합은 유일하며 한 외부 신원을 여러 ERP 사용자로 중복 연결할 수 없다. 위 UK는 두 컬럼의 복합 제약이다.
 - `user_id`는 실제 사용자를 참조하고 연결된 사용자 삭제를 제한한다. 로그인 시 `users.is_active`와 현재 역할을 확인한다.

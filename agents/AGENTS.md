@@ -8,13 +8,13 @@ The authenticated human MCP server is implemented separately in `../mcp-server/`
 |---|---|
 | `cli/` | Implemented Zig `mulino` Case/plan/work commands; material/PO adapters remain pending |
 | `skills/` | Role instructions for orchestrator / supply-chain / procurement / qc; command and hand-off integration remains pending |
-| `runner/` | Implemented Node worker: Auth0 M2M, claim/poll/heartbeat/finish, child-process lifecycle, Docker invocation contract and local tests |
+| `runner/` | Implemented Node worker: worker token (static bearer, Auth0 M2M is #21·#22), claim/poll/heartbeat/finish, child-process lifecycle, Docker invocation contract and local tests |
 
 ## How it fits together
 
 - A skill teaches the session its role. The planned `mulino` command surface calls the Spring Boot API; calculation and state validation stay on the server. Do not treat a documented future CLI command as already executable.
 - Human Case intake records the actual requester and atomically creates an initial Work Item and QUEUED Run. A queued record is not evidence that a model is running. The worker claims only eligible CODEX Work Item runs and maintains one active lease per worker and Work Item.
-- Model actions use a short-lived capability bound to the current Run, Case, Work Item and assigned role. The server revalidates that scope on writes. Keep Auth0 M2M secrets, human tokens and DB credentials outside the model environment.
+- Model actions use a short-lived capability bound to the current Run, Case, Work Item and assigned role. The server revalidates that scope on writes. Keep human tokens and DB credentials outside the model environment.
 - The plan API persists actual source snapshots, results, immutable versions and hashes. It honors the human's warehouse, products and target date. SUPPLY_CHAIN completion requires the server-owned latest attempt to be READY and point to that Work Item's latest owned plan; caller metadata and old successful receipts cannot override a newer failure.
 - Current APIs enforce authentication and scoped actions. Purchasing proposals, MANAGER decisions, ERP purchase application and other L1 write adapters remain pending. Neither CLI nor skills may implement a DB-write or approval bypass.
 - Native subagent dispatch is the intended role-collaboration mechanism. Persist responsibilities and hand-offs through supported Case/Work Item APIs; actual model hand-off acceptance is still pending. Adding a role also requires registered identity, capability rules, completion validation and runtime tests, not just a skill folder.

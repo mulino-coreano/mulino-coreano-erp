@@ -19,7 +19,7 @@ zig build -Dtarget=aarch64-linux-musl -Doptimize=ReleaseSafe --prefix zig-out/li
 zig build -Dtarget=x86_64-linux-musl -Doptimize=ReleaseSafe --prefix zig-out/linux-amd64
 ```
 
-각 prefix의 `bin/mulino`가 산출물입니다. 컨테이너에는 해당 아키텍처의 실행 파일과 TLS 검증에 필요한 시스템 CA 인증서 저장소가 있어야 합니다. 호스트 테스트·cross build는 실제 Auth0 연결이나 Docker 안의 CLI 실행 성공을 대신 증명하지 않습니다.
+각 prefix의 `bin/mulino`가 산출물입니다. 컨테이너에는 해당 아키텍처의 실행 파일과 TLS 검증에 필요한 시스템 CA 인증서 저장소가 있어야 합니다. 호스트 테스트·cross build는 실제 외부 신원 제공자 연결이나 Docker 안의 CLI 실행 성공을 대신 증명하지 않습니다.
 
 ## 환경 설정
 

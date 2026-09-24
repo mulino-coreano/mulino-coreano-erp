@@ -1,21 +1,21 @@
 # 재보충 데모 실행서
 
-이 문서는 폐기용 PostgreSQL 18에 준비한 재보충 데이터를 사용하여, 같은 MANAGER가 ChatGPT와 Codex의 새 대화 사이에서 Case를 이어 보고 정확한 구매 제안을 결정하는 시연 절차다. **로컬 자동 시험, 읽기 전용 준비 검사, 실제 외부 인수는 별개다.** 준비 검사 통과만으로 실제 Auth0 로그인·OBO·모델 실행·클라이언트 확인 UX를 완료했다고 기록하지 않는다.
+이 문서는 폐기용 PostgreSQL 18에 준비한 재보충 데이터를 사용하여, 같은 MANAGER가 ChatGPT와 Codex의 새 대화 사이에서 Case를 이어 보고 정확한 구매 제안을 결정하는 시연 절차다. **로컬 자동 시험, 읽기 전용 준비 검사, 실제 외부 인수는 별개다.** 준비 검사 통과만으로 실제 모델 실행·클라이언트 확인 UX를 완료했다고 기록하지 않는다. 실제 Auth0 로그인·OBO는 보류(#21·#22)다.
 
 ## 1. 실행 범위와 준비물
 
-Java 21, Node.js 22 이상, Zig 0.16.0, 실행 중인 Docker와 PostgreSQL 18이 필요하다. 로컬 DB 조회에는 `psql`이 필요하다. 계정·연결은 [Auth0 안내](11_auth0_setup.md), 저장 계획·Run 계약은 [실행 API](13_execution_and_plan_api.md), 이미지·로그인은 [런타임 안내](14_cli_and_runtime.md)를 따른다.
+Java 21, Node.js 22 이상, Zig 0.16.0, 실행 중인 Docker와 PostgreSQL 18이 필요하다. 로컬 DB 조회에는 `psql`이 필요하다. 저장 계획·Run 계약은 [실행 API](13_execution_and_plan_api.md), 이미지·로그인은 [런타임 안내](14_cli_and_runtime.md)를 따른다. Auth0·OAuth 연결 설정은 보류(#21·#22)다.
 
 실제 값은 gitignored 설정 파일이나 비밀값 주입 도구에 보관한다. 토큰·시크릿·DSN·사용자 subject 원문을 실행 결과나 인수 증거에 넣지 않는다. 운영 DB를 데모 대상으로 사용하지 않는다. 이 시연은 구매 제안·사람의 승인/반려·PO 적용·서버 관리 후속 대기까지 확인한다. 실제 생산·입고 변경을 실행하거나, 입고가 없는데 Case를 자동 해결하지 않는다.
 
 | 프로세스 | 환경 변수 이름 |
 |---|---|
-| Backend | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `MULINO_AUTH_ISSUER`, `MULINO_API_AUDIENCE`, `MULINO_WORKER_CLIENT_ID` |
-| 원격 MCP | `MULINO_PUBLIC_ORIGIN`, `MULINO_MCP_AUDIENCE`, `MULINO_AUTH_ISSUER`, `MULINO_API_AUDIENCE`, `MULINO_AUTH0_CLIENT_ID`, `MULINO_AUTH0_CLIENT_SECRET`, `MULINO_API_BASE`, `MULINO_HOST`, `MULINO_PORT` |
-| Runner | `MULINO_AUTH_ISSUER`, `MULINO_WORKER_CLIENT_ID`, `MULINO_WORKER_CLIENT_SECRET`, `MULINO_WORKER_ID`, `MULINO_API_BASE`, `MULINO_AGENT_API_URL`, `MULINO_RUNTIME_IMAGE`, `MULINO_CODEX_AUTH_VOLUME`, `MULINO_CODEX_MODEL` |
-| 준비 검사 선택 입력 | DB 변수 3개, `MULINO_DEMO_HUMAN_API_TOKEN`(이미 발급한 인간 ERP audience access token), `MULINO_CHATGPT_CIMD_URL`, `MULINO_CODEX_CIMD_URL` 및 위 런타임 설정 |
+| Backend | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `MULINO_WORKER_TOKEN` |
+| 로컬 stdio MCP | `MULINO_LOCAL_ROLE`, `MULINO_API_BASE` |
+| Runner | `MULINO_WORKER_TOKEN`, `MULINO_WORKER_ID`, `MULINO_API_BASE`, `MULINO_AGENT_API_URL`, `MULINO_RUNTIME_IMAGE`, `MULINO_CODEX_AUTH_VOLUME`, `MULINO_CODEX_MODEL` |
+| 준비 검사 선택 입력 | DB 변수 3개 및 위 런타임 설정. `MULINO_CHATGPT_CIMD_URL`, `MULINO_CODEX_CIMD_URL`은 보류(#21·#22) |
 
-Backend/MCP/Runner에 각각 필요한 값만 전달한다. Auth0 Management API token을 이 프로세스나 모델에 전달하지 않는다. 예제 설정은 [MCP](../mcp-server/.env.example)와 [Runner](../agents/runner/.env.example)에 있다. placeholder를 실제 값으로 교체하고, 실제 issuer·CIMD·사용자 토큰이 없으면 해당 항목을 미검증으로 남긴다.
+각 프로세스에 필요한 값만 전달한다. 예제 설정은 [MCP](../mcp-server/.env.example)와 [Runner](../agents/runner/.env.example)에 있다. placeholder를 실제 값으로 교체한다.
 
 ## 2. 빌드와 로컬 회귀 시험
 
@@ -53,15 +53,14 @@ cd backend
 ./gradlew demoE2eTest
 ```
 
-이 시험은 서명된 fixture Auth0 토큰/JWKS 및 scripted model을 사용한다. 실제 tenant 로그인이나 유료 모델 호출을 증명하지 않는다. 실패·skip을 실제 외부 인수 성공으로 해석하지 않는다. 일반 `test`와 opt-in 시험 결과를 별도로 기록한다.
+이 시험은 로컬 역할 헤더·worker 토큰과 scripted model을 사용한다. 실제 외부 신원 제공자 로그인이나 유료 모델 호출을 증명하지 않는다. 실패·skip을 실제 외부 인수 성공으로 해석하지 않는다. 일반 `test`와 opt-in 시험 결과를 별도로 기록한다.
 
 ## 3. 폐기용 DB 초기화와 신원 연결 순서
 
 1. 운영자가 이름·호스트를 확인한 **새 빈 폐기용 DB**를 만들고 Backend용 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`를 설정한다. readiness는 DB를 만들지 않는다. DB 목록·접속 기본값에 의존하지 말고 매 명령의 대상을 명시한다.
-2. 그 DB로 Backend를 한 번 시작하여 Flyway를 최신 저장소 migration까지 적용하고 종료한다. 실행 전 Auth0 issuer/audience도 준비한다. 최신 버전은 `backend/src/main/resources/db/migration`의 파일을 기준으로 하며, 현재는 V25다.
-3. **외부 신원·로그인 사용자 mapping을 추가하기 전에** [fixture 안내](../database/seed/replenishment_demo_README.md)에 따라 `database/seed/replenishment_demo.sql`을 적용한다. 이미 업무 데이터나 사용자가 있는 DB에서는 seed가 거절된다. 거절을 우회하거나 기존 행을 삭제하지 않는다.
-4. seed 완료 후 별도 관리 절차로 실제 로그인 계정의 `(issuer, subject)`를 활성 ERP MANAGER에 명시적으로 연결한다. VIEWER 음성 권한 시험용 사용자도 필요하면 별도로 연결한다. fixture의 비활성 이력 사용자를 로그인 계정으로 재사용하지 않는다. 이메일 일치나 토큰의 역할 문자열로 자동 승격하지 않는다.
-5. Backend를 다시 시작한 뒤 이미 발급된 인간 ERP token을 준비 검사 프로세스에만 주입하여 `/me`를 확인한다. 이 token을 실제 클라이언트 OAuth/OBO 대신 사용하지 않는다.
+2. 그 DB로 Backend를 한 번 시작하여 Flyway를 최신 저장소 migration까지 적용하고 종료한다. 최신 버전은 `backend/src/main/resources/db/migration`의 파일을 기준으로 하며, 현재는 V25다.
+3. [fixture 안내](../database/seed/replenishment_demo_README.md)에 따라 `database/seed/replenishment_demo.sql`을 적용한다. 이미 업무 데이터나 사용자가 있는 DB에서는 seed가 거절된다. 거절을 우회하거나 기존 행을 삭제하지 않는다.
+4. Backend를 다시 시작한 뒤 `X-Mulino-Local-Role: MANAGER` 헤더로 `/me`를 호출하여 역할과 capability를 확인한다. PoC는 로컬 역할 헤더로 신원을 설정한다. 실제 Auth0/OBO 연결은 보류(#21·#22)다.
 
 SQL 적용은 비밀번호를 argv에 넣지 않고 운영자의 연결 환경으로 전달한다. 아래 `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`는 확인한 폐기용 대상을 가리켜야 한다. `psql`의 로컬 기본 DB 선택에 의존하지 않는다.
 
@@ -79,10 +78,9 @@ fixture의 기준일은 **2026-09-05, Asia/Seoul**이다. 고정 업무 시계�
 
 시작 순서는 DB → Backend → loopback MCP → 고정 HTTPS 터널 → 원격 로그인 확인 → Runner다. Runner가 시작되면 실제 dispatch/claim과 모델·업무 쓰기가 진행될 수 있으므로 마지막에 시작한다.
 
-1. DB 상태를 확인하고 Backend 디렉터리에서 `./gradlew bootRun`을 실행한다.
-2. MCP 디렉터리에서 필요한 환경을 주입하고 `npm run start:http`로 HTTP 서버를 시작한다. `MULINO_HOST`는 loopback으로 설정한다. 구체적인 전송 옵션은 [MCP README](../mcp-server/README.md)를 따른다.
-3. 운영자가 확보한 고정 HTTPS 터널에서 MCP 포트만 공개한다. `MULINO_PUBLIC_ORIGIN`과 실제 공개 주소를 일치시킨다. DB·Backend·Docker socket을 터널에 연결하지 않는다.
-4. 저장소 루트에서 다음 점검을 실행한다. `.env`를 자동 탐색하지 않으므로 필요한 환경은 사전에 명시적으로 주입한다.
+1. DB 상태를 확인하고 Backend 디렉터리에서 `./gradlew bootRun`을 실행한다. `MULINO_WORKER_TOKEN`을 함께 설정한다.
+2. 필요하면 MCP 디렉터리에서 `MULINO_LOCAL_ROLE`과 `MULINO_API_BASE`를 주입하고 `npm start`로 stdio MCP를 시작한다. 원격 HTTP transport는 보류(#22)다.
+3. 저장소 루트에서 다음 점검을 실행한다. `.env`를 자동 탐색하지 않으므로 필요한 환경은 사전에 명시적으로 주입한다.
 
 ```bash
 node scripts/demo/readiness.mjs
@@ -96,22 +94,22 @@ HTTP는 지정된 안전한 URL에 GET만 보내며 redirect를 따라가지 않
 
 종료 코드 `0`은 설치·설정 점검 통과, `2`는 미충족 조건, `1`은 명령 사용/예상 밖 오류다. **모든 설정 점검이 통과해도 `ready=false`, `liveAcceptance=UNVERIFIED`를 유지한다.** `softwareConfigurationChecksPassed`를 실제 업무 완료로 사용하지 않는다.
 
-Auth0 공개 discovery와 CIMD 검사 항목은 [기존 설정 도구](../scripts/auth0/README.md)의 기준(Authorization Code, PKCE S256, refresh, issuer response, CIMD, resource 및 `erp:read`/`work:write`/`procurement:decide`/`offline_access`)을 따른다. tenant 객체·grant·connection·실제 OBO는 이 점검으로 확인하지 않는다. 필요하면 해당 도구의 기본 조회를 별도로 수행하며 `--apply`는 readiness에 포함되지 않는다.
+Auth0 discovery·CIMD·OBO 검사는 보류(#21·#22)다. readiness는 DB·backend 연결과 소프트웨어 버전만 점검한다.
 
-## 5. 수동 로그인과 실제 모델 실행
+## 5. Codex 로그인과 실제 모델 실행
 
-[런타임 안내](14_cli_and_runtime.md)의 전용 volume 생성 및 `login --device-auth` 명령을 사용해 사람이 로그인한다. 호스트 로그인 파일을 복사하지 않는다. 준비 검사의 volume PASS를 로그인 증거로 대신하지 않는다. 계정에서 실제 사용할 수 있는 `MULINO_CODEX_MODEL`을 명시하며 모델을 추측해서 자동 선택하지 않는다.
+[런타임 안내](14_cli_and_runtime.md)의 전용 volume 생성 및 `login --device-auth` 명령을 사용해 사람이 Codex에 로그인한다. 호스트 로그인 파일을 복사하지 않는다. 준비 검사의 volume PASS를 로그인 증거로 대신하지 않는다. 계정에서 실제 사용할 수 있는 `MULINO_CODEX_MODEL`을 명시하며 모델을 추측해서 자동 선택하지 않는다.
 
-ChatGPT와 Codex에서 실제 제공되는 CIMD/callback과 로그인 흐름을 사용한다. 둘 다 원격 MCP에 같은 MANAGER로 연결하고 `whoami`의 ERP 사용자·역할이 일치하는지 확인한다. 이 결과는 토큰을 제거한 증거로 남긴다. 만료 후 갱신과 OBO에서 같은 인간 신원이 유지되는지도 별도 확인한다.
+ChatGPT와 Codex의 실제 원격 MCP 연결·로그인(Auth0 OAuth)은 보류(#21·#22)다. 로컬 PoC에서는 `MULINO_LOCAL_ROLE` 환경 변수로 역할을 지정해 stdio MCP를 사용한다.
 
-이후 Runner 디렉터리의 gitignored `.env`를 준비하고 실행한다.
+Runner 디렉터리의 gitignored `.env`를 준비하고 실행한다.
 
 ```bash
 cd agents/runner
 node --env-file=.env src/main.js
 ```
 
-Runner는 worker M2M을 사용하고 각 모델 Run에는 scoped capability를 전달한다. worker token으로 인간 구매 결정을 대체하지 않는다. 실제 모델의 역할 수행·CLI 호출·저장 계획 참조·승인 대기 종료가 관찰되어야 라이브 모델 실행 항목을 완료로 기록한다.
+Runner는 worker 토큰(static bearer)을 사용하고 각 모델 Run에는 scoped capability를 전달한다. worker token으로 인간 구매 결정을 대체하지 않는다. 실제 모델의 역할 수행·CLI 호출·저장 계획 참조·승인 대기 종료가 관찰되어야 라이브 모델 실행 항목을 완료로 기록한다.
 
 ## 6. 두 클라이언트에서 업무 이어가기
 
@@ -137,8 +135,8 @@ PO 적용 뒤 Case가 `WAITING`으로 남고 서버 관리 후속 업무가 입�
 - [ ] 로컬 Backend/MCP/CLI/Runner·readiness 회귀 시험과 opt-in `demoE2eTest`의 실행 결과를 기록했다.
 - [ ] 명시한 폐기용 PostgreSQL 18과 최신 Flyway·fixture 선행·이후 ERP 신원 mapping을 확인했다.
 - [ ] readiness JSON의 미충족 조건을 해소했으며 volume/image PASS의 한계를 기록했다.
-- [ ] 실제 Auth0 tenant/CIMD/사용자 permission/connection 및 OBO 신원 보존을 확인했다.
-- [ ] ChatGPT와 Codex 각각 실제 OAuth 로그인·만료 후 갱신, 같은 MANAGER `whoami`를 확인했다.
+- [ ] (보류 #21·#22) 실제 Auth0 tenant/CIMD/사용자 permission/connection 및 OBO 신원 보존을 확인했다.
+- [ ] (보류 #21·#22) ChatGPT와 Codex 각각 실제 OAuth 로그인·만료 후 갱신, 같은 MANAGER `whoami`를 확인했다.
 - [ ] 전용 Codex volume에서 수동 로그인하고 명시한 실제 모델의 scoped 역할 수행을 관찰했다.
 - [ ] ChatGPT → Codex 새 대화 → ChatGPT 결과 확인을 실제 수행했다.
 - [ ] Codex → ChatGPT 새 대화 → Codex 결과 확인을 실제 수행했다.
@@ -150,7 +148,7 @@ PO 적용 뒤 Case가 `WAITING`으로 남고 서버 관리 후속 업무가 입�
 
 ## 9. 2026-09-12 준비 상태
 
-[검토 및 인수 기록](reviews/2026-09-12-pr18-pr19.md)에 이번 코드 검토·실행 결과를 기록했다. 전용 Codex 로그인과 0.154.0 이미지 검사는 성공했지만 실제 Astra 요청은 워크스페이스 크레딧 부족으로 종료됐다. Auth0 tenant·두 클라이언트 연결과 모델 역할 수행은 미완료다. ngrok 로그인·고정 주소와 실제 HTTPS 전달 검증은 아래 추가 기록에서 완료했다. 이미 확인한 로컬 시험 결과로 이 항목들을 대신 체크하지 않는다.
+[검토 및 인수 기록](reviews/2026-09-12-pr18-pr19.md)에 이번 코드 검토·실행 결과를 기록했다. 전용 Codex 로그인과 0.154.0 이미지 검사는 성공했지만 실제 Astra 요청은 워크스페이스 크레딧 부족으로 종료됐다. Auth0 tenant·두 클라이언트 연결은 보류(#21·#22)이며 모델 역할 수행은 미완료다. ngrok 로그인·고정 주소와 실제 HTTPS 전달 검증은 아래 추가 기록에서 완료했다. 이미 확인한 로컬 시험 결과로 이 항목들을 대신 체크하지 않는다.
 
 승인안 조회는 원래 계획의 계산 근거·재고/예상 공급·경고·미조치 영향을 함께 표시한다. 자료가 이후 바뀌어도 저장된 과거 근거를 현재 사실로 바꾸지 않는다. 실제 결정 직전 최신 버전/hash를 다시 읽고 인간의 개별 선택을 확인한다.
 
@@ -158,4 +156,4 @@ PO 적용 뒤 Case가 `WAITING`으로 남고 서버 관리 후속 업무가 입�
 
 2026-09-12 Safari에서 기존 ngrok 계정에 로그인하고 기존 dev domain `https://basilar-mertie-rachiform.ngrok-free.dev`를 확인했다. 로컬 ngrok 3.39.11의 `mulino-mcp` 엔드포인트는 이 주소를 `http://127.0.0.1:3001`로 연결한다. 기본 ngrok 설정 파일에 기존 인증 토큰을 저장하고 파일 권한 0600과 `ngrok config check` 통과를 확인했다. 토큰은 저장소에 넣지 않는다.
 
-임시 확인 서버의 고유 응답을 공개 HTTPS 주소에서 200으로 수신하여 실제 전달을 검증한 뒤 확인 서버를 종료했다. ngrok 에이전트는 연결 상태로 유지하며 실제 MCP는 Auth0 설정 후 시작한다. 이 결과는 MCP OAuth/OBO 인수 완료를 뜻하지 않는다. 데모의 공개 주소 변수는 로컬 `~/.config/mulino/demo-20260912/ngrok.env`에 저장했다. ngrok를 종료한 뒤에는 `ngrok start mulino-mcp`로 다시 시작한다.
+임시 확인 서버의 고유 응답을 공개 HTTPS 주소에서 200으로 수신하여 실제 전달을 검증한 뒤 확인 서버를 종료했다. ngrok 에이전트는 연결 상태로 유지하며 실제 원격 MCP는 #21·#22 완료 후 시작한다. 이 결과는 MCP OAuth/OBO 인수 완료를 뜻하지 않는다. 데모의 공개 주소 변수는 로컬 `~/.config/mulino/demo-20260912/ngrok.env`에 저장했다. ngrok를 종료한 뒤에는 `ngrok start mulino-mcp`로 다시 시작한다.

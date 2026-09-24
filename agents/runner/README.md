@@ -1,14 +1,13 @@
 # Mulino 실행기
 
-Node 22 이상에서 동작하는 호스트 프로세스입니다. Auth0 M2M 토큰으로 Run을 가져오고, 각 Run을 별도 Docker 컨테이너에서 실행하며 lease와 종료 상태를 백엔드에 전달합니다. 업무 계산·DB 변경·업무 완료 판정은 백엔드가 담당합니다.
+Node 22 이상에서 동작하는 호스트 프로세스입니다. worker 토큰(static bearer)으로 Run을 가져오고, 각 Run을 별도 Docker 컨테이너에서 실행하며 lease와 종료 상태를 백엔드에 전달합니다. 업무 계산·DB 변경·업무 완료 판정은 백엔드가 담당합니다.
 
-자동 검증은 실제 Node 자식 프로세스, loopback HTTP 서버, 주입한 시계로 수행합니다. 추가로 고정 버전 Codex 이미지의 Linux CLI·파일·권한·취소를 실제 Docker에서 시험했습니다. Auth0 tenant, Codex 모델 업무 수행과 ChatGPT/Codex 로그인은 아직 검증하지 않았습니다. 이미지 빌드·별도 로그인 준비·검증 경계는 [CLI·런타임 안내](../../docs/14_cli_and_runtime.md)를 따릅니다.
+자동 검증은 실제 Node 자식 프로세스, loopback HTTP 서버, 주입한 시계로 수행합니다. 추가로 고정 버전 Codex 이미지의 Linux CLI·파일·권한·취소를 실제 Docker에서 시험했습니다. 실제 외부 신원 제공자(Auth0 등, #21·#22)와 ChatGPT/Codex 로그인은 아직 검증하지 않았습니다. 이미지 빌드·별도 로그인 준비·검증 경계는 [CLI·런타임 안내](../../docs/14_cli_and_runtime.md)를 따릅니다.
 
 ## 실행 준비
 
 1. 백엔드의 `/api/v1/internal/runs/claim`, `/heartbeat`, `/finish`와 `worker:dispatch` 권한을 준비합니다.
-2. Auth0 M2M 애플리케이션에 ERP audience `urn:mulino:erp-api`와 `worker:dispatch` scope를 부여합니다. 사용자 로그인 자격증명과 분리합니다.
-3. `.env.example`을 참고해 로컬 `.env`를 작성합니다. issuer는 HTTPS이고, 평문 백엔드 URL은 loopback만 허용합니다. 호스트 실행기의 `MULINO_AGENT_API_URL`에는 컨테이너가 접근할 `host.docker.internal`도 허용하며, 검증한 주소를 컨테이너 안의 `MULINO_API_URL`로 전달합니다.
+2. `.env.example`을 참고해 로컬 `.env`를 작성합니다. 평문 백엔드 URL은 loopback만 허용합니다. 호스트 실행기의 `MULINO_AGENT_API_URL`에는 컨테이너가 접근할 `host.docker.internal`도 허용하며, 검증한 주소를 컨테이너 안의 `MULINO_API_URL`로 전달합니다.
 4. 서로 다른 실행기는 서로 다른 `MULINO_WORKER_ID`를 사용합니다. 같은 ID로 중복 실행하면 백엔드가 추가 claim을 409로 거부합니다.
 5. 아래 이미지 계약에 맞는 전용 이미지와 전용 Codex 로그인 named volume을 준비한 뒤 실행합니다.
 
@@ -41,7 +40,7 @@ Docker CLI에는 `MULINO_TOKEN`을 환경변수 이름으로 전달하므로 cap
 
 ## 테스트와 모듈 API
 
-- `Auth0TokenClient.getToken({signal, forceRefresh})`: M2M 발급·만료 전 갱신·동시 요청 병합.
+- `staticToken(token)`: 고정 bearer worker 토큰 반환(Auth0 M2M은 #21·#22 보류).
 - `WorkerApi.post(action, body, {idempotencyKey, signal})`: 제한된 내부 API 호출, 401일 때 한 번 토큰 갱신, 응답 크기 제한.
 - `Runner.runOnce()`, `Runner.loop({signal})`, `Runner.stop()`: 단일 작업 처리·poll·종료. `clock.now/sleep` 주입으로 실제 분 단위 대기 없이 lease 경계를 테스트합니다.
 - `DockerExecutor.start(claim, {secrets})`: `{result, cancel, pid}` 반환. `ProcessExecutor`의 command builder는 테스트에서 실제 Node fixture를 실행하기 위한 주입 경계입니다.

@@ -1,6 +1,6 @@
 # 계획 저장과 Run 실행 연결
 
-계산 결과를 불변 계획 버전으로 저장하고, Case·Work Item에 묶인 실행 권한으로 업무를 처리하는 서버 경로와 Node 실행기를 구현했다. 구매 제안·MANAGER 결정·발주 적용 REST 경로도 연결했다. 최소 Zig CLI와 Codex 컨테이너 이미지는 [CLI·런타임 안내](14_cli_and_runtime.md)를 따른다. 실제 Auth0/두 대화 클라이언트 로그인·모델 업무 수행과 대화 승인 도구 연결은 아직 남아 있다.
+계산 결과를 불변 계획 버전으로 저장하고, Case·Work Item에 묶인 실행 권한으로 업무를 처리하는 서버 경로와 Node 실행기를 구현했다. 구매 제안·MANAGER 결정·발주 적용 REST 경로도 연결했다. 최소 Zig CLI와 Codex 컨테이너 이미지는 [CLI·런타임 안내](14_cli_and_runtime.md)를 따른다. 실제 Codex 모델 업무 수행과 대화 승인 도구 연결은 아직 남아 있다. 실제 Auth0·대화 클라이언트 로그인 인수는 보류(#21·#22)다.
 
 ## 사용자 목표 접수
 
@@ -16,7 +16,7 @@ MCP `create_case`는 키를 생성하거나 호출자가 준 `requestKey`를 유
 
 `GET /cases`는 `status`, `q`(제목·목표·참조의 문자 그대로 검색), `productSku`를 조합한다. 기존 Case 필드에 요약과 다음 행동을 더하고 최대 100건을 정해진 순서로 반환한다. `GET /cases/{ref}/overview`는 인간·에이전트 담당, 모든 활성 대기, Attention 버전, 계획·승인·발주 참조, 근거·주장·결정과 남은 의무를 함께 조회한다. 이벤트 이력만 100건으로 제한하고 `totalCount`/`truncated`를 표시한다. 조회가 Case나 Run을 만들지는 않는다.
 
-MCP에는 `get_case`, `get_plan`, `get_approval`, `get_purchase_order`, `decide_purchase`, `answer_attention`을 추가했다. 읽기는 `erp:read`, 일반 답변은 `work:write`, 구매 결정은 `procurement:decide`를 사용한다. 구매 내용·버전·hash에 대한 인간의 명시적 선택을 요구하며 도구 정의나 OAuth 로그인만으로 실제 클라이언트의 확인 절차를 증명하지 않는다.
+MCP에는 `get_case`, `get_plan`, `get_approval`, `get_purchase_order`, `decide_purchase`, `answer_attention`을 추가했다. 읽기는 `erp:read`, 일반 답변은 `work:write`, 구매 결정은 `procurement:decide`를 사용한다. 구매 내용·버전·hash에 대한 인간의 명시적 선택을 요구하며 도구 정의만으로 실제 클라이언트의 확인 절차를 증명하지 않는다.
 
 `POST /attention/{id}/answer`는 활성 OPERATOR/MANAGER와 멱등 키, `answer`, `expectedVersion`, `scope`가 필요하다. 범위는 THIS_ACTION/THIS_CASE뿐이다. V24는 질문을 포함한 행 수정마다 버전을 증가시켜 오래된 답변을 거부한다. 구매에 연결됐거나 AUTHORITY_REQUIRED인 요청은 이 경로로 답할 수 없다.
 
@@ -63,10 +63,10 @@ flowchart LR
     Failure --> Attention[BLOCKED / Attention]
 ```
 
-- 내부 `claim`, `heartbeat`, `finish`, `retry`는 허용된 Auth0 worker M2M 신원과 `worker:dispatch` 권한으로 제한한다.
+- 내부 `claim`, `heartbeat`, `finish`, `retry`는 허용된 실행기 서비스 신원의 `worker:dispatch` 권한으로 제한한다(worker token, static bearer).
 - claim은 기존 대기·임대 만료를 재판정하고, 현재 담당과 Case 상태가 유효한 CODEX 작업을 가져온다. Work Item과 worker ID 각각에 활성 실행 하나만 허용한다.
-- 실행기 lease token과 모델 capability token을 분리하며 DB에는 hash만 저장한다. 모델은 인간 토큰이나 M2M client secret을 받지 않는다.
-- 모델 capability는 Case·Work Item·현재 배정·lease에 묶이고, 변경 트랜잭션 안에서 다시 잠금·검증한다. 인간 JWT를 agent 권한으로 대신 사용할 수 없다.
+- 실행기 lease token과 모델 capability token을 분리하며 DB에는 hash만 저장한다. 모델은 인간 토큰이나 worker token을 받지 않는다.
+- 모델 capability는 Case·Work Item·현재 배정·lease에 묶이고, 변경 트랜잭션 안에서 다시 잠금·검증한다. 인간 신원을 agent 권한으로 대신 사용할 수 없다.
 - `context_snapshot`은 예약 당시 기록으로 보존한다. claim 시 현재 Case와 관련 ERP 사실을 다시 구성해 별도 `execution_context`에 기록한다. 이전 계획 source snapshot은 덮어쓰지 않는다.
 - 컨텍스트 재구성이 실패해 이전 snapshot을 `stale`로 보관할 때도 소수와 큰 정수를 보존한다. 실패 정보만 추가하며 기존 수량을 부동소수점으로 반올림하지 않는다.
 - heartbeat는 15초, lease는 60초, 실행 상한은 600초다. 임대 유실은 최대 한 번 새 Run으로 재예약한다. 반복 실패·기한 초과·명시적 실패는 BLOCKED와 Attention으로 남긴다.
@@ -140,18 +140,18 @@ claim은 비밀값을 한 번 발급하는 제어 프로토콜이므로 원래 �
 
 ## Node 실행기
 
-[실행기 README](../agents/runner/README.md)의 환경 설정과 이미지 계약을 따른다. 코디네이터는 Auth0 M2M 토큰을 유지하고 한 번에 하나의 작업을 실행한다. Docker 자식에는 scoped capability와 CLI용 `MULINO_API_URL`만 전달하며, 사용자 홈이나 Docker socket을 마운트하지 않는다. 전용 Codex 로그인 볼륨과 읽기 전용 이미지·임시 작업 디렉터리를 사용한다.
+[실행기 README](../agents/runner/README.md)의 환경 설정과 이미지 계약을 따른다. 코디네이터는 worker 토큰(static bearer)을 사용하고 한 번에 하나의 작업을 실행한다. Docker 자식에는 scoped capability와 CLI용 `MULINO_API_URL`만 전달하며, 사용자 홈이나 Docker socket을 마운트하지 않는다. 전용 Codex 로그인 볼륨과 읽기 전용 이미지·임시 작업 디렉터리를 사용한다.
 
 모델의 잘못된 결과나 서버의 완료 검증 거부는 lease를 확인한 후 새 요청 키로 FAILED 전환을 한 번 시도한다. stale lease에는 추가 쓰기를 하지 않고, 이미 확정된 결과가 있으면 그것을 유지한다. 출력 크기를 제한하고 토큰·시크릿을 가린다.
 
-자동 시험은 실제 Node 자식 프로세스와 모의 Auth0/백엔드를 사용한다. 추가로 고정 Codex 버전의 실제 Docker 이미지에서 Linux CLI·권한·파일 제한·취소를 시험했으며 모델 호출은 수행하지 않았다. 역할 지침과 실제 claim 맥락의 크기·숫자 정밀도는 [CLI·런타임 안내](14_cli_and_runtime.md)를 따른다.
+자동 시험은 실제 Node 자식 프로세스와 모의 백엔드를 사용한다. 추가로 고정 Codex 버전의 실제 Docker 이미지에서 Linux CLI·권한·파일 제한·취소를 시험했으며 모델 호출은 수행하지 않았다. 역할 지침과 실제 claim 맥락의 크기·숫자 정밀도는 [CLI·런타임 안내](14_cli_and_runtime.md)를 따른다.
 
 ## 검증과 마이그레이션
 
 - PostgreSQL 18의 전체 Backend `test bootJar`: 532개 통과 (2026-09-12), 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다. heartbeat의 전체 실행 기한 제한과 600초 초과 시 자동 재시도 금지도 검증한다. 저장소 전환 후 근거 타입·격리 수준·최근 구매 순서·과거 NULL 이벤트 재호출의 충돌 처리도 포함한다.
 - 별도 `demoE2eTest` 2개 통과 (2026-09-12): 실제 HTTP·MCP·실행기·CLI·PostgreSQL 경로에서 승인 대기 중 Spring 재시작, 가격 변경 후 새 승인, 중복 적용 방지를 검증했다. 인증 발급과 모델 판단은 시험용이며 실제 계정 인수를 대체하지 않는다. 실행 방법은 [데모 실행 안내](15_demo_runbook.md)를 따른다.
 - Node 실행기 48개, MCP 28개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
-- 후속 책임의 생성·기한·입고·중복·부모 재개·일반 경로 우회 차단을 포함한 전체 검사다. MCP 28개와 Auth0 준비 도구 19개 검사를 별도로 확인했다.
+- 후속 책임의 생성·기한·입고·중복·부모 재개·일반 경로 우회 차단을 포함한 전체 검사다. MCP 28개와 readiness 17개 검사를 별도로 확인했다.
 - V20은 QUEUED enum을 먼저 추가하고 V21에서 lease·멱등 데이터와 인덱스를 사용한다. V22는 최신 계산 결과의 원본 업무 연결을 강제한다.
 - 기존 RUNNING 예약 기록은 ABORTED로 정리하고 원래 snapshot을 보존한다. 이미 종료되었거나 실제 대기 중인 의무를 강제로 깨우지 않는다.
-- 독립 DDL 00~17·seed와 Flyway 경로를 별도 PostgreSQL 18 DB에서 검증했다. 외부 Auth0/ChatGPT/Codex 로그인, 실제 모델 실행, 대화 승인 연결과 전체 시연 인수는 아직 남아 있다.
+- 독립 DDL 00~17·seed와 Flyway 경로를 별도 PostgreSQL 18 DB에서 검증했다. 실제 Codex 모델 실행, 대화 승인 연결과 전체 시연 인수는 아직 남아 있다. 외부 신원 제공자(Auth0 등)·ChatGPT·Codex 로그인 인수는 보류(#21·#22)다.

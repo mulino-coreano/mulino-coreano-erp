@@ -209,10 +209,10 @@ Dispatcher 판정은 **결정론적**이어야 하며, 같은 이벤트를 두 �
 | `GET` | `/api/v1/events?caseRef=` | 직접·간접 연관 Case 이벤트 조회 | 구현: ERP 조회 권한 |
 | `POST` | `/api/v1/runs` (`createRun`) | 실행 예약 생성, `trigger_event_id`로 원인 연결 | 구현: worker 전용 |
 | `POST` | `/api/v1/cases` | 인간 접수·초기 WI·QUEUED Run 원자적 생성 또는 같은 목표 재사용 | 구현: 인간 업무 위임 권한·멱등 키 |
-| `POST` | `/api/v1/internal/runs/claim`, `/heartbeat`, `/finish`, `/retry` | lease 발급·갱신·종료·통제된 복구 | 구현: 지정 worker M2M |
+| `POST` | `/api/v1/internal/runs/claim`, `/heartbeat`, `/finish`, `/retry` | lease 발급·갱신·종료·통제된 복구 | 구현: 실행기 worker 토큰 |
 | `POST` | `/api/v1/agent/work-items`, `/{ref}/transition` | 역할별 자식 업무·완료·대기 저장 | 구현: 현재 Run capability·멱등 키 |
 
-현재 인증 계층은 인간 JWT, 지정 worker M2M, Case·Work Item·역할·lease에 묶인 agent capability를 구분한다. 승인 Event의 DB 결정 검증과 실제 발주 승인·ERP 변경 어댑터는 별개이며, 후자는 아직 미구현이다. 계획 API와 실제 외부 인증·모델 실행의 남은 검증은 [실행·계획 API 안내](13_execution_and_plan_api.md)를 따른다.
+현재 인증 계층은 인간 역할 헤더(`X-Mulino-Local-Role`), 실행기 worker 토큰(`Authorization: Bearer $MULINO_WORKER_TOKEN`), Case·Work Item·역할·lease에 묶인 agent capability를 구분한다(PoC 로컬 신원; Auth0는 보류(#21·#22)). 승인 Event의 DB 결정 검증과 실제 발주 승인·ERP 변경 어댑터는 별개이며, 후자는 아직 미구현이다. 계획 API와 실제 외부 인증·모델 실행의 남은 검증은 [실행·계획 API 안내](13_execution_and_plan_api.md)를 따른다.
 
 ### 요청/응답 예시 (POST /api/v1/events)
 
@@ -270,7 +270,7 @@ Dispatcher 판정은 **결정론적**이어야 하며, 같은 이벤트를 두 �
 | T22 | 미래 시각·완료 의존성·여러 대기 | worker sweep에서 필요한 이벤트만 생성하고 모든 조건 충족 후 한 번 재개 |
 | T23 | 최신 계산 오류 뒤 과거 READY 응답 재생 | 서버 소유 최신 시도 판정 유지, 공급망 DONE 거부; 원본 계획은 읽기 가능 |
 
-로컬 서버·Node 자식 프로세스 검증과 실제 Auth0/Codex 실행 인수는 구분한다. 최신 자동 검사 결과는 [실행·계획 API 안내](13_execution_and_plan_api.md)에 기록한다.
+로컬 서버·Node 자식 프로세스 검증과 실제 Codex 실행 인수는 구분한다. Auth0 인수는 보류(#21·#22)다. 최신 자동 검사 결과는 [실행·계획 API 안내](13_execution_and_plan_api.md)에 기록한다.
 
 ---
 

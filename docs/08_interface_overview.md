@@ -239,15 +239,15 @@ Event는 불변 사실이다. 애플리케이션과 무관하게 DB 트리거가
 
 | 표면(채널) | 구현 |
 |---|---|
-| 백엔드 API | `interfacepackage/`의 업무 API와 `security/`의 `/api/v1/me`·JWT 신원/권한 검증 |
+| 백엔드 API | `interfacepackage/`의 업무 API와 `security/`의 `/api/v1/me`·로컬 신원/권한 검증 |
 | 이벤트 디스패처 | `EventPreparation`이 실제 업무·승인·Claim/Evidence를 조회해 이벤트 범위와 내용을 검증한다. `DispatcherService`는 같은 트랜잭션에서 준비 → 이벤트 기록·멱등 처리 → 새 이벤트의 근거 연결 → 대기조건 충족 → WI READY → Run 스케줄/실패 attention을 조정한다. |
-| 대화 커넥터 | `mcp-server/` — 기존 도구 5종과 `whoami`, 인증된 stdio 및 Streamable HTTP, Auth0 OBO token exchange |
+| 대화 커넥터 | `mcp-server/` — 기존 도구 5종과 `whoami`, 로컬 역할 헤더 기반 stdio(`MULINO_LOCAL_ROLE`). 원격 HTTP transport·Auth0 OBO는 보류(#22) |
 | 재보충 계산 | `planning/` — 실제 ERP snapshot 대사, 주문 이력·날짜별 BOM·재고·공급처 계산. 불변 plan 저장/조회와 SUPPLY_CHAIN 실행 권한 검증까지 연결 |
-| L0 스키마 | 인터페이스 DDL 07~09, 인증 DDL 10(Flyway V18), 계획 DDL 11(Flyway V19), 실행·멱등 DDL 12~14(Flyway V20~V22) |
+| L0 스키마 | 인터페이스 DDL 07~09, V18(users 비밀번호 NULL 허용), 계획 DDL 11(Flyway V19), 실행·멱등 DDL 12~14(Flyway V20~V22) |
 
 Event 요청은 알 수 없는 Case/Work Item, 서로 다른 Case의 조합, 해소된 scope와 모순되는 payload identity, 스키마 길이 초과를 `400 Bad Request`로 거부한다. 승인 Event는 완료된 Attention 또는 승인된 Governance Action을 DB에서 다시 해소해 인간 actor를 도출하며, 결정 문자열만으로 대기를 풀 수 없다. Event 멱등 키가 다른 내용에 재사용되거나 동일 Work Item에 활성 Run이 이미 존재하면 `409 Conflict`를 반환한다. Run 요청도 READY 상태·현재 배정·활성 에이전트·Case 소속을 삽입 전에 검증한다.
 
-JWT 인증과 현재 ERP 역할 검증을 추가했다. 업무 조회는 `erp:read`, Case 생성은 OPERATOR/MANAGER 및 `work:write`, 이벤트·Run 예약·dispatch는 허용된 worker 서비스 및 `worker:dispatch`로 제한한다. 구매 제안·MANAGER 결정·발주 적용 REST 경로를 추가했다. 대화 승인 도구 연결과 일반 읽기 actor 감사는 후속이다. 백엔드는 내부에 두고 MCP만 고정 HTTPS로 연결한다. 실제 tenant 및 두 대화 클라이언트의 로그인 검증은 로컬 자동 테스트와 구분한다.
+PoC 로컬 신원 모델을 적용했다. 업무 조회는 `erp:read`, Case 생성은 OPERATOR/MANAGER 및 `work:write`, 이벤트·Run 예약·dispatch는 허용된 worker 서비스 및 `worker:dispatch`로 제한한다. 구매 제안·MANAGER 결정·발주 적용 REST 경로를 추가했다. 대화 승인 도구 연결과 일반 읽기 actor 감사는 후속이다. 실제 외부 신원 제공자(Auth0 등)·두 대화 클라이언트의 로그인 검증은 보류(#21·#22)다.
 
 ### 목표 아키텍처와 현재 구현의 경계
 
@@ -257,9 +257,9 @@ JWT 인증과 현재 ERP 역할 검증을 추가했다. 업무 조회는 `erp:re
 | ACT로 목표와 책임 생성 | 멱등 접수, 인간/Orchestrator 참여·범위 기록, 초기 QUEUED Run | 실제 모델 목표 분해와 전체 업무 실행 |
 | 이벤트로 대기 업무 재개 | 조건 판정, QUEUED/RUNNING·lease·완료·대기·실패·복구 API와 Node 실행기 | 실제 로그인·모델 실행 검증 |
 | 실행마다 6계층 컨텍스트 재구성 | Case의 책임·배정·대기·증거·Claim·결정 참조를 단일 DB 스냅샷으로 조립 | ERP capability 확장과 데이터 기반 정책 인덱스 |
-| 채널 간 동일 Case 공유 | 인증된 REST·stdio·HTTP MCP의 목록 조회·목표 생성 | 실제 Auth0/클라이언트 연결 검증, 상세 조회, Slack·이메일 어댑터 |
+| 채널 간 동일 Case 공유 | REST·stdio MCP(로컬 역할 헤더)의 목록 조회·목표 생성 | 실제 Auth0·클라이언트 연결 검증은 보류(#21·#22), 상세 조회, Slack·이메일 어댑터 |
 | 인간 판단과 범위 있는 답변 | Attention 조회·계산 실패 기록, 기존 승인 이벤트 검증 | Attention 답변·Decision 생성 및 대화 승인 |
-| 검증된 업무 종결과 거버넌스 | 저장 테이블·기존 승인 결과 검증·JWT/ERP 권한 통제 | 결정론적/반론 기반 검증기, 인간 결정과 Change Request 적용 |
+| 검증된 업무 종결과 거버넌스 | 저장 테이블·기존 승인 결과 검증·로컬 신원·ERP 권한 통제 | 결정론적/반론 기반 검증기, 인간 결정과 Change Request 적용 |
 | MONITOR 운영 통제면 | 읽기 전용 상태 집계·열린 Attention | 실제 대시보드, 실행기 주기 재판정·능동 감시·알림 정책 |
 
 `QUEUED`는 예약, `RUNNING`은 실행기가 lease를 획득한 상태다. Node 실행기의 claim/heartbeat/finish 경로는 구현했으며 최소 Zig CLI와 Codex Docker 이미지의 격리·CLI 호출도 검증했다. 실제 로그인·모델 업무 수행은 아직 검증 전이다. Work Item·worker별 활성 실행 중복을 막고 최신 계산 결과와 권한으로 완료를 검증한다. Attention 조회는 인간의 답변이나 승인을 기록하지 않는다. 자세한 변경은 [실행 연결 안내](13_execution_and_plan_api.md)를 따른다.
@@ -270,8 +270,8 @@ JWT 인증과 현재 ERP 역할 검증을 추가했다. 업무 조회는 `erp:re
 # 1. PostgreSQL 18에 빈 DB를 만든다. Flyway가 스키마와 기본 인터페이스 등록을 적용한다.
 createdb mulino_coreano
 
-# 2. DB 설정과 Auth0 issuer/audience를 로컬 환경에 설정한다.
-# backend/.env.example 및 docs/11_auth0_setup.md를 참고한다.
+# 2. DB 설정과 MULINO_WORKER_TOKEN을 로컬 환경에 설정한다.
+# backend/.env.example을 참고한다.
 # DB 계정은 초기 마이그레이션을 수행할 권한이 있어야 한다.
 cd backend
 ./gradlew bootRun    # http://localhost:8080

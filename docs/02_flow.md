@@ -271,11 +271,11 @@ Orchestrator는 같은 요청 키와 본문으로 공급망·구매 업무 참�
 
 반려 또는 입력 변경은 발주 없이 해당 구매 업무를 종결하고 재판단 요청을 남긴다. 구매가 불필요하면 가짜 승인이나 발주를 생성하지 않는다. 구매 수량과 기본 단위 수량, 상세 납기를 구분하며 새 발주의 창고를 명시한다. 생성 후 실제 발주 행과 승인 내용을 비교해야 구매 업무를 완료할 수 있다. 생산·입고가 남은 상위 Case는 자동 종결하지 않는다. 관계는 [ERD §10](03_erd.md#10-구매-승인과-발주-적용), API는 [실행 연결 안내](13_execution_and_plan_api.md)를 따른다.
 
-### 외부 신원과 조회 경계
+### 신원과 조회 경계
 
-Auth0의 `(issuer, subject)`는 `external_identities`를 통해 사전 등록된 `users`에 연결한다. 이메일 자동 매칭은 하지 않으며, 조회와 Case 접수 시 현재 사용자 역할과 활성 여부를 확인한다. 외부 로그인 사용자에게 로컬 비밀번호를 요구하지 않는다. 이 관계는 ERP LOT 추적 체인을 변경하지 않는다.
+PoC 로컬 신원 모델: 인간 요청은 `X-Mulino-Local-Role` 헤더로 역할을 전달하며 `local-{role}@mulino.local`로 users에 upsert한다. 실행기는 `Authorization: Bearer $MULINO_WORKER_TOKEN`으로 인증한다. 역할 헤더는 누구나 전송할 수 있으므로 실제 API 공개 전에 외부 신원 제공자(#21·#22)를 적용해야 한다. `external_identities` 테이블은 V18에서 제거했으며 이 관계는 ERP LOT 추적 체인을 변경하지 않는다.
 
-`GET /api/v1/monitor`는 조회만 수행한다. 기한·의존 업무의 재판정과 이벤트 인입은 허용된 실행기 서비스 신원의 `POST /api/v1/dispatch`, `POST /api/v1/events`로 제한한다. OAuth 접근 허용과 발주·입고·리콜에 대한 인간 승인은 별개의 단계다. 설정은 [Auth0 연결 안내](11_auth0_setup.md)를 따른다.
+`GET /api/v1/monitor`는 조회만 수행한다. 기한·의존 업무의 재판정과 이벤트 인입은 허용된 실행기 서비스 신원의 `POST /api/v1/dispatch`, `POST /api/v1/events`로 제한한다. 발주·입고·리콜에 대한 인간 승인과 실제 외부 신원 제공자 연결은 별개의 단계다(#21·#22).
 
 ### 재보충 계산과 생산 계획의 연결
 
