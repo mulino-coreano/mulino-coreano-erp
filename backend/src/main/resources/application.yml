@@ -15,3 +15,13 @@ mulino:
     audience: ${MULINO_API_AUDIENCE:urn:mulino:erp-api}
     jwks-uri: ${MULINO_AUTH_JWKS_URI:}
     worker-client-id: ${MULINO_WORKER_CLIENT_ID:}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    operations-sorter: method
+    disable-swagger-default-url: true

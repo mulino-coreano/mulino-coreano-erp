@@ -30,4 +30,4 @@ The authenticated human MCP server is implemented separately in `../mcp-server/`
 
 The CLI's command surface is derived from implemented backend endpoints. Case/plan agent reads, scoped plan calculation and Work Item creation/transition and the corresponding CLI commands now exist. Procurement/approval commands remain blocked on their backend adapters. Synchronize affected role skills and tests when the command surface changes, and do not mark actual Codex execution accepted until the CLI, image and real run have been verified.
 
-Role duties are specified in the agent intervention summary of [docs/02_flow.md](../docs/02_flow.md) (SSOT). The governance approval matrix is in the root `CLAUDE.md`.
+Role duties are specified in the agent intervention summary of [docs/02_flow.md](../docs/02_flow.md) (SSOT). The governance approval matrix is in the root `AGENTS.md`.

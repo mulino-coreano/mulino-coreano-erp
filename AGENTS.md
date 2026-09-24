@@ -1,12 +1,12 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file is the operating guide for agent sessions working in this repository, and the only place this guidance is written. Codex reads it natively; Claude Code does not, so root `CLAUDE.md` is a symlink to it rather than a second copy. Directory-scoped guidance lives in a nested `AGENTS.md`.
 
 ## Project Overview
 
 A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Italian food brand) enters the Korean market. A SAP consulting portfolio project that localizes a EU-standard ERP to Korean food regulations (Food Traceability Act, 22 allergens, electronic tax invoices, etc.).
 
-**Current status**: Phase 4 is in progress. The Spring Boot backend implements Case intake, inventory lookup, event dispatch, Run scheduling and Auth0 JWT/ERP-role access control; `mcp-server/` provides authenticated stdio and Streamable HTTP with Auth0 OBO token exchange. Planning services load reconciled ERP snapshots, calculate historical demand/BOM/supplier candidates, and persist immutable scoped plan versions. Case intake queues Runs; leased execution APIs and a Node runner coordinate scoped agents, with a minimal Zig CLI and tested Codex Docker image. Live model execution remains pending. PostgreSQL has 30 ERP tables plus 13 interface, one identity, nine planning, one request-idempotency and one purchase-application and one follow-up table. Real tenant/client login validation remains separate from local tests. `governance/` and `dashboard/` remain scaffolds. The backend purchasing proposal/decision/apply path is implemented with generated jOOQ queries. Human Case overview/search, conversation decision tools and scoped Attention answers are implemented. Server-managed receipt follow-up preserves production/stock review responsibility after purchasing. Actual model execution and other write adapters remain pending; see `docs/08_interface_overview.md` §13, `docs/11_auth0_setup.md` and `docs/12_replenishment_calculation.md` and `docs/13_execution_and_plan_api.md`, `docs/14_cli_and_runtime.md`. All business documentation is written in Korean.
+**Current status**: Phase 4 is in progress. The Spring Boot backend implements Case intake, inventory lookup, event dispatch, Run scheduling and Auth0 JWT/ERP-role access control; `mcp-server/` provides authenticated stdio and Streamable HTTP with Auth0 OBO token exchange. Planning services load reconciled ERP snapshots, calculate historical demand/BOM/supplier candidates, and persist immutable scoped plan versions. Case intake queues Runs; leased execution APIs and a Node runner coordinate scoped agents, with a minimal Zig CLI and tested Codex Docker image. Live model execution remains pending. PostgreSQL has 30 ERP tables plus 13 interface, one identity, nine planning, one request-idempotency and one purchase-application and one follow-up table. Real tenant/client login validation remains separate from local tests. `governance/` and `dashboard/` remain scaffolds. The backend purchasing proposal/decision/apply path is implemented with generated jOOQ queries. Human Case overview/search, conversation decision tools and scoped Attention answers are implemented. Server-managed receipt follow-up preserves production/stock review responsibility after purchasing. Actual model execution and other write adapters remain pending; see `docs/08_interface_overview.md` §13, `docs/11_auth0_setup.md` and `docs/12_replenishment_calculation.md` and `docs/13_execution_and_plan_api.md`, `docs/14_cli_and_runtime.md`. What remains in Phase 4, and every Phase after it, lives on the project board rather than only in this file. All business documentation is written in Korean.
 
 ## Commands
 
@@ -23,7 +23,7 @@ npm test
 npm start
 ```
 
-For standalone schema verification, use another empty DB and apply the DDL in order. Do not apply raw DDL and then run Flyway on the same unbaselined database:
+The standalone DDL in `database/ddl/` is the schema's readable SSOT and must stay in sync with Flyway. To build a database from the DDL directly:
 
 ```bash
 # After creating the DB, run in FK-dependency order (file number order is mandatory)
@@ -58,7 +58,7 @@ psql -d mulino_coreano -f database/seed/allergens.sql
 |---|---|---|
 | L0 | `database/`, `backend/` | PostgreSQL 18 (30 ERP + 13 interface + 1 identity + 9 planning + 1 idempotency + 1 purchase application + 1 follow-up tables) + Spring Boot REST API (single entry point for CLI and dashboard) |
 | L1 | `governance/` | Intercept action-bearing API calls → approve / block / hold + audit log. **Reads pass through; only writes are gated** |
-| L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude Code and Codex are both supported agent runtimes; the orchestrator dispatches role subagents. See `agents/CLAUDE.md` |
+| L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude Code and Codex are both supported agent runtimes; the orchestrator dispatches role subagents. See `agents/AGENTS.md` |
 | L3 | `dashboard/` | Natural-language query → Intent Parsing → chart generation |
 
 ### Governance approval matrix (follow when implementing L1)
@@ -87,6 +87,18 @@ Reverse tracing (root-cause analysis) follows this chain backwards. Core invaria
 
 The full flow and agent intervention points are the single source of truth (SSOT) in `docs/02_flow.md`. For the table list and SAP module mapping, see `docs/01_project_overview.txt`.
 
+## Work comes from the board
+
+Every goal this project has lives in GitHub. There is one board — [Mulino Coreano — ERP & Agent Governance](https://github.com/orgs/mulino-coreano/projects/1) — and its operating rules are in `docs/06_labels.md`, which outranks this file.
+
+- **Goals are milestones (Phases) and issues.** A goal written only in a doc is an untracked goal.
+- **Check the board when a session starts.** The `goals` skill has the commands for the current Phase and its goals; the `backlog` skill has the commands for the next candidate. The board is more current than the status described in this file or in `docs/`.
+- **Do not start work that has no issue.** If nothing on the board covers it, stop and ask — do not create an issue and carry on by yourself. Questions, investigation and typo fixes are exempt.
+- **Do not start work outside the current Phase on your own initiative.** Propose it; the human decides.
+- **Never set the board's Status field by hand.** Automation derives it from issue and PR state.
+
+Carrying out an issue is the `backlog` skill; changing what the goals are is the `goals` skill (both in `.agents/skills/`).
+
 ## Git rules
 
 - **No direct commit/push to main** — work on a separate branch, then open a PR to merge (force push is strictly forbidden)
@@ -98,10 +110,43 @@ The full flow and agent intervention points are the single source of truth (SSOT
 - The issue/PR label scheme is in `docs/06_labels.md` (category + `L0-db`~`L3-dashboard` layer labels)
 - Never commit secrets (`application-local.yml`, `.env`) — already in `.gitignore`
 - On schema changes, keep `docs/02_flow.md` consistent with the ERD (Phase 1 required "flow diagram–ERD 100% consistency" as an acceptance criterion)
+- Skills live in `.agents/skills/` — dev-workflow skills (`backlog` to carry out an issue, `goals` to change what the goals are) as real directories, ERP role skills as symlinks to `agents/skills/`, which stays their SSOT (the L2 product layer). Codex discovers that directory natively.
+- Claude Code does **not** read `.agents/skills/`, so `.claude/skills/` mirrors it with one symlink per skill. Add a skill in both places, and point the `.claude/skills/` link at the skill's real directory — never at another symlink.
+
+## Prose (Korean text deliverables)
+
+Commit messages, PR bodies, issue bodies and `docs/` all hold to the same standard,
+and under Claude Code they are not written by the session doing the work.
+
+- **Claude Code** — delegate to the `prose` subagent (`.claude/agents/prose.md`,
+  pinned to `claude-sonnet-4-6`). Hand it the issue number or the branch; it reads
+  the diff itself. Do **not** pass a `model` argument when invoking it — that
+  overrides the pin and silently routes to a different model.
+- **Codex** — has no equivalent subagent pinning. Write the prose yourself, to the
+  rules below. They are the same rules the subagent follows.
+- A cold subagent sees the diff, not the conversation. Cross-cutting rationale — why
+  this approach over another, what a reviewer will object to — has to be handed to it
+  in the prompt or it will not appear in the text.
+
+### Voice
+
+Korean, plain declarative (`-다`), no honorifics.
+
+- **Why before what.** A body that only lists changed files is a worse `git diff
+  --stat`. Lead with the reason the change exists — the wrong behaviour, the false
+  assumption, the thing that broke.
+- **Bullets are concrete.** Name the file, then what changed in it — not `문서 수정`.
+- **Evidence goes in.** Commands run, output observed, versions checked. A claim with
+  nothing behind it does not belong in the body.
+- **Admit what you did not do.** Skipped verification, a known gap, a deliberate
+  shortcut — write it down rather than letting the reader find it.
+- Technical terms stay in English (`symlink`, `discovery`, `branch protection`). Do
+  not force them into awkward Korean.
+- No marketing tone, no 이모지. Wrap bodies at 72 columns.
 
 ## Issue/PR templates (mandatory)
 
-Templates live in `.github/`. When creating issues or PRs, Codex must follow the structure of the relevant template exactly — do not omit sections or invent your own format.
+Templates live in `.github/`. When creating issues or PRs, the session must follow the structure of the relevant template exactly — do not omit sections or invent your own format.
 
 **PR**: `.github/pull_request_template.md` — 4 sections (작업 내용 / 변경 사항 / 체크리스트 / 리뷰 요청 사항). The 3 checklist items (verify local run, do not commit secrets, update related docs) must appear in the PR body.
 

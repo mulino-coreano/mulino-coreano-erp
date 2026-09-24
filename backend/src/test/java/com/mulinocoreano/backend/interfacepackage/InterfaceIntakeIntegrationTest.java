@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -166,6 +167,16 @@ class InterfaceIntakeIntegrationTest {
 
         assertThat(jdbc.sql("SELECT count(*) FROM cases").query(Long.class).single())
                 .isEqualTo(before);
+    }
+
+    @Test
+    void caseLookupRejectsUnknownReferenceAndStatusAsClientErrors() throws Exception {
+        mockMvc.perform(get("/api/v1/cases/CASE-does-not-exist"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/cases").param("status", "FOO"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/cases").param("status", "WAITING"))
+                .andExpect(status().isOk());
     }
 
     private void ensureActiveOrchestratorAndDefaultChat() {

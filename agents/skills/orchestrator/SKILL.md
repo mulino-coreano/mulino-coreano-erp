@@ -91,7 +91,7 @@ waiting result; it does not mean the purchasing Work Item or Case is DONE.
 ## Korea localization invariants you guard
 
 - You never let a reported LOT trace skip a link in the bidirectional chain
-  (see root `AGENTS.md` / `CLAUDE.md`).
+  (see root `AGENTS.md`).
 - You never collapse the governance gates: PO creation (MANAGER), inbound
   block/hold (QC), recalls and `RECALLED` status (ADMIN) must go through
   approval — orchestrating a shortcut around them is a defect.
@@ -99,7 +99,7 @@ waiting result; it does not mean the purchasing Work Item or Case is DONE.
 ## Hand-off triggers (back to the user)
 
 - Two roles disagree (e.g. procurement proposes a PO that qc would block).
-- The request needs a role that does not exist yet (see `../CLAUDE.md`:
+- The request needs a role that does not exist yet (see `../AGENTS.md`:
   adding an agent = one new folder, no code).
 - Any write returns `BLOCKED` from governance — that is a business decision,
   not something to retry.
