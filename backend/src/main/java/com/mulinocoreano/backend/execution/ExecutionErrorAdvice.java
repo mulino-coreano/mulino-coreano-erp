@@ -1,5 +1,7 @@
 package com.mulinocoreano.backend.execution;
 
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -8,6 +10,8 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.Map;
 
 /** Stable, non-secret protocol errors shared by worker finish and scoped agent transitions. */
+// Scoped protocol errors must win over the catch-all GlobalExceptionHandler.
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {RunExecutionController.class, AgentWorkController.class})
 public class ExecutionErrorAdvice {
     @ExceptionHandler(ResponseStatusException.class)

@@ -639,11 +639,9 @@ CREATE TRIGGER fail_second_purchase_line AFTER INSERT ON purchase_order_items
   FOR EACH ROW EXECUTE FUNCTION fail_second_purchase_line();
 """)
                 .update();
-        assertThatThrownBy(() -> decide(id, body, "failed-then-retry", managerId, "MANAGER", 200))
-                .hasRootCauseMessage(
-                        "ERROR: test failure after two new purchase lines\n"
-                                + "  Where: PL/pgSQL function fail_second_purchase_line() line 5 at"
-                                + " RAISE");
+        // The global handler turns the unexpected DB failure into a 500; the rollback checks below
+        // still prove nothing from the failed request was kept.
+        decide(id, body, "failed-then-retry", managerId, "MANAGER", 500);
         assertThat(count("purchase_orders")).isEqualTo(originalOrders);
         assertThat(count("purchase_applications")).isZero();
         assertThat(
