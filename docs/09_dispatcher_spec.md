@@ -3,7 +3,7 @@
 > 이 문서는 Codex 구현의 **계약(contract)** 이다. `docs/08_interface_overview.md`의 "대기와 디스패처"를 실행 가능한 상태 전이 규칙으로 정형화한 하위 명세다.
 > 관련 문서: `08_interface_overview.md`(인터페이스 철학), `02_flow.md`(업무 흐름 SSOT), `03_erd.md`(스키마)
 > 구현 대상: `backend` (Spring Boot) — `DispatcherService`, `RunService`, `ContextSnapshotService`와 REST 어댑터.
-> 테이블 수명·참조의 필수 여부·결정 기록 경계: [Case 테이블 계약](case_table_contract.md)
+> 테이블 수명·참조의 필수 여부·결정 기록 경계: [Case 테이블 계약](10_case_table_contract.md)
 
 ---
 

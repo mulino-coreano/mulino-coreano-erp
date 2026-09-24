@@ -3,7 +3,7 @@
 > 본 문서는 "챗봇이 붙은 ERP"가 아니라, **인간과 AI 에이전트가 동일한 Case·Work Item·증거·결정·ERP 상태 위에서 여러 표면(채널)으로 상호작용하는 지속성 있는 비즈니스 조직**을 정의한다.
 > 스키마 구현: `database/ddl/07_case_management.sql` ~ `09_case_fks.sql`, `database/seed/interface.sql` (Flyway V8~V17)
 > 업무 흐름과의 관계: `docs/02_flow.md` (SSOT), 스키마 상세: `docs/03_erd.md`
-> 테이블별 책임·수명·FK 관계 및 구현 경계: [Case 테이블 계약](case_table_contract.md)
+> 테이블별 책임·수명·FK 관계 및 구현 경계: [Case 테이블 계약](10_case_table_contract.md)
 
 ---
 
