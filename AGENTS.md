@@ -6,19 +6,24 @@ This file is the operating guide for agent sessions working in this repository, 
 
 A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Italian food brand) enters the Korean market. A SAP consulting portfolio project that localizes a EU-standard ERP to Korean food regulations (Food Traceability Act, 22 allergens, electronic tax invoices, etc.).
 
-**Current status**: Phase 4 in progress (L0 backend · interface). On `main`: a Spring Boot application with Flyway migrations `V1`–`V7`, a common response/exception layer and Swagger. `governance/` and `dashboard/` are still empty scaffolds; `agents/` holds the role skills and layout guidance only — the `mulino` CLI is not built yet. What remains in Phase 4, and every Phase after it, lives on the project board rather than in this file. All documentation is written in Korean.
+**Current status**: Phase 4 is in progress. The Spring Boot backend implements Case intake, inventory lookup, event dispatch and Run scheduling; `mcp-server/` provides a local stdio connector. PostgreSQL has 30 ERP tables plus 13 interface tables. On top of that, `main` already has the common response/exception layer and Swagger (#16). `governance/`, `dashboard/` and the Zig CLI remain scaffolds. Actual LLM execution and approval/write adapters are future work; see `docs/08_interface_overview.md` §13. What remains in Phase 4, and every Phase after it, lives on the project board rather than only in this file. All business documentation is written in Korean.
 
 ## Commands
 
-Backend (Gradle wrapper, Java 21) — needs a reachable PostgreSQL:
+Use Java 21 and PostgreSQL 18. For the backend, create an empty DB and configure `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` locally; Flyway applies V1–V17, including the required Orchestrator/channel bootstrap. Use a separate disposable DB for integration tests.
 
 ```bash
 cd backend
-./gradlew test
+./gradlew clean test bootJar --no-daemon
 ./gradlew bootRun
+# From the repository root in a separate terminal:
+cd mcp-server
+npm ci
+npm test
+npm start
 ```
 
-The application applies Flyway migrations (`backend/src/main/resources/db/migration/`, `V1`–`V7`) on startup. The standalone DDL in `database/ddl/` is the schema's readable SSOT and must stay in sync with them. To build a database from the DDL directly:
+The standalone DDL in `database/ddl/` is the schema's readable SSOT and must stay in sync with Flyway. To build a database from the DDL directly:
 
 ```bash
 # After creating the DB, run in FK-dependency order (file number order is mandatory)
@@ -30,16 +35,20 @@ psql -d mulino_coreano -f database/ddl/03_transaction_tables.sql
 psql -d mulino_coreano -f database/ddl/04_indexes.sql
 psql -d mulino_coreano -f database/ddl/05_foreign_keys.sql
 psql -d mulino_coreano -f database/ddl/06_audit_immutability.sql
+psql -d mulino_coreano -f database/ddl/07_case_management.sql
+psql -d mulino_coreano -f database/ddl/08_case_indexes.sql
+psql -d mulino_coreano -f database/ddl/09_case_fks.sql
+psql -d mulino_coreano -f database/seed/interface.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```
 
-**Planned stack** (new code follows this baseline): Backend is Spring Boot 4.1.x + Java 21 + Gradle exposing a REST API. Agents are Claude Code or Codex sessions (Cowork) driven by per-role skills; their only backend access is a single Zig CLI (`mulino`) that calls the REST API. Dashboard is React 19 + Vite. There is no A2A protocol — the runtime's native subagent dispatch (Claude Code or Codex) replaces it. An MCP Server is deferred pending a complexity-management decision; until then, the CLI is the sole tool surface.
+**Planned stack** (new code follows this baseline): Backend is Spring Boot 4.1.x + Java 21 + Gradle exposing a REST API. Agents are Claude Code or Codex sessions (Cowork) driven by per-role skills; the planned agent tool surface is a single Zig CLI (`mulino`) calling the REST API. Dashboard is React 19 + Vite. There is no A2A protocol — the runtime's native subagent dispatch (Claude Code or Codex) replaces it. The implemented `mcp-server/` is a local stdio interface connector using the same REST API; remote HTTP transport and the Zig CLI remain future work.
 
 ## Architecture (4 layers = directory mapping)
 
 | Layer | Directory | Role |
 |---|---|---|
-| L0 | `database/`, `backend/` | PostgreSQL 18 (30 tables) + Spring Boot REST API (single entry point for CLI and dashboard) |
+| L0 | `database/`, `backend/` | PostgreSQL 18 (30 ERP + 13 interface tables) + Spring Boot REST API (single entry point for CLI and dashboard) |
 | L1 | `governance/` | Intercept action-bearing API calls → approve / block / hold + audit log. **Reads pass through; only writes are gated** |
 | L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude Code and Codex are both supported agent runtimes; the orchestrator dispatches role subagents. See `agents/AGENTS.md` |
 | L3 | `dashboard/` | Natural-language query → Intent Parsing → chart generation |
