@@ -1,6 +1,7 @@
 package com.mulinocoreano.backend.interfacepackage;
 
 import org.junit.jupiter.api.Test;
+import com.mulinocoreano.backend.followup.ReplenishmentFollowupService;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,12 +24,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 @Transactional
 class DispatcherIntegrationTest {
+    @Autowired RunSchedulingRepository scheduling;
+    @Autowired ContextSnapshotRepository contextRepository;
+
 
     @Autowired
     DispatcherService dispatcher;
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    ReplenishmentFollowupService followups;
+
+    @Autowired
+    DispatcherRepository dispatcherRepository;
 
     @Autowired
     ObjectMapper objectMapper;
@@ -104,15 +114,15 @@ class DispatcherIntegrationTest {
     @Test
     void failedContextReconstructionIsReportedAndRaisesOperatorAttention() {
         Fixture fixture = waitingFixture("SUPPLIER_REPLY", "{\"supplier_id\":75}", "WAITING");
-        ContextSnapshotService failingContext = new ContextSnapshotService(jdbc, objectMapper) {
+        ContextSnapshotService failingContext = new ContextSnapshotService(contextRepository, objectMapper) {
             @Override
             public Map<String, Object> build(String caseRef) {
                 throw new IllegalStateException("context source unavailable");
             }
         };
-        RunService failingRunService = new RunService(jdbc, objectMapper, failingContext);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingContext);
         DispatcherService failingDispatcher = new DispatcherService(
-                jdbc, objectMapper, new WaitingConditionMatcher(), failingRunService);
+                dispatcherRepository, objectMapper, new WaitingConditionMatcher(), failingRunService, followups);
 
         EventDispatchResponse result = failingDispatcher.ingest(new CreateEventRequest(
                 "SUPPLIER_EMAIL_RECEIVED", unique("msg"), fixture.caseRef(), null,
@@ -138,6 +148,27 @@ class DispatcherIntegrationTest {
                 Map.of("supplierId", 76))))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("different event content");
+    }
+
+    @Test
+    void replayOfLegacyNullPayloadEventIsRejectedAsContentConflict() {
+        Fixture fixture = waitingFixture("SUPPLIER_REPLY", "{\"supplier_id\":75}", "WAITING");
+        String externalRef = unique("legacy-msg");
+        jdbc.sql("""
+                INSERT INTO events (event_type, external_ref, case_id, payload)
+                VALUES ('SUPPLIER_EMAIL_RECEIVED', :externalRef, :caseId, NULL)
+                """)
+                .param("externalRef", externalRef)
+                .param("caseId", fixture.caseId())
+                .update();
+
+        assertThatThrownBy(() -> dispatcher.ingest(new CreateEventRequest(
+                "SUPPLIER_EMAIL_RECEIVED", externalRef, fixture.caseRef(), null,
+                Map.of("supplierId", 75))))
+                .isInstanceOf(EventIdempotencyConflictException.class)
+                .hasMessageContaining("different event content");
+        assertThat(eventCount("SUPPLIER_EMAIL_RECEIVED", externalRef)).isEqualTo(1);
+        assertThat(workItemStatus(fixture.workItemId())).isEqualTo("WAITING");
     }
 
     @Test
@@ -832,7 +863,7 @@ class DispatcherIntegrationTest {
                 INSERT INTO runs
                     (run_ref, agent_id, case_id, work_item_id, runtime, status)
                 VALUES
-                    (:runRef, :agentId, :caseId, :workItemId, 'CODEX', 'RUNNING')
+                    (:runRef, :agentId, :caseId, :workItemId, 'CODEX', 'QUEUED')
                 """)
                 .param("runRef", unique("RUN"))
                 .param("agentId", fixture.agentId())

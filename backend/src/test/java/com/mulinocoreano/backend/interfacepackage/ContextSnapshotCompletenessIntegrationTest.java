@@ -28,6 +28,31 @@ class ContextSnapshotCompletenessIntegrationTest {
     @Autowired
     ObjectMapper objectMapper;
 
+    @Test
+    void emptyCasePreservesNestedObjectsAndEmptyArrays() {
+        String caseRef = "CASE-" + UUID.randomUUID().toString().substring(0, 8);
+        jdbc.sql("""
+                INSERT INTO cases (case_ref, title, objective, intent_type)
+                VALUES (:ref, 'Empty context', 'No related records', 'ACT')
+                """).param("ref", caseRef).update();
+
+        JsonNode snapshot = snapshot(caseRef);
+
+        assertThat(snapshot.path("obligation").isArray()).isTrue();
+        assertThat(snapshot.path("obligation").size()).isZero();
+        assertThat(snapshot.path("organizational").isArray()).isTrue();
+        assertThat(snapshot.path("organizational").size()).isZero();
+        assertThat(snapshot.path("business").isObject()).isTrue();
+        assertThat(snapshot.path("business").path("references").isArray()).isTrue();
+        assertThat(snapshot.path("business").path("references").size()).isZero();
+        assertThat(snapshot.path("epistemic").isObject()).isTrue();
+        for (String layer : new String[]{"evidence", "claims", "decisions"}) {
+            assertThat(snapshot.path("epistemic").path(layer).isArray()).isTrue();
+            assertThat(snapshot.path("epistemic").path(layer).size()).isZero();
+        }
+        assertThat(snapshot.path("control").isObject()).isTrue();
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"dependent_wi_ref", "dependentWiRef"})
     void obligationIdentifiesOwnershipAndActiveWaitingDependencies(String dependencyKey) {
@@ -97,6 +122,24 @@ class ContextSnapshotCompletenessIntegrationTest {
                 .isEqualTo("Use launch allocation as the priority");
         assertThat(decision.path("decided_by").path("user_id").asLong())
                 .isEqualTo(fixture.userId());
+    }
+
+    @Test
+    void businessReferenceNumbersRetainBigintAndDecimalPrecisionThroughContextMaps() {
+        Fixture fixture = fixture();
+        jdbc.sql("UPDATE work_items SET metadata=CAST(:metadata AS jsonb) WHERE work_item_id=:id")
+                .param("id",fixture.workItemId())
+                .param("metadata", """
+                        {"businessRef":{"id":9007199254740993,"amount":999999999999.123456,
+                          "nested":{"quantities":[123456789012.345678,0.000001]}}}
+                        """)
+                .update();
+
+        JsonNode reference = snapshot(fixture.caseRef()).path("business").path("references").get(0);
+        assertThat(reference.path("id").longValue()).isEqualTo(9007199254740993L);
+        assertThat(reference.path("amount").decimalValue()).isEqualByComparingTo("999999999999.123456");
+        assertThat(reference.path("nested").path("quantities").get(0).decimalValue()).isEqualByComparingTo("123456789012.345678");
+        assertThat(reference.path("nested").path("quantities").get(1).decimalValue()).isEqualByComparingTo("0.000001");
     }
 
     @Test

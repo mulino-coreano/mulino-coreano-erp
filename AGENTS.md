@@ -6,11 +6,11 @@ This file is the operating guide for agent sessions working in this repository, 
 
 A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Italian food brand) enters the Korean market. A SAP consulting portfolio project that localizes a EU-standard ERP to Korean food regulations (Food Traceability Act, 22 allergens, electronic tax invoices, etc.).
 
-**Current status**: Phase 4 is in progress. The Spring Boot backend implements Case intake, inventory lookup, event dispatch and Run scheduling; `mcp-server/` provides a local stdio connector. PostgreSQL has 30 ERP tables plus 13 interface tables. On top of that, `main` already has the common response/exception layer and Swagger (#16). `governance/`, `dashboard/` and the Zig CLI remain scaffolds. Actual LLM execution and approval/write adapters are future work; see `docs/08_interface_overview.md` §13. What remains in Phase 4, and every Phase after it, lives on the project board rather than only in this file. All business documentation is written in Korean.
+**Current status**: Phase 4 is in progress. The Spring Boot backend implements Case intake, inventory lookup, event dispatch and Run scheduling; access control uses local role headers for humans and a static bearer token for the worker runner (PoC/local only; real identity provider is #21·#22). `mcp-server/` provides a local stdio connector. Planning services load reconciled ERP snapshots, calculate historical demand/BOM/supplier candidates, and persist immutable scoped plan versions. Case intake queues Runs; leased execution APIs and a Node runner coordinate scoped agents, with a minimal Zig CLI and tested Codex Docker image. Live model execution remains pending. PostgreSQL has 30 ERP tables plus 13 interface, nine planning, one request-idempotency, one purchase-application and one follow-up table. Real tenant/client login validation remains separate from local tests. `governance/` and `dashboard/` remain scaffolds. The backend purchasing proposal/decision/apply path is implemented with generated jOOQ queries. Human Case overview/search, conversation decision tools and scoped Attention answers are implemented. Server-managed receipt follow-up preserves production/stock review responsibility after purchasing. Actual model execution and other write adapters remain pending; see `docs/08_interface_overview.md` §13, `docs/12_replenishment_calculation.md` and `docs/13_execution_and_plan_api.md`, `docs/14_cli_and_runtime.md`. What remains in Phase 4, and every Phase after it, lives on the project board rather than only in this file. All business documentation is written in Korean.
 
 ## Commands
 
-Use Java 21 and PostgreSQL 18. For the backend, create an empty DB and configure `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` locally; Flyway applies V1–V17, including the required Orchestrator/channel bootstrap. Use a separate disposable DB for integration tests.
+Use Java 21 and PostgreSQL 18. For the backend, create an empty DB and configure `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` and `MULINO_WORKER_TOKEN` locally; Flyway applies V1–V25, including Orchestrator/role bootstrap, external identities, planning data, leases/idempotency latest planning-attempt state and purchasing approval/application contracts plus versioned human Attention answers and server-managed replenishment follow-ups. Compilation generates jOOQ types from a disposable PostgreSQL 18 Docker container; Docker is therefore required for a clean backend build. Use a separate disposable DB for integration tests. The planning fixture must be loaded into an empty disposable business database before adding demo login identities; see `database/seed/replenishment_demo_README.md`.
 
 ```bash
 cd backend
@@ -38,17 +38,25 @@ psql -d mulino_coreano -f database/ddl/06_audit_immutability.sql
 psql -d mulino_coreano -f database/ddl/07_case_management.sql
 psql -d mulino_coreano -f database/ddl/08_case_indexes.sql
 psql -d mulino_coreano -f database/ddl/09_case_fks.sql
+psql -d mulino_coreano -f database/ddl/10_users_without_password.sql
+psql -d mulino_coreano -f database/ddl/11_planning_data.sql
+psql -d mulino_coreano -f database/ddl/12_queued_run_status.sql
+psql -d mulino_coreano -f database/ddl/13_execution_and_idempotency.sql
+psql -d mulino_coreano -f database/ddl/14_planning_attempt_marker.sql
+psql -d mulino_coreano -f database/ddl/15_purchase_approval.sql
+psql -d mulino_coreano -f database/ddl/16_attention_answer.sql
+psql -d mulino_coreano -f database/ddl/17_replenishment_followup.sql
 psql -d mulino_coreano -f database/seed/interface.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```
 
-**Planned stack** (new code follows this baseline): Backend is Spring Boot 4.1.x + Java 21 + Gradle exposing a REST API. Agents are Claude Code or Codex sessions (Cowork) driven by per-role skills; the planned agent tool surface is a single Zig CLI (`mulino`) calling the REST API. Dashboard is React 19 + Vite. There is no A2A protocol — the runtime's native subagent dispatch (Claude Code or Codex) replaces it. The implemented `mcp-server/` is a local stdio interface connector using the same REST API; remote HTTP transport and the Zig CLI remain future work.
+**Planned stack** (new code follows this baseline): Backend is Spring Boot 4.1.x + Java 21 + Gradle exposing a REST API. Agents are Claude Code or Codex sessions (Cowork) driven by per-role skills; the planned agent tool surface is a single Zig CLI (`mulino`) calling the REST API. Dashboard is React 19 + Vite. There is no A2A protocol — the runtime's native subagent dispatch (Claude Code or Codex) replaces it. The implemented `mcp-server/` provides local stdio using the same REST API (PoC role-header auth); remote HTTP transport is deferred to #22. The Zig CLI implements scoped Case/plan/work/material/PO reads and purchase proposals; human conversation approval tools are implemented, while live client/model acceptance remains pending.
 
 ## Architecture (4 layers = directory mapping)
 
 | Layer | Directory | Role |
 |---|---|---|
-| L0 | `database/`, `backend/` | PostgreSQL 18 (30 ERP + 13 interface tables) + Spring Boot REST API (single entry point for CLI and dashboard) |
+| L0 | `database/`, `backend/` | PostgreSQL 18 (30 ERP + 13 interface + 9 planning + 1 idempotency + 1 purchase application + 1 follow-up tables) + Spring Boot REST API (single entry point for CLI and dashboard) |
 | L1 | `governance/` | Intercept action-bearing API calls → approve / block / hold + audit log. **Reads pass through; only writes are gated** |
 | L2 | `agents/` | `cli/` (Zig `mulino` binary) + `skills/` (orchestrator / supply-chain / procurement / qc). Claude Code and Codex are both supported agent runtimes; the orchestrator dispatches role subagents. See `agents/AGENTS.md` |
 | L3 | `dashboard/` | Natural-language query → Intent Parsing → chart generation |
@@ -97,6 +105,8 @@ Carrying out an issue is the `backlog` skill; changing what the goals are is the
 - Commit message prefixes: `feat` | `chore` | `fix` | `docs` (e.g. `feat(migration): create migration files`)
 
 ## Conventions
+- Business-table queries use jOOQ generated tables/columns/enums. Keep SQL access in repositories and transaction/business decisions in services. Do not concatenate request values into SQL. The fixed transaction-isolation SHOW query remains infrastructure-only; do not add another ORM or duplicate hand-maintained schema models. CaseIntakeService owns goal intake; InterfaceQueries owns read presentation, and their repositories own persistence.
+- `./gradlew generateJooq` applies Flyway migrations in a fresh PostgreSQL 18 Docker container and writes only `backend/build/generated/sources/jooq`. Never generate against a production/application database or commit generated files. `compileJava` runs generation when inputs change. Keep jOOQ schema rendering disabled so the connection search path remains authoritative for isolated tests.
 - The issue/PR label scheme is in `docs/06_labels.md` (category + `L0-db`~`L3-dashboard` layer labels)
 - Never commit secrets (`application-local.yml`, `.env`) — already in `.gitignore`
 - On schema changes, keep `docs/02_flow.md` consistent with the ERD (Phase 1 required "flow diagram–ERD 100% consistency" as an acceptance criterion)

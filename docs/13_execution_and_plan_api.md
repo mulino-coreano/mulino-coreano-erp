@@ -1,0 +1,157 @@
+# 계획 저장과 Run 실행 연결
+
+계산 결과를 불변 계획 버전으로 저장하고, Case·Work Item에 묶인 실행 권한으로 업무를 처리하는 서버 경로와 Node 실행기를 구현했다. 구매 제안·MANAGER 결정·발주 적용 REST 경로도 연결했다. 최소 Zig CLI와 Codex 컨테이너 이미지는 [CLI·런타임 안내](14_cli_and_runtime.md)를 따른다. 실제 Codex 모델 업무 수행과 대화 승인 도구 연결은 아직 남아 있다. 실제 Auth0·대화 클라이언트 로그인 인수는 보류(#21·#22)다.
+
+## 사용자 목표 접수
+
+`POST /api/v1/cases`는 인증된 OPERATOR/MANAGER와 `Idempotency-Key`가 필요하다. 실제 요청자를 `opened_by_user_id`와 참여자에 기록하고 초기 Orchestrator Work Item과 QUEUED Run을 같은 트랜잭션으로 만든다. 초기 실행 예약 실패 시 접수 전체를 롤백한다.
+
+선택 입력 `replenishment`는 `productSkus`, `warehouseId`, `targetDate`를 받는다. 창고를 생략하면 계획 정책이 등록된 창고가 정확히 하나일 때만 선택한다. SKU는 활성 완제품 ID로 해소하고 목표일은 최초 접수 시 고정한다. 상대적인 잔여 일수를 Case의 영구 목표로 저장하지 않는다.
+
+동일한 키·입력은 원래 응답을 반환한다. 다른 입력에 같은 키를 사용하면 409다. 새 키라도 활성 계획 Case의 목표·창고·품목·마감일이 같으면 기존 Case에 연결하고 `reused=true`를 반환한다. 다른 목표는 기존 업무 검토가 필요하므로 409로 구분한다. 창고 연결은 계획 저장 경로와 공통 잠금을 사용한다.
+
+MCP `create_case`는 키를 생성하거나 호출자가 준 `requestKey`를 유지하며, 실패 응답에도 유효한 키를 반환한다. 자동 재시도는 하지 않는다. 업무가 예약되었다는 사실과 실제 모델이 실행 중이라는 사실을 구분한다.
+
+## 대화 조회와 일반 답변
+
+`GET /cases`는 `status`, `q`(제목·목표·참조의 문자 그대로 검색), `productSku`를 조합한다. 기존 Case 필드에 요약과 다음 행동을 더하고 최대 100건을 정해진 순서로 반환한다. `GET /cases/{ref}/overview`는 인간·에이전트 담당, 모든 활성 대기, Attention 버전, 계획·승인·발주 참조, 근거·주장·결정과 남은 의무를 함께 조회한다. 이벤트 이력만 100건으로 제한하고 `totalCount`/`truncated`를 표시한다. 조회가 Case나 Run을 만들지는 않는다.
+
+MCP에는 `get_case`, `get_plan`, `get_approval`, `get_purchase_order`, `decide_purchase`, `answer_attention`을 추가했다. 읽기는 `erp:read`, 일반 답변은 `work:write`, 구매 결정은 `procurement:decide`를 사용한다. 구매 내용·버전·hash에 대한 인간의 명시적 선택을 요구하며 도구 정의만으로 실제 클라이언트의 확인 절차를 증명하지 않는다.
+
+`POST /attention/{id}/answer`는 활성 OPERATOR/MANAGER와 멱등 키, `answer`, `expectedVersion`, `scope`가 필요하다. 범위는 THIS_ACTION/THIS_CASE뿐이다. V24는 질문을 포함한 행 수정마다 버전을 증가시켜 오래된 답변을 거부한다. 구매에 연결됐거나 AUTHORITY_REQUIRED인 요청은 이 경로로 답할 수 없다.
+
+답변·인간 결정·참여자·이벤트와 필요한 실행 예약을 함께 저장한다. READ COMMITTED에서 Work Item → Case → Attention을 잠근 뒤 버전과 미해결 조건을 읽는다. 해당 업무 또는 Case 전체의 다른 OPEN Attention, 활성 대기, 기존 Run이 없어야 BLOCKED 에이전트 업무를 재개한다. 대기를 삭제하거나 승인됐다고 해석하지 않는다. 재개할 수 없으면 실제 사유를 응답하고, 실행 예약 실패는 답변까지 롤백한다. 같은 사용자·키·본문은 원래 결과를 반환하며 다른 내용·오래된 버전은 409다.
+
+## 계획 버전 저장
+
+| 경로 | 권한과 동작 |
+|---|---|
+| `POST /api/v1/cases/{caseRef}/plans` | 해당 Case/Work Item에 묶인 SUPPLY_CHAIN Run capability, 멱등 키 필수 |
+| `GET /api/v1/plans/{planRef}` | 인간 ERP 조회 권한으로 저장된 계획·근거·hash 확인 |
+| `GET /api/v1/agent/plans/{planRef}` | 유효한 Run capability의 같은 Case에 속한 계획만 조회 |
+
+입력은 `warehouseId`, `productIds`, 선택적 `horizonDays`다. 기준일은 서버의 서울 시간대 `planningClock`에서 정한다. Case에 사람의 명시적 범위가 있으면 창고·제품 집합을 일치시켜야 하며, 생략한 예측 기간은 저장된 목표일까지의 잔여 일수로 계산한다. 에이전트가 명시한 기간이 마감일과 다르면 거부한다.
+
+저장은 반복 읽기 트랜잭션에서 수행한다. 공통 계획 guard, 창고 조정 잠금 순서로 획득한 뒤 현재 lease·Case·Work Item·배정 역할을 검증하고 실제 ERP snapshot과 계산을 저장한다. 마지막 권한 검증에서 lease가 만료되면 계획·Attention·멱등 응답을 포함한 전체 변경을 롤백한다. 경합 재시도는 기존 트랜잭션 밖에서 새 snapshot으로 수행한다.
+
+`replenishment_plans`에는 실제 source snapshot, 결과, 원본 업무, 버전, SHA-256을 저장한다. JSON 객체 키 순서와 소수 정밀도를 정규화하여 같은 데이터가 같은 hash를 갖도록 한다. 이전 계획의 수정·삭제·TRUNCATE는 허용하지 않는다.
+
+정합성이 깨져 snapshot을 만들 수 없으면 가짜 계획을 저장하지 않고 Attention만 남기며 409를 반환한다. 유효한 snapshot에서 이력 부족 등 계산이 불가능하면 NEEDS_ATTENTION 계획으로 저장한다. 오류 응답의 재생도 중복 Attention을 만들지 않는다.
+
+## 최신 계산 결과와 업무 완료
+
+V22는 Work Item에 서버 소유 `planning_attempt_sequence`, `latest_planning_outcome`, `latest_planning_plan_id`를 추가한다. 새 계산 시도만 이 값을 갱신하며 과거 멱등 응답의 재생은 갱신하지 않는다. 계획 참조는 같은 Case와 원본 Work Item이어야 한다.
+
+따라서 READY 버전 뒤에 계획을 만들지 못한 최신 실패가 있어도 예전 READY로 DONE을 선언할 수 없다. SUPPLY_CHAIN 완료는 최신 시도가 READY이고 같은 업무의 최신 계획을 가리킬 때만 가능하다. 에이전트가 전달한 metadata나 과거의 미검증 계획은 완료 근거로 사용하지 않는다.
+
+Procurement 완료는 실제 발주와 불변 승인 내용을 비교하거나 서버가 구매 불필요를 검증한 경우에만 허용한다. QC 완료는 아직 허용하지 않는다. Orchestrator의 종료도 명시적 후속 책임 없이 허용하지 않으며, 어떤 Run 종료도 상위 품절 방지 Case를 자동 종결하지 않는다.
+
+## 실행 권한과 수명주기
+
+`RunExecutionService`는 실행 트랜잭션과 상태 전이 순서를 소유한다. 모델 대기 조건은 `RunWaitingPolicy`, 역할별 완료 근거는 `RunCompletionPolicy`가 같은 트랜잭션 안에서 검증한다. 완료 검증 뒤 구매 후속 책임을 저장하고 lease를 다시 확인한 다음 Run·업무 상태와 종료 이벤트를 반영한다. 정책 객체는 별도 트랜잭션이나 상태 변경을 시작하지 않는다.
+
+```mermaid
+flowchart LR
+    Intake[목표 접수 / 이벤트] --> Queued[QUEUED]
+    Queued --> Claim[실행기가 claim]
+    Claim --> Running[RUNNING / WI IN_PROGRESS]
+    Running --> Done[검증된 DONE]
+    Running --> Waiting[WAITING / Run 종료]
+    Waiting --> Event[조건 충족 이벤트]
+    Event --> Queued
+    Running --> Failure[FAILED 또는 ABORTED]
+    Failure --> Attention[BLOCKED / Attention]
+```
+
+- 내부 `claim`, `heartbeat`, `finish`, `retry`는 허용된 실행기 서비스 신원의 `worker:dispatch` 권한으로 제한한다(worker token, static bearer).
+- claim은 기존 대기·임대 만료를 재판정하고, 현재 담당과 Case 상태가 유효한 CODEX 작업을 가져온다. Work Item과 worker ID 각각에 활성 실행 하나만 허용한다.
+- 실행기 lease token과 모델 capability token을 분리하며 DB에는 hash만 저장한다. 모델은 인간 토큰이나 worker token을 받지 않는다.
+- 모델 capability는 Case·Work Item·현재 배정·lease에 묶이고, 변경 트랜잭션 안에서 다시 잠금·검증한다. 인간 신원을 agent 권한으로 대신 사용할 수 없다.
+- `context_snapshot`은 예약 당시 기록으로 보존한다. claim 시 현재 Case와 관련 ERP 사실을 다시 구성해 별도 `execution_context`에 기록한다. 이전 계획 source snapshot은 덮어쓰지 않는다.
+- 컨텍스트 재구성이 실패해 이전 snapshot을 `stale`로 보관할 때도 소수와 큰 정수를 보존한다. 실패 정보만 추가하며 기존 수량을 부동소수점으로 반올림하지 않는다.
+- heartbeat는 15초, lease는 60초, 실행 상한은 600초다. 임대 유실은 최대 한 번 새 Run으로 재예약한다. 반복 실패·기한 초과·명시적 실패는 BLOCKED와 Attention으로 남긴다.
+- Work Item과 Run의 종료, 대기 저장, 후속 이벤트는 원자적으로 처리한다. CLI가 먼저 업무를 종료한 뒤 프로세스가 실패해도 원래 완료 receipt를 덮어쓰지 않는다.
+- 일반 agent 대기 API는 DEPENDENCY_DONE과 SCHEDULED_TIME을 지원하며 최대 16개다. 충돌하는 alias와 잘못된 시각은 거부한다. APPROVAL 대기는 구매 제안 트랜잭션의 서버 전용 경로만 만들 수 있다.
+
+## 구매 제안·결정·조회
+
+`GET /api/v1/approvals/{id}`는 승인안에 연결된 원래 계획의 `planEvidence`와 해당 승인 Attention의 `noActionConsequence`를 반환한다. 근거에는 계획 버전·기준 시각·목표일·출처/계획 해시, 저장된 계산 결과·공급·BOM·정책·출처 참조가 포함된다. 현재 ERP나 더 최신 계획으로 바꾸어 계산하지 않으며 제안 본문·버전·해시와 결정 권한은 그대로다. MCP는 수요·자재 순소요·공급사 비교, 당시 재고와 예상 공급, 제외 사유·경고·미조치 영향을 구분해 표시한다. 저장 당시 자료와 미래 입고는 현재 재고 또는 목표 달성의 증거가 아니다. 값이 없으면 미제공으로 표시한다.
+
+| API | 책임 |
+|---|---|
+| `POST /api/v1/plans/{ref}/purchase-proposal` | 현재 Procurement capability와 멱등 키로 최신 계획을 재검증하고 불변 제안·Attention·승인 대기 저장. 본문은 `{}`이며 발주 행을 입력받지 않는다 |
+| `GET /api/v1/approvals/{id}` | `erp:read`로 구매 내용·요청자·제안 역할·버전/hash·결정·생성 발주 ID 조회 |
+| `POST /api/v1/approvals/{id}/decision` | 활성 MANAGER 및 `procurement:decide`. APPROVE/BLOCK, expectedVersion, proposalHash, reason과 멱등 키 필요 |
+| `GET /api/v1/purchase-orders/{id}` | 실제 기본/구매 단위 수량·가격·납기와 계획·승인·적용 연결 조회 |
+| `GET /api/v1/agent/purchase-orders/{id}` | 살아 있는 Run의 Case에서 적용된 발주 또는 최신 계획의 발주 상세 근거에 연결된 발주 조회 |
+| `GET /api/v1/agent/materials/{id}` | 최신 Case 계획에 포함된 자재의 현재 마스터·공급·공급 조건·인증을 일관된 snapshot으로 조회 |
+
+Agent 조회는 반복 읽기 트랜잭션에서 capability를 잠금·검증하고 응답 구성 후 다시 확인한다. 자재 응답의 `caseRef`, `planRef`, `warehouseId`, `asOf`는 범위와 조회 기준을 식별하며 `material`, `supply`, `supplierTerms`, `certificates`는 해당 자재와 관련 공급처로 제한한다. 현재 데이터가 일관되지 않으면 409이며 읽기로 Attention이나 계획을 만들지 않는다. 범위 밖 자재·발주는 404다. 기존 계획의 근거를 현재값으로 덮어쓰지 않는다.
+
+승인 전에는 발주가 없다. 승인과 발주·결정·적용·감사·이벤트가 함께 커밋되며 중간 실패는 전부 롤백한다. 동일 요청은 기존 결과를 재생한다. 변경된 입력은 원 제안을 EXPIRED로 기록한 뒤 409를 반환한다. 반려·만료가 같은 제안의 자동 재요청을 만들지 않는다. 이 REST 구현이 실제 대화 클라이언트에서 인간 확인을 받았다는 증거는 아니다.
+
+계획 저장과 구매 판단은 `PlanningDataGuard`를 공유한다. 단순 행 잠금만으로는 대기 중인 REPEATABLE READ 트랜잭션의 snapshot이 갱신되지 않으므로 guard의 revision도 증가시킨다. 앞선 계획 저장을 기다렸던 요청은 SQLSTATE 40001에서 전체 트랜잭션을 다시 시작하고 새 계획 버전을 확인한다. 이 revision은 조정용 값이며 업무 수량이나 계획 내용은 아니다.
+
+제안의 `executionResult`는 서버가 이미 저장한 상태다. 승인 대기는 `outcome=WAITING`, 빈 `waitingConditions`, `resultRef=APPROVAL-<id>`로 표현한다. 실행기는 원래 terminal receipt를 확인하며, 아직 실행 중인 Run에 이런 참조만 보내도 서버가 새 대기를 허용하지 않는다.
+
+## 발주 이후의 후속 책임
+
+Procurement DONE의 검증과 같은 트랜잭션에서 V25의 후속 책임을 저장하고 Case를 WAITING으로 남긴다. 실패하면 DONE도 롤백한다. 담당 ORCHESTRATOR는 조정 책임이며, 실제 생산이나 입고를 수행했다고 뜻하지 않는다. 부모는 typed 연결의 미완료 책임을 확인한 뒤 자기 실행을 끝낼 수 있다.
+
+후속 업무는 일반 모델 Run으로 실행하지 않는다. generic dispatch 후보, Run 생성·claim, 일반 답변의 재개 경로에서 typed 후속 업무를 구분한다. 답변은 기록하지만 `SERVER_MANAGED` 업무를 새 Run으로 예약하지 않는다. metadata만으로 후속 권한이나 부모 완료 근거를 만들 수 없다.
+
+기한은 원 application의 실제 미충족 발주 상세에서 가져온다. 날짜만 있는 납기는 한국 시간 다음 날 00:00을 확인 시점으로 삼는다. 자체 TIMESTAMPTZ와 전용 SCHEDULED_TIME을 사용하며 레거시 Work Item due_at으로 판정하지 않는다. 아직 기한이 남은 상세는 먼저 미입고로 처리하지 않는다.
+
+worker claim의 조건부 sweep과 명시적 dispatch가 실제 입고·LOT을 다시 읽는다. 부분·HOLD·BLOCKED·자재/공급처/창고/수량 불일치는 정상 사용 가능 입고로 보지 않는다. 미입고가 남으면 지난 기한의 대기를 유지하여 늦은 입고를 다시 확인하고, 충족되면 다음 상세 기한으로 이동한다. 변하지 않은 관찰은 새 이벤트나 Attention을 만들지 않는다. 명시적 수동 dispatch 자체의 감사 이벤트는 유지한다.
+
+관찰 상태는 AWAITING_RECEIPT, RECEIPT_REVIEW_REQUIRED, PRODUCTION_REVIEW_REQUIRED, STOCK_REVIEW_REQUIRED다. 모든 입고가 확인되면 입고 타이머만 종료한다. 구매 불필요인 경우에도 실제 계획의 생산 필요 여부를 구분해 생산/재고 확인 책임을 남긴다. Attention은 후속 기록당 한 번 연결하며 이미 받은 답변을 덮어쓰거나 반복 요청하지 않는다.
+
+Case overview와 실행 맥락의 `followups`에는 담당·원 계획·원 구매 업무·부모·실제 기한·관찰 시각·입고 근거·주의 요청·남은 의무를 보여준다. 이 기능은 ERP 입고/생산 쓰기나 Case 자동 종결 API가 아니다.
+
+## 데이터 접근과 코드 생성
+
+구매 모듈은 제안·결정·검증 서비스와 데이터 접근을 분리했다. 쿼리는 jOOQ 3.21.7의 생성된 테이블·컬럼·enum으로 작성하며 JPA는 사용하지 않는다. 값은 DSL에 전달해 바인딩하고, 요청 값을 SQL 문자열에 이어 붙이지 않는다. 업무 테이블의 조회·저장은 생성된 타입을 쓰는 저장소에 모았다. 트랜잭션 격리 수준을 확인하는 고정 `SHOW transaction_isolation`은 인프라 검사로 남긴다.
+
+기존 `InterfaceService`도 접수와 조회로 분리했다. `CaseIntakeService`는 인간 권한·목표 범위·기존 Case 재사용·초기 실행 예약을 담당하고, `CaseIntakeRepository`가 해당 저장과 잠금을 수행한다. `InterfaceQueries`는 조회 응답·반환 개수 정책, `InterfaceReadRepository`는 생성된 타입을 사용한 조회만 담당한다. Run 예약은 기존 `RunService`로 직접 연결한다. API의 재고 검색·Case 접수·모니터 의미는 유지한다.
+
+외부 신원 조회와 멱등 응답 저장도 생성된 타입을 사용한다. 신원은 여전히 매 요청 `(issuer, subject)`와 활성 ERP 사용자를 조회하며 캐시로 역할 변경을 늦추지 않는다. 멱등 키의 advisory lock과 응답 저장은 호출자의 기존 트랜잭션에 참여하고, 충돌·롤백·재생 규칙을 유지한다.
+
+Run 임대의 조회·잠금은 `RunLeaseRepository`가 생성된 타입으로 수행한다. capability 인증은 저장소 조회 뒤 현재 배정·Case·역할·만료를 판정한다. Work Item → Run → Case → Agent 잠금 순서, DB 시계 기준 lease/600초 제한과 종료 후 권한 폐기는 유지한다.
+
+Run 예약의 조회·저장·savepoint는 `RunSchedulingRepository`로 분리했다. `RunService`는 요청·배정 검증과 컨텍스트 재구성·실패 처리를 담당한다. 활성 Run의 부분 유일 인덱스와 충돌 무시 조건, 재구성 시도별 savepoint, 이전 근거의 `stale` 표시는 유지한다.
+
+실행 claim·heartbeat·종료·복구의 DB 접근은 `RunExecutionRepository`가 생성된 jOOQ 타입으로 수행한다. `RunExecutionService`는 트랜잭션, 역할별 완료 조건, 승인 대기와 재시도 정책을 담당한다. claim 후보의 Work Item 잠금과 `SKIP LOCKED`, 맥락 복원 savepoint, DB 시계의 60초 lease·600초 실행 상한을 유지한다.
+
+계획 조회는 `PlanQueryRepository`의 생성된 jOOQ 타입을 사용한다. Agent 조회는 같은 Case에 속한 계획인지 확인하고, 결과 구성 후 lease를 다시 확인하여 조회 중 실행 권한이 만료된 경우 근거를 반환하지 않는다.
+
+`ContextSnapshotRepository`는 생성된 jOOQ 테이블과 JSON 표현식으로 업무·참여자·근거·주장·결정을 한 SQL 문에서 읽는다. `ContextSnapshotService`는 이 결과를 숫자 정밀도를 보존하는 맥락 Map으로 복원한다. 배열 순서·빈 목록·명시적 null과 기존 필드 이름을 유지하며 예약 맥락을 현재값 캐시로 재사용하지 않는다.
+
+계획 저장은 `PlanPersistenceRepository`, 실제 ERP 근거 수집은 `PlanningSnapshotRepository`가 담당한다. 계획 서비스는 계산·검증·멱등 처리·재시도를 유지한다. source guard와 창고 조정의 잠금 순서, 최신 시점 확보를 위한 창고 행 갱신, 같은 Case·업무의 계산 시도 기록을 보존한다. 근거의 enum·배열·수량·날짜·시간 표현도 기존 저장 형식과 대조한다.
+
+`AgentWorkRepository`는 하위 업무와 참여자 저장, `ExecutionContextRepository`는 Case 범위·최신 계획·최근 구매 상태 조회를 담당한다. 서비스는 서버 소유 메타데이터, 역할 범위, 실행 예약 실패 시 롤백을 검증한다. 최근 구매 10건의 순서와 미반영 승인 표시, 큰 ID와 소수 정밀도를 유지한다.
+
+`DispatcherRepository`는 이벤트 저장·재생 확인, 대기 조건의 잠금·갱신, 근거 조회를 담당한다. `DispatcherService`는 이벤트 해석·범위·승인 판단과 재개 여부를 결정한다. 대기 조건과 업무의 잠금 순서, 조건부 상태 갱신, 같은 이벤트의 충돌 판정은 유지한다.
+
+`backend`에서 `./gradlew generateJooq`를 실행하면 Testcontainers가 임시 PostgreSQL 18.6을 시작하고 Flyway 전체 마이그레이션을 적용한 뒤 Java 타입을 만든다. Docker가 필요하며 실제 애플리케이션 DB 설정이나 자격증명을 사용하지 않는다. 생성 코드는 `build/generated/sources/jooq`에만 있고 커밋하지 않는다. `compileJava`가 이 작업에 의존하며, 마이그레이션·생성기 변경 시 다시 생성한다. 변경이 없으면 Gradle의 최신 상태 검사를 사용한다.
+
+Spring이 제공하는 DSLContext로 기존 JDBC 트랜잭션에 참여한다. 쿼리의 스키마는 연결의 search_path를 따르므로 테스트 전용 스키마도 격리된다. 타입 생성은 컬럼·값의 타입 오류를 더 일찍 드러내며, 업무 조건과 동시성의 정확성은 별도 통합 테스트로 검증한다. [jOOQ 코드 생성](https://www.jooq.org/doc/latest/manual/code-generation/)과 [Spring 통합](https://docs.spring.io/spring-boot/reference/data/sql.html)을 따른다.
+
+claim은 비밀값을 한 번 발급하는 제어 프로토콜이므로 원래 토큰 응답을 저장·재생하지 않는다. 같은 worker에 활성 lease가 있으면 409로 거부한다. 응답 유실 시 실행기는 즉시 다른 작업을 가져가지 않고 최대 60초 기다린다. 일반 업무 쓰기의 멱등 처리와 이 발급 예외를 구분한다. 기존 수동 dispatch는 호출 사실을 기록하는 관리 트리거이며 Event 인입은 별도의 외부 이벤트 키를 사용한다.
+
+## Node 실행기
+
+[실행기 README](../agents/runner/README.md)의 환경 설정과 이미지 계약을 따른다. 코디네이터는 worker 토큰(static bearer)을 사용하고 한 번에 하나의 작업을 실행한다. Docker 자식에는 scoped capability와 CLI용 `MULINO_API_URL`만 전달하며, 사용자 홈이나 Docker socket을 마운트하지 않는다. 전용 Codex 로그인 볼륨과 읽기 전용 이미지·임시 작업 디렉터리를 사용한다.
+
+모델의 잘못된 결과나 서버의 완료 검증 거부는 lease를 확인한 후 새 요청 키로 FAILED 전환을 한 번 시도한다. stale lease에는 추가 쓰기를 하지 않고, 이미 확정된 결과가 있으면 그것을 유지한다. 출력 크기를 제한하고 토큰·시크릿을 가린다.
+
+자동 시험은 실제 Node 자식 프로세스와 모의 백엔드를 사용한다. 추가로 고정 Codex 버전의 실제 Docker 이미지에서 Linux CLI·권한·파일 제한·취소를 시험했으며 모델 호출은 수행하지 않았다. 역할 지침과 실제 claim 맥락의 크기·숫자 정밀도는 [CLI·런타임 안내](14_cli_and_runtime.md)를 따른다.
+
+## 검증과 마이그레이션
+
+- PostgreSQL 18의 전체 Backend `test bootJar`: 532개 통과 (2026-09-12), 실패·오류·skip 0. 역할별 Case 참여자·예약 맥락 저장과 JSONB 맥락의 큰 ID·고정밀 소수 보존 회귀를 포함한다. heartbeat의 전체 실행 기한 제한과 600초 초과 시 자동 재시도 금지도 검증한다. 저장소 전환 후 근거 타입·격리 수준·최근 구매 순서·과거 NULL 이벤트 재호출의 충돌 처리도 포함한다.
+- 별도 `demoE2eTest` 2개 통과 (2026-09-12): 실제 HTTP·MCP·실행기·CLI·PostgreSQL 경로에서 승인 대기 중 Spring 재시작, 가격 변경 후 새 승인, 중복 적용 방지를 검증했다. 인증 발급과 모델 판단은 시험용이며 실제 계정 인수를 대체하지 않는다. 실행 방법은 [데모 실행 안내](15_demo_runbook.md)를 따른다.
+- Node 실행기 48개, MCP 28개 테스트 통과. 실행기의 업무 수량·큰 정수 전달 정밀도와 고정 역할·설정도 포함한다.
+- 후속 책임의 생성·기한·입고·중복·부모 재개·일반 경로 우회 차단을 포함한 전체 검사다. MCP 28개와 readiness 17개 검사를 별도로 확인했다.
+- V20은 QUEUED enum을 먼저 추가하고 V21에서 lease·멱등 데이터와 인덱스를 사용한다. V22는 최신 계산 결과의 원본 업무 연결을 강제한다.
+- 기존 RUNNING 예약 기록은 ABORTED로 정리하고 원래 snapshot을 보존한다. 이미 종료되었거나 실제 대기 중인 의무를 강제로 깨우지 않는다.
+- 독립 DDL 00~17·seed와 Flyway 경로를 별도 PostgreSQL 18 DB에서 검증했다. 실제 Codex 모델 실행, 대화 승인 연결과 전체 시연 인수는 아직 남아 있다. 외부 신원 제공자(Auth0 등)·ChatGPT·Codex 로그인 인수는 보류(#21·#22)다.

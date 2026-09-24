@@ -566,8 +566,124 @@ erDiagram
 - Work Item 담당은 에이전트와 사용자 중 최대 한 명이다. Case 참여자는 같은 actor를 중복 등록하지 않는다.
 - Event, Run, Decision, Attention의 Work Item 참조는 해당 Case 소속이어야 한다. 복합 FK가 `(work_item_id, case_id)`를 검증한다.
 - Event는 UPDATE/DELETE/TRUNCATE 불가이며 `(event_type, external_ref)`가 중복 입력을 차단한다. 정정은 새 Event로 기록한다.
-- Work Item별 `RUNNING` Run은 최대 하나다. `trigger_event_id`와 `resolved_by_event_id`가 실행·대기 해소의 근거를 연결한다.
+- Work Item별 `QUEUED`/`RUNNING` 활성 Run은 합쳐 최대 하나다. worker별 RUNNING lease도 최대 하나다. `trigger_event_id`와 `resolved_by_event_id`가 실행·대기 해소의 근거를 연결한다.
 - Claim의 상태와 지지/반증 링크, 인간 결정의 범위를 실행 컨텍스트에 보존한다. 증거 참조가 있다는 사실만으로 주장을 검증 완료로 취급하지 않는다.
 - 기존 발주·입고·리콜 승인 매트릭스와 양방향 LOT 추적 경로는 그대로 유지한다.
 
 추가 ENUM 13종은 `channel_type`, `actor_type`, `intent_type`, `case_status`, `case_priority`, `work_item_status`, `waiting_condition_type`, `waiting_status`, `run_status`, `claim_status`, `attention_reason_type`, `decision_scope`, `attention_request_status`이다. 전체 타입 정의는 `database/ddl/00_types.sql`을 따른다.
+
+## 7. 외부 로그인 신원
+
+`database/ddl/10_users_without_password.sql`과 Flyway V18은 `users.password`에 NULL을 허용하도록 ALTER한다. PoC 로컬 신원 모델은 비밀번호 없이 `local-{role}@mulino.local` 형태로 사용자를 upsert한다. `external_identities` 테이블은 삭제됐으며, 외부 신원 제공자 연결은 #21·#22에서 추가한다. ERP 30개·인터페이스 13개 테이블의 거래 및 추적 관계는 유지한다.
+
+- `(issuer, subject)` 조합은 유일하며 한 외부 신원을 여러 ERP 사용자로 중복 연결할 수 없다. 위 UK는 두 컬럼의 복합 제약이다.
+- `user_id`는 실제 사용자를 참조하고 연결된 사용자 삭제를 제한한다. 로그인 시 `users.is_active`와 현재 역할을 확인한다.
+- `users.password`는 외부 로그인 계정에 대해 NULL을 허용한다. 이 변경은 로컬 비밀번호 로그인 기능을 추가하지 않는다.
+- 이메일 자동 연결, 첫 로그인 자동 사용자 생성, 토큰의 임의 role 문자열에 의한 승격은 지원하지 않는다.
+
+## 8. 재보충 계획 데이터
+
+Flyway V19와 `database/ddl/11_planning_data.sql`은 계획 관련 테이블 9개를 추가한다. 기존 구매·입고·LOT·생산 투입·재고·수주·출고 수량과 가격은 NUMERIC(18,6)으로 확장하며 기존 FK와 수량 제약을 유지하고 NaN을 거부한다.
+
+```mermaid
+erDiagram
+    products ||--o{ bom_versions : product_id
+    bom_versions ||--o{ bom_components : bom_version_id
+    products o|--o{ bom_components : child_product_id
+    raw_materials o|--o{ bom_components : raw_material_id
+    suppliers ||--o{ supplier_material_terms : supplier_id
+    raw_materials ||--o{ supplier_material_terms : raw_material_id
+    measurement_units ||--o{ supplier_material_terms : purchase_unit
+    warehouses o|--o{ production_lots : warehouse_id
+    production_records ||--o{ production_product_inputs : production_record_id
+    production_lots ||--o{ production_product_inputs : source_production_lot_id
+    warehouses ||--o| planning_policies : warehouse_id
+    warehouses ||--o{ planning_cases : warehouse_id
+    cases ||--o| planning_cases : case_id
+    planning_cases ||--o{ replenishment_plans : "case_id + warehouse_id"
+```
+
+| 테이블 | 저장 내용 / 주요 제약 |
+|---|---|
+| `measurement_units` | 단위·차원·기준 환산율. CASE와 EA는 다른 차원 |
+| `planning_data_guard` | 동시 교차 행 검증을 직렬화하는 내부 단일 행 revision. 업무 엔터티 FK 없음 |
+| `bom_versions` | 제품별 버전·배치 산출량·생산 리드타임·유효기간. 활성 기간 겹침 및 같은 날짜의 순환 금지 |
+| `bom_components` | 배치당 성분 기본단위 수량. 하위 제품 또는 원재료 중 하나만 참조 |
+| `supplier_material_terms` | 자재별 복수 공급처 조건·단위·가격·MOQ·배수·납기·인증. 차원/환산율 일치 |
+| `production_product_inputs` | 생산 기록에서 소비한 반제품 LOT과 수량. 자기 LOT 투입·확인된 타 창고 투입 금지 |
+| `planning_policies` | 거점별 수집 시작일·기본 예측 기간·안전재고 일수 |
+| `planning_cases` | Case와 거점 연결·ACTIVE/CLOSED 상태. 거점당 ACTIVE 한 건 |
+| `replenishment_plans` | Case별 불변 버전·기준 시점·출처 snapshot·결과·hash. Case/거점 조합 검증, UPDATE/DELETE 금지 |
+
+`production_lots.warehouse_id`는 기존 생산 기록의 창고가 단일하게 확인될 때만 보정한다. 자료가 없거나 여러 창고로 해석되는 LOT은 NULL을 유지하고 계획 계산 시 해당 양수 LOT을 예외로 처리한다. 재고 위치를 추측해 보정하지 않는다.
+
+단위·BOM·공급 조건은 이후 계획 계산의 근거다. 이 데이터 추가는 실제 생산 투입 차감이나 발주 승인·적용 API의 완성을 의미하지 않는다. 상세 대사와 계산 규칙은 [계산 구현 안내](12_replenishment_calculation.md)를 따른다.
+
+## 9. 실행 임대와 계획 시도 상태
+
+Flyway V20~V22와 독립 DDL12~14가 실행·멱등·완료 근거를 확장한다. 새 테이블은 `request_idempotency` 하나이며 나머지는 기존 Run·Work Item·계획 관계의 확장이다.
+
+```mermaid
+erDiagram
+    runs o|--o| runs : retry_of_run_id
+    work_items o|--o{ replenishment_plans : "created_by_work_item_id + case_id"
+    replenishment_plans o|--o| work_items : "latest_planning_plan_id + case_id + work_item_id"
+```
+
+- `runs`: QUEUED와 RUNNING을 구분하고 lease 소유자·만료·토큰 hash·시도 횟수·재시도 원본·결과·실행 당시 context를 저장한다. 원래 `context_snapshot`은 보존한다. 모델 capability 원문과 실행기 lease token 원문은 저장하지 않는다.
+- `request_idempotency`: `(scope, request_key)`별 요청 hash와 응답을 저장한다. 업무 변경과 같은 트랜잭션에서 기록하며 다른 입력으로 키를 재사용하면 거부한다. token을 발급하는 claim 응답은 저장하지 않는다.
+- `replenishment_plans.created_by_work_item_id`: 계획을 만든 실제 업무와 같은 Case임을 복합 FK로 확인한다.
+- `work_items.planning_attempt_sequence`, `latest_planning_outcome`, `latest_planning_plan_id`: 최신 계산 시도의 서버 소유 상태다. DATA_ERROR는 계획 ID가 없고 READY/NEEDS_ATTENTION은 같은 Case·원본 업무의 계획을 참조해야 한다. 과거 응답 재생은 이 값을 되돌리지 않는다.
+
+마이그레이션은 기존 RUNNING 예약을 ABORTED로 정리하되 기록된 context와 기존 대기/종결 의무를 보존한다. 원본 업무가 없는 과거 계획을 임의의 업무 완료 근거로 승격하지 않는다. 자세한 API와 대기·복구 계약은 [실행 연결 안내](13_execution_and_plan_api.md)를 따른다.
+
+## 10. 구매 승인과 발주 적용
+
+V23/DDL15는 `purchase_applications`와 기존 승인·발주 테이블의 연결을 추가한다. 신규 구매 제안은 계획당 하나이며 payload·버전·hash·요청자·제안 agent를 변경할 수 없다. 최종 결정과 적용도 각각 하나만 저장한다.
+
+```mermaid
+erDiagram
+    cases ||--o{ governance_actions : case_id
+    work_items ||--o{ governance_actions : work_item_id
+    replenishment_plans ||--o| governance_actions : replenishment_plan_id
+    agents ||--o{ governance_actions : proposed_by_agent_id
+    governance_actions ||--o{ attention_requests : governance_action_id
+    governance_actions ||--o{ governance_decisions : governance_action_id
+    governance_actions ||--o| purchase_applications : governance_action_id
+    governance_decisions ||--o| purchase_applications : governance_decision_id
+    purchase_applications ||--o{ purchase_orders : purchase_application_id
+    warehouses ||--o{ purchase_orders : warehouse_id
+    supplier_material_terms ||--o{ purchase_order_items : supplier_material_term_id
+```
+
+- 연결된 제안·Attention·적용은 같은 Case/Work Item/계획을 참조한다. 최종 결정은 append-only이고 적용은 UPDATE·DELETE·TRUNCATE를 허용하지 않는다. 기존 미연결 다단계 승인 기록은 유지한다.
+- 발주 상세의 `quantity`/`received_quantity`는 기본 단위다. 구매 수량·구매 단가·구매/기본 단위·환산율·원 단위 금액·상세 납기·공급 조건을 별도 저장한다. 기존 행의 새 필드는 추측해서 채우지 않는다.
+- 기본 단가 `unit_price`만 NUMERIC(24,9)로 확장한다. 구매 수량·단가는 NUMERIC(18,6), `line_amount`는 NUMERIC(30,0)이다. 기본 수량/단가 환산은 정확히 일치해야 하며 원 단위 금액에만 HALF_UP을 적용한다.
+- 상세 납기를 가용 공급 계산에 우선 사용하고, 목적지가 다른 발주는 해당 창고의 공급으로 계산하지 않는다. 발주 적용과 기본 단위 입고·LOT 추적 관계를 유지한다.
+- `work_items.procurement_plan_id`/`procurement_outcome`은 서버 소유 완료 근거다. 일반 metadata를 완료 근거로 사용하지 않는다.
+- 계획 입력 테이블의 INSERT·UPDATE·DELETE·TRUNCATE는 공통 source guard를 먼저 획득한다. 승인 시 최신 입력을 비교하는 동안 새 입력 행이 끼어들지 않도록 직렬화한다.
+
+
+## 11. 일반 확인 요청의 답변 버전
+
+V24/DDL16은 `attention_requests.version`의 과거 NULL을 1로 채우고 NOT NULL을 적용한다. 성공한 UPDATE마다 기존 값에 1을 더하며 NULL·0·음수 입력은 먼저 거부한다. 질문 수정 후 예전 버전으로 제출한 답변을 구분하기 위한 값이다.
+
+일반 답변은 기존 `decisions`의 새 행과 `metadata.sourceAttentionId`, 인간 작성자·범위, `ATTENTION_ANSWER_RECORDED` 이벤트로 연결한다. 신규 테이블이나 LOT 추적 FK는 추가하지 않는다. 구매 연결 Attention 및 AUTHORITY_REQUIRED 요청은 일반 답변 API로 처리하지 않으며, 구매 결정·발주 적용의 기존 관계를 유지한다.
+
+
+## 12. 재보충 후속 책임
+
+V25/DDL17의 `replenishment_followups`는 ERP 거래를 복제하지 않고 검증된 계획·Procurement 업무·후속 조정 업무·원 발주 적용을 연결한다. 같은 Case의 복합 FK와 계획/업무/application 유일성, 신원 변경·삭제·TRUNCATE 금지로 책임의 중복이나 바꿔치기를 막는다.
+
+```mermaid
+erDiagram
+    cases ||--o{ replenishment_followups : case_id
+    replenishment_plans ||--o| replenishment_followups : replenishment_plan_id
+    work_items ||--o| replenishment_followups : source_work_item_id
+    work_items ||--o| replenishment_followups : work_item_id
+    work_items o|--o{ replenishment_followups : parent_work_item_id
+    purchase_applications o|--o| replenishment_followups : purchase_application_id
+    attention_requests o|--o| replenishment_followups : attention_request_id
+```
+
+후속 업무 담당은 ORCHESTRATOR이고 서버가 관찰한다. APPLIED에는 원 application을 연결하고 NO_PURCHASE_REQUIRED에는 application과 납기를 지어내지 않는다. `due_at`/`observed_at`은 TIMESTAMPTZ다. 실제 입고·LOT 관찰은 JSON과 hash로 보존하며 같은 관찰에 이벤트를 중복 생성하지 않는다. 한 번 연결한 Attention과 인간 답변은 유지한다. 입고 확인은 생산·재고 목표의 완료를 뜻하지 않는다.
