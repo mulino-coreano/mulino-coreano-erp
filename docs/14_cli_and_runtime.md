@@ -1,6 +1,6 @@
-# 역할 CLI와 Codex 실행 이미지
+# 역할 CLI와 런타임 에이전트 이미지
 
-현재 Zig CLI는 인증된 Case·계획·자재·발주 조회, 공급망 계획 계산, 구매 제안, Orchestrator의 후속 업무 생성과 현재 업무 전이를 제공한다. Docker 이미지에는 이 Linux 실행 파일과 Codex 0.154.0, 역할 지침, 결과 JSON 스키마를 넣었다. **인간 대화 도구와 서버 관리 후속 책임을 연결했다. 전용 Codex 로그인 볼륨으로 모델 연결을 시도했으나 워크스페이스 크레딧 부족으로 실제 모델 업무 수행 인수는 남아 있다.**
+현재 Zig CLI는 인증된 Case·계획·자재·발주 조회, 공급망 계획 계산, 구매 제안, Orchestrator의 후속 업무 생성과 현재 업무 전이를 제공한다. Docker 이미지에는 이 Linux 실행 파일과 Codex 0.154.0, Claude Code 2.1.282, 역할 지침, 결과 JSON 스키마를 넣었다. **인간 대화 도구와 서버 관리 후속 책임을 연결했다. MULINO_AGENT_RUNTIME 설정으로 CODEX와 CLAUDE를 선택할 수 있다. 2026-09-25 Claude 런타임으로 재보충 플로우 실제 인수를 수행했다. 발주 승인은 인간에게 보류했다. Codex 실제 업무 수행 인수는 크레딧 소진으로 미완료다.**
 
 ## 구현 범위
 
@@ -25,18 +25,36 @@ node agents/runner/scripts/build-image.mjs
 node agents/runner/scripts/smoke-image.mjs
 ```
 
-빌드 스크립트는 Docker 호스트 아키텍처에 맞는 정적 Linux 바이너리를 만들고, 임시 빌드 디렉터리에 허용한 파일만 복사한다. 저장소 전체·환경 파일·사용자 홈은 이미지에 전달하지 않는다. Node 기반 이미지 digest와 Codex 패키지 버전·무결성 lock을 고정하며 HTTPS 검증용 CA 인증서를 포함한다.
+빌드 스크립트는 Docker 호스트 아키텍처에 맞는 정적 Linux 바이너리를 만들고, 임시 빌드 디렉터리에 허용한 파일만 복사한다. 저장소 전체·환경 파일·사용자 홈은 이미지에 전달하지 않는다. Node 기반 이미지 digest와 Codex·Claude Code 패키지 버전·무결성 lock을 고정하며 HTTPS 검증용 CA 인증서를 포함한다.
 
-실제 실행에는 가동 중인 백엔드, `MULINO_WORKER_TOKEN` 설정, 전용 Codex 로그인 볼륨과 사용 가능한 모델 이름이 필요하다. 실제 Auth0·M2M 설정은 보류(#21·#22)다. 로그인은 사용자 계정의 별도 준비 단계다. 호스트의 기존 로그인 파일을 복사하지 않는다.
+실제 실행에는 가동 중인 백엔드, `MULINO_WORKER_TOKEN` 설정, 전용 로그인 볼륨과 사용 가능한 모델
+이름이 필요하다. 실제 Auth0·M2M 설정은 보류(#21·#22)다. 로그인은 사용자 계정의 별도 준비
+단계다. 호스트의 기존 로그인 파일을 복사하지 않는다.
+
+Codex 로그인:
 
 ```bash
 docker volume create mulino-codex-auth
 docker run --rm -it --user=10001:10001 \
   --mount type=volume,src=mulino-codex-auth,dst=/home/mulino/.codex \
-  mulino-codex-runtime:0.154.0 login --device-auth
+  mulino-agent-runtime:codex-0.154.0-claude-2.1.282 login --device-auth
 ```
 
-전용 볼륨의 로그인으로 모델 연결을 시도했으며 결과와 남은 인수 범위는 아래 검증 범위를 따른다. 실행기의 `.env.example`을 바탕으로 gitignored `.env`에 환경별 값을 설정한다. `MULINO_CODEX_MODEL`은 명시적으로 지정해야 실행기를 시작할 수 있다. `MULINO_RUNTIME_IMAGE`에는 방금 만든 이미지, `MULINO_CODEX_AUTH_VOLUME`에는 전용 볼륨을 지정한다.
+Claude Code 로그인:
+
+```bash
+docker volume create mulino-claude-auth
+docker run --rm -it --user=10001:10001 \
+  --mount type=volume,src=mulino-claude-auth,dst=/home/mulino/.claude \
+  --env CLAUDE_CONFIG_DIR=/home/mulino/.claude \
+  --entrypoint claude \
+  mulino-agent-runtime:codex-0.154.0-claude-2.1.282 login
+```
+
+실행기의 `.env.example`을 바탕으로 gitignored `.env`에 환경별 값을 설정한다.
+`MULINO_AGENT_RUNTIME`은 CLAUDE 또는 CODEX를 지정한다(기본값 CODEX). `MULINO_AGENT_MODEL`은
+명시적으로 지정해야 실행기를 시작할 수 있다. `MULINO_RUNTIME_IMAGE`에는 방금 만든 이미지,
+`MULINO_AUTH_VOLUME`에는 해당 런타임의 전용 볼륨을 지정한다.
 
 ```bash
 cd agents/runner
@@ -45,9 +63,22 @@ node --env-file=.env src/main.js
 
 ## 실행 권한과 데이터
 
-Docker의 읽기 전용 root filesystem, UID/GID 10001, 임시 `/work`·`/tmp`, Linux capability 제거, `no-new-privileges`, 자원 제한이 실행 경계다. 사용자 홈·저장소·Docker socket을 mount하지 않는다. 실제 컨테이너에서 중첩 bwrap이 namespace 권한 부족으로 실행되지 않아 Codex는 `--sandbox=danger-full-access`와 `approval_policy="never"`로 컨테이너 안에서 실행한다. 이 설정을 호스트에서 직접 쓰는 실행 방식은 제공하지 않는다. Docker를 privileged로 바꾸거나 호스트 kernel 설정을 완화하지 않았다.
+Docker의 읽기 전용 root filesystem, UID/GID 10001, 임시 `/work`·`/tmp`, Linux capability 제거, `no-new-privileges`, 자원 제한이 실행 경계다. 사용자 홈·저장소·Docker socket을 mount하지 않는다. 실제 컨테이너에서 중첩 bwrap이 namespace 권한 부족으로 실행되지 않아 Codex는 `--sandbox=danger-full-access`와 `approval_policy="never"`로 컨테이너 안에서 실행한다. Claude Code는 `--permission-mode dontAsk --allowedTools Bash(mulino:*) Read`로 실행한다. 이 설정을 호스트에서 직접 쓰는 실행 방식은 제공하지 않는다. Docker를 privileged로 바꾸거나 호스트 kernel 설정을 완화하지 않았다.
 
-실행기 worker 토큰, lease token은 컨테이너에 전달하지 않는다. CLI에는 현재 Run의 capability와 API 주소를 환경변수로 전달한다. Codex shell 환경도 필요한 이름만 허용한다. 사용자 설정·규칙·자동 AGENTS 문서는 읽지 않고, 역할 allowlist로 선택한 고정 지침과 결과 스키마를 사용한다. Codex 설정 방식은 [공식 설정 문서](https://learn.chatgpt.com/docs/config-file/config-reference)를 따른다.
+실행기 worker 토큰, lease token은 컨테이너에 전달하지 않는다. CLI에는 현재 Run의 capability와 API 주소를 환경변수로 전달한다. Codex shell 환경도 필요한 이름만 허용한다. 사용자 설정·규칙·자동 AGENTS 문서는 읽지 않고, 역할 allowlist로 선택한 고정 지침과 결과 스키마를 사용한다. Codex 설정 방식은 [공식 설정 문서](https://learn.chatgpt.com/docs/config-file/config-reference)를 따른다. Claude Code는 `--strict-mcp-config --setting-sources ""`로 project·user 설정을 읽지 않는다.
+
+
+Claude Code는 `--output-format json`으로 실행한다. `stream-json`은 도구 출력 전체를 한 줄씩
+내보내므로 공급망 계획 결과(31 KB) 한 줄이 실행기 64 KiB 행 제한을 초과했다. `json` 모드는
+최종 결과 객체 하나(~1.7 KB)만 출력한다. `--json-schema`에 전달하는 스키마에서는 `$schema`
+선언을 제거한다. Claude Code의 검사기가 `https://json-schema.org/draft/2020-12/schema` URI를
+거부했다. 이 스키마는 draft 2020-12 전용 키워드를 사용하지 않으므로 선언 제거로 동작한다.
+Codex는 기존 파일을 그대로 읽는다.
+
+Run 종료 시 실행기는 `model_finished` 이벤트에 ExecutionError code와
+costUsd/inputTokens/outputTokens/turns를 기록한다. 실패 원인을 다시 재현하지 않고 로그에서
+확인할 수 있다. Docker 자식 프로세스에는 `DOCKER_HOST`가 설정된 경우에만 그대로 전달한다.
+`/var/run/docker.sock`이 없는 OrbStack 환경에서 필요하다.
 
 native subagent는 현재 Run 안에서 분석을 나눌 수 있다. 다른 ERP 역할의 쓰기는 해당 역할에 배정된 Work Item/Run과 capability가 필요하다. 런타임의 하위 세션 이름만으로 서버 권한이 바뀌지 않는다. 실제 native dispatch 시연은 아직 수행하지 않았다.
 
@@ -59,5 +90,18 @@ Worker API 응답의 소수·지수·JavaScript 안전 범위 밖 정수는 원�
 - 부분 본문 제한 시간 시험에서 Zig 0.16.0 `Client.fetch` 취소 경로의 비정상 종료를 재현했다. 하위 request/response API로 교체한 뒤 정상 JSON 오류·exit 2를 확인했다.
 - ARM64와 AMD64 Linux 정적 바이너리를 빌드했다. 실제 Docker 실행 검증은 ARM64에서 수행했다.
 - 이미지 smoke는 가짜 capability와 별도 임시 볼륨으로 사용자·파일·권한·환경·CA·CLI·정확한 JSON·Codex 설정 파싱과 취소 시 컨테이너 삭제를 확인한다. 외부 네트워크는 차단하며 모델 요청은 0건이다.
-- Codex 0.151.0의 `gpt-6-astra` 요청은 최신 Codex가 필요하다는 HTTP 400으로 실패하여 패키지와 이미지 기본 태그를 0.154.0으로 올렸다. 2026-09-12 ARM64 이미지 빌드·격리 smoke와 Node 실행기 48개 테스트가 통과했다. 전용 로그인 볼륨의 `gpt-6-astra` 최소 응답 요청은 버전 오류 대신 `Your workspace is out of credits. Add credits to continue.`로 종료했다. 성공한 모델 응답이나 실제 업무 수행을 확인한 것은 아니다.
-- Node 실행기 자동 테스트와 최신 Backend 검증은 [실행·계획 API 안내](13_execution_and_plan_api.md)를 따른다. 실제 모델 업무 수행과 발주 승인 인수를 이 결과로 대체하지 않는다. 외부 신원 제공자(Auth0 등)·ChatGPT·Codex 로그인 인수는 보류(#21·#22)다.
+- Codex 0.151.0의 `gpt-6-astra` 요청은 최신 Codex가 필요하다는 HTTP 400으로 실패하여 패키지와 이미지 기본 태그를 0.154.0으로 올렸다. 2026-09-12 ARM64 이미지 빌드·격리 smoke와 Node 실행기 48개 테스트가 통과했다. 전용 로그인 볼륨의 `gpt-6-astra` 최소 응답 요청은 크레딧 부족으로 종료했다. Codex 크레딧 소진으로 실제 업무 수행 인수가 불가능해져 Claude Code executor를 추가했다. 2026-09-25 arm64 OrbStack에서 이미지 빌드 후 컨테이너 내 `claude --version` = 2.1.282 확인, `smoke-image.mjs` 모든 점검 통과(모델 요청 0건); `claude -p --json-schema`를 `claude-haiku-4-5`로 로컬 확인해 result event 형태 검증($0.016). backend `./gradlew test` 525개 0 실패, `demoE2eTest` 두 케이스 PASSED; runner `npm test` 52/52.
+- 2026-09-25 CLAUDE 런타임, model claude-sonnet-5, backend MULINO_AGENT_RUNTIME=CLAUDE,
+  재보충 fixture DB(기준일 2026-09-05, live clock)로 실제 인수를 수행했다. Case
+  CASE-2da139104b024f, targetDate 2026-10-24, warehouse 1, 품목 DEMO-AMR/DEMO-BSC.
+  Run 이력: ORCHESTRATOR FAILED 0 s($schema 거부) → 수정 후 MANAGER attention 답변으로
+  재개; ORCHESTRATOR WAITING 26 s(SUPPLY_CHAIN 자식 생성); SUPPLY_CHAIN FAILED 17 s
+  (출력 행 제한 초과; PLAN-18158620… 이미 READY로 저장) → 수정 후 attention 답변으로
+  재개; SUPPLY_CHAIN DONE 57 s; ORCHESTRATOR WAITING 65 s(PROCUREMENT 자식 생성);
+  PROCUREMENT WAITING 33 s. 결과: governance action 1건 PURCHASE_PROPOSAL PENDING,
+  합계 2,000원(DEMO 설탕 1 KG×1,500원 + DEMO 포장재 10 EA×50원, 공급처 DEMO 신속
+  공급, 납기 2026-09-27). purchase_applications 0건, 적용 발주 0건 — 에이전트는 ERP
+  발주를 쓰지 않았고 인간 승인은 미수행. Run별 비용은 이번 인수에서 측정하지 않았다
+  (usage 로깅이 이후에 추가됨). 알려진 비용 기준점: haiku stream-json probe $0.016,
+  sonnet json-output probe $0.106, haiku json probe $0.040.
+- Node 실행기 자동 테스트와 최신 Backend 검증은 [실행·계획 API 안내](13_execution_and_plan_api.md)를 따른다. Claude 런타임 실제 인수는 2026-09-25 수행했다. 발주 승인은 인간에게 보류했다. Codex 런타임 실제 업무 수행 인수는 아직 남아 있다. 외부 신원 제공자(Auth0 등)·ChatGPT·Codex 로그인 인수는 보류(#21·#22)다.
