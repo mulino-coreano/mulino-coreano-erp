@@ -86,7 +86,7 @@ public class RunExecutionRepository {
         dsl.update(RUNS)
                 .set(RUNS.STATUS, RunStatus.FAILED)
                 .set(RUNS.OUTCOME, "FAILED")
-                .set(RUNS.FINISHED_AT, LOCAL_NOW)
+                .set(RUNS.FINISHED_AT, NOW)
                 .where(RUNS.RUN_ID.eq(id))
                 .execute();
     }
@@ -154,7 +154,7 @@ public class RunExecutionRepository {
         dsl.update(RUNS)
                 .set(RUNS.STATUS, RunStatus.valueOf(status))
                 .set(RUNS.OUTCOME, outcome)
-                .set(RUNS.FINISHED_AT, LOCAL_NOW)
+                .set(RUNS.FINISHED_AT, NOW)
                 .setNull(RUNS.CAPABILITY_TOKEN_HASH)
                 .where(RUNS.RUN_ID.eq(id))
                 .execute();
@@ -302,7 +302,7 @@ public class RunExecutionRepository {
         dsl.update(RUNS)
                 .set(RUNS.STATUS, RunStatus.ABORTED)
                 .set(RUNS.OUTCOME, "ABORTED")
-                .set(RUNS.FINISHED_AT, LOCAL_NOW)
+                .set(RUNS.FINISHED_AT, NOW)
                 .where(RUNS.RUN_ID.eq(id))
                 .execute();
     }

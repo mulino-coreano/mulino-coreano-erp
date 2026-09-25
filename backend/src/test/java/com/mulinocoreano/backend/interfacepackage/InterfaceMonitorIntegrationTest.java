@@ -33,6 +33,17 @@ class InterfaceMonitorIntegrationTest {
     }
 
     @Test
+    void anAtRiskWaitingCaseIsAlsoCountedAsOpen() {
+        var before = service.monitor();
+        long caseId = businessCase("WAITING");
+        workItem(caseId, "WAITING", Instant.now().minus(1, ChronoUnit.HOURS));
+
+        var after = service.monitor();
+        assertThat(after.casesAtRisk()).isEqualTo(before.casesAtRisk() + 1);
+        assertThat(after.casesOpen()).isEqualTo(before.casesOpen() + 1);
+    }
+
+    @Test
     void overdueUnresolvedWorkItemMakesItsCaseAtRisk() {
         long before = service.monitor().casesAtRisk();
         long caseId = businessCase("OPEN");

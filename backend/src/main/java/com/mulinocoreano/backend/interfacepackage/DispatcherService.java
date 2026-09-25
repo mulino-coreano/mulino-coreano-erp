@@ -288,8 +288,16 @@ public class DispatcherService {
             EventScope scope, DispatchEvent event, boolean lockRows) {
         boolean dependencyEvent =
                 event != null && "WORK_ITEM_STATUS_CHANGED".equals(event.eventType());
+        // A human's attention answer serves every wait in its Case that names the same attention
+        // request, not only the Work Item the question was raised on; the matcher still checks the
+        // identity. Governance approvals stay bound to their action's Work Item.
+        boolean attentionApproval = event != null
+                && "CHANGE_REQUEST_APPROVED".equals(event.eventType())
+                && event.payload().get("attention_request_id") != null;
+        EventScope searchScope =
+                attentionApproval ? new EventScope(scope.caseId(), scope.caseRef(), null, null) : scope;
         return repository.loadCandidates(
-                scope,
+                searchScope,
                 dependencyEvent,
                 dependencyEvent ? Objects.toString(event.payload().get("workItemRef"), null) : null,
                 lockRows);

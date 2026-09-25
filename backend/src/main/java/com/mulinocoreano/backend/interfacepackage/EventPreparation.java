@@ -286,14 +286,10 @@ final class EventPreparation {
         payload.put("evidenceRef", evidenceRef);
         payload.put("evidence_ref", evidenceRef);
         payload.put("relation", relation);
-        EventScope authoritativeScope =
-                requestedScope.caseId() == null
-                        ? new EventScope(
-                                target.claimCaseId(), target.caseRef(),
-                                requestedScope.workItemId(), requestedScope.workItemRef())
-                        : requestedScope;
+        // The link is Case-bound (checked above) but the event is not: a case-less fact keeps its
+        // global scope, otherwise matching waits in other Cases would never wake.
         return new PreparedClaimEvidence(
-                authoritativeScope, claimId, target.evidenceId(), relation);
+                requestedScope, claimId, target.evidenceId(), relation);
     }
 
     private boolean containsClaimEvidenceSelector(Map<String, Object> payload) {

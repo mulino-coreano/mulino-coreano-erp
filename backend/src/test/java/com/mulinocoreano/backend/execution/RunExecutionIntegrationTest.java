@@ -137,6 +137,16 @@ class RunExecutionIntegrationTest {
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         return mapper.readValue(json,Map.class);
     }
+    @Test void runTimestampsAgreeWhateverTheReadingSessionTimeZone() throws Exception {
+        String ref=queue("SUPPLY_CHAIN");
+        claim();
+        // The app writes in its JVM zone; psql and dashboards may read in UTC. Instants must still line up.
+        jdbc.sql("SET LOCAL TIME ZONE 'UTC'").update();
+        Double gap=jdbc.sql("SELECT extract(epoch FROM claimed_at - started_at) FROM runs WHERE run_ref=:r")
+                .param("r",ref).query(Double.class).single();
+        assertThat(gap).isBetween(0.0, 60.0);
+    }
+
     private String queue(String role) {
         String suffix=UUID.randomUUID().toString().substring(0,8), cr="CASE-"+suffix, wi="WI-"+suffix;
         jdbc.sql("INSERT INTO agents(agent_key,display_name) VALUES (:a,:a) ON CONFLICT(agent_key) DO NOTHING").param("a",role).update();

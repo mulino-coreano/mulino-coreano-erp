@@ -419,6 +419,23 @@ class DispatcherIntegrationTest {
     }
 
     @Test
+    void caseLessEventWithClaimEvidenceStillWakesWaitsInOtherCases() {
+        Fixture claimCase = waitingFixture("SUPPLIER_REPLY", "{\"supplier_id\":881}", "WAITING");
+        Fixture otherCase = waitingFixture("SUPPLIER_REPLY", "{\"supplier_id\":881}", "WAITING");
+        long claimId = claim(claimCase.caseId());
+        String evidenceRef = evidence(claimCase.caseId());
+
+        EventDispatchResponse result = dispatcher.ingest(new CreateEventRequest(
+                "SUPPLIER_EMAIL_RECEIVED", unique("msg"), null, null,
+                Map.of("supplierId", 881, "claimId", claimId, "evidenceRef", evidenceRef)));
+
+        // The evidence link is recorded, but it must not narrow a global fact to the claim's Case.
+        assertThat(claimEvidenceCount(claimId, evidenceRef, "SUPPORTS")).isEqualTo(1);
+        assertThat(result.readyWorkItems())
+                .containsExactlyInAnyOrder(claimCase.workItemRef(), otherCase.workItemRef());
+    }
+
+    @Test
     void eventLinksValidatedEvidenceToAClaimInTheSameCase() {
         Fixture fixture = waitingFixture("SUPPLIER_REPLY", "{\"supplier_id\":999}", "READY");
         long claimId = claim(fixture.caseId());
@@ -898,6 +915,32 @@ class DispatcherIntegrationTest {
                 .param("email", unique(suffix) + "@example.test")
                 .query(Long.class)
                 .single();
+    }
+
+    @Test
+    void attentionApprovalWakesTheSameApprovalWaitOnAnotherWorkItemOfTheCase() {
+        Fixture asked = waitingFixture("APPROVAL", "{}", "WAITING");
+        Fixture sibling = waitingWorkItem(asked.caseId(), asked.caseRef(), asked.agentId(),
+                "APPROVAL", "{}", "WAITING");
+        long attentionId = answeredAttention(asked, user("approval-sibling"), "APPROVED");
+        jdbc.sql("""
+                UPDATE waiting_conditions
+                SET condition_payload=jsonb_build_object('attention_request_id', :attentionId)
+                WHERE waiting_condition_id IN (:first, :second)
+                """)
+                .param("attentionId", attentionId)
+                .param("first", asked.waitingId())
+                .param("second", sibling.waitingId())
+                .update();
+
+        EventDispatchResponse result = dispatcher.ingest(new CreateEventRequest(
+                "CHANGE_REQUEST_APPROVED", unique("approval"), null, null,
+                Map.of("attentionRequestId", attentionId, "decision", "APPROVED")));
+
+        assertThat(result.readyWorkItems())
+                .containsExactlyInAnyOrder(asked.workItemRef(), sibling.workItemRef());
+        // The event is still attributed to the Work Item the human was asked about.
+        assertThat(eventAttribution(result.eventId()).workItemId()).isEqualTo(asked.workItemId());
     }
 
     private long answeredAttention(Fixture fixture, long approverId, String answer) {
