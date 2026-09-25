@@ -64,3 +64,13 @@ test('Docker invocation isolates mounts, environment and immutable runtime confi
   assert.deepEqual(Object.keys(spec.env).sort(), ['MULINO_TOKEN', 'PATH']);
   assert.equal(spec.env.MULINO_TOKEN, 'cap-secret');
 });
+
+test('Claude Code result event is the final structured result and its usage is kept', async () => {
+  const handle = executor('claude').start(claim);
+  assert.deepEqual(await handle.result, { outcome: 'DONE', summary: 'Exact objective', resultRef: 'PLAN-7' });
+  assert.deepEqual(handle.usage, { costUsd: 0.12, inputTokens: 10, outputTokens: 20, turns: 3 });
+});
+
+test('Claude Code error result fails the Run', async () => {
+  await assert.rejects(executor('claude-error').start(claim).result, error => error.code === 'MODEL_PROCESS_FAILED');
+});

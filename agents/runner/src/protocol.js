@@ -1,4 +1,5 @@
 const roles = new Set(['ORCHESTRATOR', 'SUPPLY_CHAIN', 'PROCUREMENT', 'QC']);
+export const runtimes = new Set(['CODEX', 'CLAUDE']);
 const outcomes = new Set(['DONE', 'WAITING', 'FAILED', 'ABORTED']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const string = (value, max = 256) => typeof value === 'string' && value.length > 0 && value.length <= max;
@@ -35,14 +36,17 @@ export function safeUrl(value, { container = false } = {}) {
 export function readConfig(env = process.env) {
   const workerToken = env.MULINO_WORKER_TOKEN;
   const image = env.MULINO_RUNTIME_IMAGE;
-  const authVolume = env.MULINO_CODEX_AUTH_VOLUME;
+  const runtime = env.MULINO_AGENT_RUNTIME ?? 'CODEX';
+  // MULINO_CODEX_AUTH_VOLUME is the pre-Claude name; either names the runtime's login volume.
+  const authVolume = env.MULINO_AUTH_VOLUME ?? env.MULINO_CODEX_AUTH_VOLUME;
   const workerId = env.MULINO_WORKER_ID;
-  const model = env.MULINO_CODEX_MODEL;
+  const model = env.MULINO_AGENT_MODEL ?? env.MULINO_CODEX_MODEL; // MULINO_CODEX_MODEL is the pre-Claude name.
   require(string(workerToken, 8192) && string(workerId, 128), 'MISSING_WORKER_CONFIG');
+  require(runtimes.has(runtime), 'UNSUPPORTED_RUNTIME');
   require(string(image) && /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/.test(image), 'INVALID_RUNTIME_IMAGE');
   require(string(authVolume) && /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(authVolume), 'INVALID_AUTH_VOLUME');
   require(string(model, 128) && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(model), 'MISSING_MODEL');
-  return { workerToken, workerId, image, authVolume, model,
+  return { workerToken, workerId, runtime, image, authVolume, model,
     apiBase: safeUrl(env.MULINO_API_BASE ?? 'http://127.0.0.1:8080/api/v1'),
     agentApiUrl: safeUrl(env.MULINO_AGENT_API_URL ?? 'http://host.docker.internal:8080/api/v1', { container: true }) };
 }
@@ -60,12 +64,12 @@ export function redact(value, secrets = []) {
   return value;
 }
 
-export function validateClaim(value, now = Date.now()) {
+export function validateClaim(value, now = Date.now(), runtime = 'CODEX') {
   require(object(value), 'INVALID_CLAIM');
   for (const key of ['runRef', 'caseRef', 'workItemRef', 'leaseToken', 'capabilityToken']) {
     require(string(value[key], key.endsWith('Token') ? 8192 : 256), 'INVALID_CLAIM');
   }
-  require(roles.has(value.agentKey) && value.runtime === 'CODEX' && object(value.context), 'INVALID_CLAIM');
+  require(roles.has(value.agentKey) && value.runtime === runtime && object(value.context), 'INVALID_CLAIM');
   require(Number.isInteger(value.timeoutSeconds) && value.timeoutSeconds > 0 && value.timeoutSeconds <= 600, 'INVALID_CLAIM');
   require(validInstant(value.leaseExpiresAt)
     && Date.parse(value.leaseExpiresAt) > now, 'INVALID_CLAIM_LEASE');

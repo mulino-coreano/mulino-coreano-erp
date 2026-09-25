@@ -12,7 +12,7 @@ Java 21, Node.js 22 이상, Zig 0.16.0, 실행 중인 Docker와 PostgreSQL 18이
 |---|---|
 | Backend | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `MULINO_WORKER_TOKEN` |
 | 로컬 stdio MCP | `MULINO_LOCAL_ROLE`, `MULINO_API_BASE` |
-| Runner | `MULINO_WORKER_TOKEN`, `MULINO_WORKER_ID`, `MULINO_API_BASE`, `MULINO_AGENT_API_URL`, `MULINO_RUNTIME_IMAGE`, `MULINO_CODEX_AUTH_VOLUME`, `MULINO_CODEX_MODEL` |
+| Runner | `MULINO_WORKER_TOKEN`, `MULINO_WORKER_ID`, `MULINO_API_BASE`, `MULINO_AGENT_API_URL`, `MULINO_AGENT_RUNTIME`, `MULINO_RUNTIME_IMAGE`, `MULINO_AUTH_VOLUME`, `MULINO_AGENT_MODEL` |
 | 준비 검사 선택 입력 | DB 변수 3개 및 위 런타임 설정. `MULINO_CHATGPT_CIMD_URL`, `MULINO_CODEX_CIMD_URL`은 보류(#21·#22) |
 
 각 프로세스에 필요한 값만 전달한다. 예제 설정은 [MCP](../mcp-server/.env.example)와 [Runner](../agents/runner/.env.example)에 있다. placeholder를 실제 값으로 교체한다.
@@ -98,7 +98,7 @@ Auth0 discovery·CIMD·OBO 검사는 보류(#21·#22)다. readiness는 DB·backe
 
 ## 5. Codex 로그인과 실제 모델 실행
 
-[런타임 안내](14_cli_and_runtime.md)의 전용 volume 생성 및 `login --device-auth` 명령을 사용해 사람이 Codex에 로그인한다. 호스트 로그인 파일을 복사하지 않는다. 준비 검사의 volume PASS를 로그인 증거로 대신하지 않는다. 계정에서 실제 사용할 수 있는 `MULINO_CODEX_MODEL`을 명시하며 모델을 추측해서 자동 선택하지 않는다.
+[런타임 안내](14_cli_and_runtime.md)의 전용 volume 생성 및 로그인 명령을 사용해 사람이 해당 런타임에 로그인한다. Codex는 `login --device-auth`, Claude Code는 `claude login`을 사용한다. 호스트 로그인 파일을 복사하지 않는다. 준비 검사의 volume PASS를 로그인 증거로 대신하지 않는다. 계정에서 실제 사용할 수 있는 `MULINO_AGENT_MODEL`을 명시하며 모델을 추측해서 자동 선택하지 않는다.
 
 ChatGPT와 Codex의 실제 원격 MCP 연결·로그인(Auth0 OAuth)은 보류(#21·#22)다. 로컬 PoC에서는 `MULINO_LOCAL_ROLE` 환경 변수로 역할을 지정해 stdio MCP를 사용한다.
 

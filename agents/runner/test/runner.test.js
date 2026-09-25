@@ -40,6 +40,7 @@ test('204 is idle and a real child success is reported through finish', async t 
   assert.deepEqual(calls.map(c => c.action), ['claim', 'claim', 'finish']);
   assert.equal(calls.at(-1).body.resultRef, 'PLAN-1');
   assert.ok(calls.every(c => c.key));
+  assert.ok(calls.filter(c => c.action === 'claim').every(c => c.body.runtime === 'CODEX'));
 });
 
 test('saved approval wait uses the original server receipt without creating model-supplied approval conditions', async t => {
@@ -291,4 +292,14 @@ test('lease lost during rejection verification blocks failure fallback', async t
   } });
   assert.equal((await runner.runOnce()).status, 'LEASE_LOST');
   assert.deepEqual(calls.map(call => call.action), ['claim', 'finish', 'heartbeat']);
+});
+
+test('model failure code and usage are logged without child output', async t => {
+  const { runner } = await setup(t, { mode: 'fail' });
+  const logs = [];
+  runner.logger = event => logs.push(event);
+  assert.equal((await runner.runOnce()).outcome, 'FAILED');
+  const finished = logs.find(event => event.event === 'model_finished');
+  assert.equal(finished.failure, 'MODEL_PROCESS_FAILED');
+  assert.doesNotMatch(JSON.stringify(logs), /secret-from-stderr/);
 });

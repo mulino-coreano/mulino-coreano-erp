@@ -128,7 +128,7 @@ public class CaseIntakeService {
         repository.insertInitialWork(workRef, caseId, agentId);
         RunDto queued =
                 runs.createRun(
-                        new CreateRunRequest("ORCHESTRATOR", caseRef, workRef, "CODEX"), null);
+                        new CreateRunRequest("ORCHESTRATOR", caseRef, workRef, runs.defaultRuntime()), null);
         if (!"QUEUED".equals(queued.status()))
             throw unavailable("Initial execution context could not be queued");
         return queries.getCase(caseRef);

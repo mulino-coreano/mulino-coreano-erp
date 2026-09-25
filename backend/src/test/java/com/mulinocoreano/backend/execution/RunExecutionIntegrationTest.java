@@ -137,12 +137,29 @@ class RunExecutionIntegrationTest {
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         return mapper.readValue(json,Map.class);
     }
+    @Test void workersOnlyReceiveRunsOfTheirDeclaredRuntime() throws Exception {
+        String claude=queue("SUPPLY_CHAIN","CLAUDE");
+        mvc.perform(post("/api/v1/internal/runs/claim").contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"codex-worker\",\"runtime\":\"CODEX\"}"))
+                .andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/internal/runs/claim").contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"odd-worker\",\"runtime\":\"GPT\"}"))
+                .andExpect(status().isBadRequest());
+        String json=mvc.perform(post("/api/v1/internal/runs/claim").contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"claude-worker\",\"runtime\":\"CLAUDE\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        Map<?,?> claimed=mapper.readValue(json,Map.class);
+        assertThat(claimed.get("runRef")).isEqualTo(claude);
+        assertThat(claimed.get("runtime")).isEqualTo("CLAUDE");
+    }
+
     private String queue(String role) {
+        return queue(role,"CODEX");
+    }
+
+    private String queue(String role, String runtime) {
         String suffix=UUID.randomUUID().toString().substring(0,8), cr="CASE-"+suffix, wi="WI-"+suffix;
         jdbc.sql("INSERT INTO agents(agent_key,display_name) VALUES (:a,:a) ON CONFLICT(agent_key) DO NOTHING").param("a",role).update();
         long cid=jdbc.sql("INSERT INTO cases(case_ref,title,objective,intent_type) VALUES (:r,'Execution','Execute','ACT') RETURNING case_id").param("r",cr).query(Long.class).single();
         jdbc.sql("INSERT INTO work_items(work_item_ref,case_id,title,assigned_agent_id) SELECT :w,:c,'Execute',agent_id FROM agents WHERE agent_key=:a")
                 .param("w",wi).param("c",cid).param("a",role).update();
-        return runs.createRun(new CreateRunRequest(role,cr,wi,"CODEX"),null).runRef();
+        return runs.createRun(new CreateRunRequest(role,cr,wi,runtime),null).runRef();
     }
 }

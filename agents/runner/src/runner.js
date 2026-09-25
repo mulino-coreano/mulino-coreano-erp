@@ -16,11 +16,11 @@ const transient = error => !error.status || error.status >= 500 || error.status 
 
 export class Runner {
   constructor({ api, executor, workerId, clock = realClock, pollMs = 5000, heartbeatMs = 15000,
-    maxRunMs = 600000, retryMs = 1000, logger = () => {}, secrets = [] }) {
+    maxRunMs = 600000, retryMs = 1000, logger = () => {}, secrets = [], runtime = 'CODEX' }) {
     if (typeof workerId !== 'string' || !workerId || workerId.length > 128
       || ![pollMs, heartbeatMs, maxRunMs, retryMs].every(n => Number.isFinite(n) && n > 0)
       || maxRunMs > 600000) throw new Error('INVALID_RUNNER_CONFIG');
-    Object.assign(this, { api, executor, workerId, clock, pollMs, heartbeatMs, maxRunMs, retryMs, logger, secrets });
+    Object.assign(this, { api, executor, workerId, clock, pollMs, heartbeatMs, maxRunMs, retryMs, logger, secrets, runtime });
     this.shutdown = new AbortController();
     this.pending = null;
     this.cooldownUntil = 0;
@@ -38,7 +38,7 @@ export class Runner {
   async executeOne() {
     let claim;
     try {
-      claim = await this.api.post('claim', { workerId: this.workerId }, {
+      claim = await this.api.post('claim', { workerId: this.workerId, runtime: this.runtime }, {
         idempotencyKey: randomUUID(), signal: this.shutdown.signal,
       });
     } catch (error) {
@@ -52,7 +52,7 @@ export class Runner {
       throw error;
     }
     if (claim === null) return { status: 'IDLE' };
-    try { validateClaim(claim, this.clock.now()); }
+    try { validateClaim(claim, this.clock.now(), this.runtime); }
     catch {
       if (typeof claim?.runRef === 'string' && typeof claim?.leaseToken === 'string'
         && validInstant(claim.leaseExpiresAt) && Date.parse(claim.leaseExpiresAt) > this.clock.now()) {
@@ -95,6 +95,10 @@ export class Runner {
         timer.abort();
         if (event.kind === 'stop') continue;
         if (event.kind === 'result' || event.kind === 'failure') {
+          // Only fixed ExecutionError codes and numeric usage are logged, never child output.
+          const code = event.error?.code;
+          this.log('model_finished', { runRef: claim.runRef, ...(/^[A-Z_]{1,64}$/.test(code ?? '') ? { failure: code } : {}),
+            ...(handle.usage ?? {}) }, secretValues);
           let result;
           try {
             result = event.kind === 'result' ? validateResult(event.value) : {

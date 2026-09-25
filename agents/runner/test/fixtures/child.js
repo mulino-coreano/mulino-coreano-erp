@@ -15,4 +15,11 @@ else if (mode === 'wait17') send({ outcome: 'WAITING', summary: 'Pending', waiti
   { type: 'DEPENDENCY_DONE', payload: { dependentWiRef: 'WI-2' }, reason: 'Procurement' }) });
 else if (mode === 'date-only') send({ outcome: 'WAITING', summary: 'Pending', waitingConditions: [
   { type: 'SCHEDULED_TIME', payload: { dueAt: '2026-09-06' }, reason: 'Receipt' }] });
+// Claude Code stream-json: progress events, then one result event carrying the schema output.
+else if (mode === 'claude') process.stdout.write([{ type: 'system', subtype: 'init' }, { type: 'assistant' },
+  { type: 'result', subtype: 'success', is_error: false, result: 'ignored when structured',
+    total_cost_usd: 0.12, num_turns: 3, usage: { input_tokens: 10, output_tokens: 20 },
+    structured_output: { outcome: 'DONE', summary: JSON.parse(input).context.objective, resultRef: 'PLAN-7' } }]
+  .map(event => JSON.stringify(event)).join('\n') + '\n');
+else if (mode === 'claude-error') process.stdout.write(JSON.stringify({ type: 'result', subtype: 'error_max_turns', is_error: true }) + '\n');
 else send({ outcome: 'DONE', summary: 'Finished', resultRef: 'PLAN-1' });

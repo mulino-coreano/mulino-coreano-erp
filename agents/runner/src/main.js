@@ -8,7 +8,7 @@ try {
   const secrets = [config.workerToken];
   const api = new WorkerApi({ baseUrl: config.apiBase, tokenClient: staticToken(config.workerToken) });
   const executor = new DockerExecutor(config);
-  const runner = new Runner({ api, executor, workerId: config.workerId, secrets,
+  const runner = new Runner({ api, executor, workerId: config.workerId, runtime: config.runtime, secrets,
     logger: event => process.stdout.write(`${JSON.stringify(event)}\n`) });
   const stop = () => { void runner.stop().catch(() => {}); };
   process.once('SIGTERM', stop);

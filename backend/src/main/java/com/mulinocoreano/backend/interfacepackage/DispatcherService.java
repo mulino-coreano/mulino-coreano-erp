@@ -193,7 +193,7 @@ public class DispatcherService {
                                     workItem.agentKey(),
                                     workItem.caseRef(),
                                     workItem.workItemRef(),
-                                    "CODEX"),
+                                    runService.defaultRuntime()),
                             eventId)
                     .ifPresent(
                             run -> {
