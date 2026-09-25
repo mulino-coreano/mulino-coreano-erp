@@ -40,6 +40,7 @@ test('204 is idle and a real child success is reported through finish', async t 
   assert.deepEqual(calls.map(c => c.action), ['claim', 'claim', 'finish']);
   assert.equal(calls.at(-1).body.resultRef, 'PLAN-1');
   assert.ok(calls.every(c => c.key));
+  assert.ok(calls.filter(c => c.action === 'claim').every(c => c.body.runtime === 'CODEX'));
 });
 
 test('saved approval wait uses the original server receipt without creating model-supplied approval conditions', async t => {

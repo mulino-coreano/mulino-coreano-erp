@@ -4,6 +4,8 @@ import com.mulinocoreano.backend.interfacepackage.RunSchedulingRepository.AgentT
 import com.mulinocoreano.backend.interfacepackage.RunSchedulingRepository.CaseTarget;
 import com.mulinocoreano.backend.interfacepackage.RunSchedulingRepository.WorkItemTarget;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,14 +33,37 @@ public class RunService {
     private final RunSchedulingRepository repository;
     private final ObjectMapper objectMapper;
     private final ContextSnapshotService contextSnapshotService;
+    private final String defaultRuntime;
 
     public RunService(
             RunSchedulingRepository repository,
             ObjectMapper objectMapper,
             ContextSnapshotService contextSnapshotService) {
+        this(repository, objectMapper, contextSnapshotService, "CODEX");
+    }
+
+    @Autowired
+    public RunService(
+            RunSchedulingRepository repository,
+            ObjectMapper objectMapper,
+            ContextSnapshotService contextSnapshotService,
+            @Value("${mulino.execution.runtime:CODEX}") String defaultRuntime) {
+        if (!SUPPORTED_RUNTIMES.contains(defaultRuntime)) {
+            throw new IllegalStateException("mulino.execution.runtime must be CLAUDE or CODEX");
+        }
         this.repository = repository;
         this.objectMapper = objectMapper;
         this.contextSnapshotService = contextSnapshotService;
+        this.defaultRuntime = defaultRuntime;
+    }
+
+    /** 서버가 스스로 예약하는 Run의 런타임. 배포 설정이며 코드에 고정하지 않는다. */
+    public String defaultRuntime() {
+        return defaultRuntime;
+    }
+
+    public static boolean supportsRuntime(String runtime) {
+        return SUPPORTED_RUNTIMES.contains(runtime);
     }
 
     @Transactional

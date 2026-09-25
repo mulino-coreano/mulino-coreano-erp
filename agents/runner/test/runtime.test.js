@@ -39,3 +39,29 @@ test('production runner requires an explicit model before it can claim work', ()
   assert.throws(() => readConfig(env), /MISSING_MODEL/);
   assert.equal(readConfig({ ...env, MULINO_CODEX_MODEL: 'demo-model' }).model, 'demo-model');
 });
+
+test('Claude runtime runs claude headless with the schema, the mulino CLI only and its own login volume', () => {
+  const spec = new DockerExecutor({ ...config, runtime: 'CLAUDE' }).buildInvocation(claim);
+  const arg = flag => spec.args[spec.args.indexOf(flag) + 1];
+  assert.ok(spec.args.includes('--entrypoint=claude'));
+  assert.ok(spec.args.includes('type=volume,src=mulino-runtime-auth-test,dst=/home/mulino/.claude'));
+  assert.ok(spec.args.includes('CLAUDE_CONFIG_DIR=/home/mulino/.claude'));
+  assert.equal(arg('--model'), 'demo-model');
+  assert.equal(arg('--permission-mode'), 'dontAsk');
+  assert.equal(arg('--allowedTools'), 'Bash(mulino:*)');
+  assert.deepEqual(JSON.parse(arg('--json-schema')).required, ['outcome', 'summary', 'waitingConditions', 'resultRef']);
+  assert.match(arg('--append-system-prompt'), /\/opt\/mulino\/skills\/supply-chain\/SKILL\.md/);
+  assert.ok(!spec.args.some(value => value.startsWith('CODEX_HOME=')));
+  assert.ok(spec.args.includes('--read-only') && spec.args.includes('--cap-drop=ALL'));
+  assert.doesNotMatch(JSON.stringify(spec.args), /runtime-test-capability/);
+});
+
+test('runtime is configuration: unsupported values fail before any claim', () => {
+  const env = { MULINO_WORKER_TOKEN: 'worker-secret', MULINO_WORKER_ID: 'worker-1', MULINO_RUNTIME_IMAGE: config.image,
+    MULINO_AUTH_VOLUME: config.authVolume, MULINO_CODEX_MODEL: 'demo-model' };
+  assert.equal(readConfig(env).runtime, 'CODEX');
+  assert.equal(readConfig({ ...env, MULINO_AGENT_RUNTIME: 'CLAUDE' }).runtime, 'CLAUDE');
+  assert.equal(readConfig({ ...env, MULINO_AGENT_MODEL: 'claude-sonnet-5' }).model, 'claude-sonnet-5');
+  assert.throws(() => readConfig({ ...env, MULINO_AGENT_RUNTIME: 'GPT' }), /UNSUPPORTED_RUNTIME/);
+  assert.throws(() => new DockerExecutor({ ...config, runtime: 'GPT' }), /INVALID_DOCKER_CONFIG/);
+});

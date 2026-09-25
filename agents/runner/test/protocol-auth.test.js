@@ -28,6 +28,11 @@ test('claim rejects unknown runtime or role and missing/expired credentials', ()
   }
 });
 
+test('a runner only accepts claims for its own runtime', () => {
+  assert.equal(validateClaim(claim({ runtime: 'CLAUDE' }), Date.now(), 'CLAUDE')?.runtime, 'CLAUDE');
+  assert.throws(() => validateClaim(claim(), Date.now(), 'CLAUDE'), /INVALID_CLAIM/);
+});
+
 test('structured result permits supported waits and rejects arbitrary output', () => {
   assert.equal(validateResult({ outcome: 'DONE', summary: 'Planned', resultRef: 'PLAN-1' })?.outcome, 'DONE');
   assert.equal(validateResult({ outcome: 'WAITING', summary: 'Waiting', waitingConditions: [

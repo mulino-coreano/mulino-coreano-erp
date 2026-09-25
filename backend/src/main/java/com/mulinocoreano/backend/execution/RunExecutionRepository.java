@@ -55,13 +55,13 @@ public class RunExecutionRepository {
                         .and(RUNS.LEASE_OWNER.eq(workerId)));
     }
 
-    public List<Long> lockNextQueuedCandidates() {
+    public List<Long> lockNextQueuedCandidates(String runtime) {
         return dsl.select(RUNS.RUN_ID)
                 .from(RUNS)
                 .join(WORK_ITEMS)
                 .on(WORK_ITEMS.WORK_ITEM_ID.eq(RUNS.WORK_ITEM_ID))
                 .where(RUNS.STATUS.eq(RunStatus.QUEUED))
-                .and(RUNS.RUNTIME.eq("CODEX"))
+                .and(RUNS.RUNTIME.eq(runtime))
                 .orderBy(RUNS.RUN_ID)
                 .limit(1)
                 .forUpdate()

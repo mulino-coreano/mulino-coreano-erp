@@ -155,7 +155,7 @@ public class AttentionAnswerService {
                                 agent.get(AGENTS.AGENT_KEY),
                                 caseRef,
                                 work.get(WORK_ITEMS.WORK_ITEM_REF),
-                                "CODEX"),
+                                runs.defaultRuntime()),
                         event);
         if (!"QUEUED".equals(run.status())) throw conflict("Unable to queue resumed Run");
         return Map.of("status", "QUEUED", "runRef", run.runRef());

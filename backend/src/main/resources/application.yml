@@ -14,6 +14,9 @@ mulino:
     issuer: https://local.mulino.test/
     # 비워 두면 실행기(worker) 인증 경로를 열지 않는다.
     worker-token: ${MULINO_WORKER_TOKEN:}
+  # 서버가 스스로 예약하는 Run의 런타임(CLAUDE | CODEX). 모델 이름은 실행기 설정이다.
+  execution:
+    runtime: ${MULINO_AGENT_RUNTIME:CODEX}
 
 springdoc:
   api-docs:

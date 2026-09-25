@@ -1,8 +1,11 @@
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
-import { redact, safeUrl, validateResult } from './protocol.js';
-import { codexConfiguration } from './runtime-config.js';
+import { redact, runtimes, safeUrl, validateResult } from './protocol.js';
+import { claudeArguments, codexConfiguration } from './runtime-config.js';
+
+const resultSchema = JSON.stringify(JSON.parse(readFileSync(new URL('../result.schema.json', import.meta.url), 'utf8')));
 
 export class ExecutionError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -52,6 +55,12 @@ export class ProcessExecutor {
           finalText = event.item.text;
         }
         if (event.type === 'error' || event.type === 'turn.failed') fail('MODEL_PROCESS_FAILED');
+        // Claude Code stream-json ends with one result event; --json-schema fills structured_output.
+        if (event.type === 'result') {
+          if (event.is_error || event.subtype !== 'success') fail('MODEL_PROCESS_FAILED');
+          else finalText = event.structured_output === undefined ? event.result : JSON.stringify(event.structured_output);
+          if (typeof finalText !== 'string') throw new Error();
+        }
       } catch { fail('INVALID_MODEL_JSON'); }
     };
     const count = chunk => {
@@ -90,35 +99,48 @@ export class ProcessExecutor {
 }
 
 export class DockerExecutor extends ProcessExecutor {
-  constructor({ image, authVolume, model, agentApiUrl = 'http://host.docker.internal:8080/api/v1', ...options }) {
+  constructor({ image, authVolume, model, runtime = 'CODEX', agentApiUrl = 'http://host.docker.internal:8080/api/v1', ...options }) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/.test(image ?? '')
-      || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(authVolume ?? '')) throw new Error('INVALID_DOCKER_CONFIG');
+      || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(authVolume ?? '') || !runtimes.has(runtime)) throw new Error('INVALID_DOCKER_CONFIG');
     super({ ...options, invocation: claim => this.buildInvocation(claim) });
     if (model !== undefined && (typeof model !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model))) throw new Error('INVALID_MODEL');
-    Object.assign(this, { image, authVolume, model, agentApiUrl: safeUrl(agentApiUrl, { container: true }) });
+    Object.assign(this, { image, authVolume, model, runtime, agentApiUrl: safeUrl(agentApiUrl, { container: true }) });
   }
 
   buildInvocation(claim) {
-    const runtimeConfig = codexConfiguration(claim.agentKey);
     const name = `mulino-run-${randomUUID()}`;
-    const hostEnv = { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin' };
-    return { command: 'docker', env: { ...hostEnv, MULINO_TOKEN: claim.capabilityToken }, args: [
+    // DOCKER_HOST only locates the daemon (e.g. OrbStack has no /var/run/docker.sock); it is not a secret.
+    const hostEnv = { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
+      ...(process.env.DOCKER_HOST ? { DOCKER_HOST: process.env.DOCKER_HOST } : {}) };
+    const home = this.runtime === 'CLAUDE' ? '/home/mulino/.claude' : '/home/mulino/.codex';
+    const container = [
       'run', '--rm', '--interactive', '--name', name, '--read-only', '--user=10001:10001',
       '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=256', '--memory=2g', '--cpus=2',
       '--tmpfs', '/work:rw,nosuid,nodev,size=256m,uid=10001,gid=10001',
       '--tmpfs', '/tmp:rw,nosuid,nodev,size=256m,uid=10001,gid=10001',
-      '--workdir=/work', '--mount', `type=volume,src=${this.authVolume},dst=/home/mulino/.codex`,
+      '--workdir=/work', '--mount', `type=volume,src=${this.authVolume},dst=${home}`,
       '--env', 'MULINO_TOKEN', '--env', `MULINO_API_URL=${this.agentApiUrl}`,
-      '--env', 'CODEX_HOME=/home/mulino/.codex', '--env', 'HOME=/home/mulino',
+    ];
+    const model = this.model ? ['--model', this.model] : [];
+    const args = this.runtime === 'CLAUDE' ? [...container,
+      // Claude Code keeps its login and ~/.claude.json together in the mounted volume.
+      '--env', `CLAUDE_CONFIG_DIR=${home}`, '--env', 'HOME=/home/mulino', '--env', 'DISABLE_AUTOUPDATER=1',
+      '--env', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1',
+      '--entrypoint=claude', this.image, ...claudeArguments(claim.agentKey, resultSchema), ...model,
+      'Carry out the Run described by the JSON on stdin.',
+    ] : [...container,
+      '--env', `CODEX_HOME=${home}`, '--env', 'HOME=/home/mulino',
       '--entrypoint=codex', this.image, 'exec', '--strict-config', '--ignore-user-config', '--ignore-rules', '--ephemeral',
       '--skip-git-repo-check', '--json', '--color=never', '--output-schema', '/opt/mulino/result.schema.json',
       // Docker is the isolation boundary. Nested bwrap cannot create user namespaces
       // under the container's non-root/cap-drop policy; never add privileged Docker flags.
       '--sandbox=danger-full-access',
       '--config', 'approval_policy="never"', '--config', 'mcp_servers={}',
-      ...runtimeConfig.flatMap(value => ['--config', value]),
-      ...(this.model ? ['--model', this.model] : []), '-',
-    ], onCancel: () => new Promise(resolve => {
+      ...codexConfiguration(claim.agentKey).flatMap(value => ['--config', value]),
+      ...model, '-',
+    ];
+    return { command: 'docker', env: { ...hostEnv, MULINO_TOKEN: claim.capabilityToken }, args,
+      onCancel: () => new Promise(resolve => {
       // Killing the Docker client does not guarantee its container stopped. Remove it separately.
       const cleanup = spawn('docker', ['rm', '--force', name], { shell: false, stdio: 'ignore', env: hostEnv });
       const timeout = setTimeout(() => { cleanup.kill('SIGKILL'); resolve(); }, 5000);
