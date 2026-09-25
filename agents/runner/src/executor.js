@@ -5,7 +5,10 @@ import { StringDecoder } from 'node:string_decoder';
 import { redact, runtimes, safeUrl, validateResult } from './protocol.js';
 import { claudeArguments, codexConfiguration } from './runtime-config.js';
 
-const resultSchema = JSON.stringify(JSON.parse(readFileSync(new URL('../result.schema.json', import.meta.url), 'utf8')));
+// Claude Code's --json-schema validator rejects the draft 2020-12 $schema URI; the schema uses no
+// 2020-12-only keywords, so the declaration is dropped for Claude only (Codex reads the file as is).
+const { $schema, ...resultSchemaBody } = JSON.parse(readFileSync(new URL('../result.schema.json', import.meta.url), 'utf8'));
+const resultSchema = JSON.stringify(resultSchemaBody);
 
 export class ExecutionError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -30,6 +33,7 @@ export class ProcessExecutor {
     let pending = '';
     let finalText = null;
     let cancellation = null;
+    const usage = {}; // Filled from Claude Code's result event; cost and token counts are not secrets.
     const decoder = new StringDecoder('utf8');
     const kill = () => {
       if (!closed && child.pid) {
@@ -55,10 +59,16 @@ export class ProcessExecutor {
           finalText = event.item.text;
         }
         if (event.type === 'error' || event.type === 'turn.failed') fail('MODEL_PROCESS_FAILED');
-        // Claude Code stream-json ends with one result event; --json-schema fills structured_output.
+        // Claude Code --output-format json prints one result object; --json-schema fills structured_output.
         if (event.type === 'result') {
           if (event.is_error || event.subtype !== 'success') fail('MODEL_PROCESS_FAILED');
           else finalText = event.structured_output === undefined ? event.result : JSON.stringify(event.structured_output);
+          const tokens = event.usage ?? {};
+          for (const [key, value] of [['costUsd', event.total_cost_usd], ['inputTokens', tokens.input_tokens],
+            ['outputTokens', tokens.output_tokens], ['cacheReadTokens', tokens.cache_read_input_tokens],
+            ['cacheWriteTokens', tokens.cache_creation_input_tokens], ['turns', event.num_turns]]) {
+            if (Number.isFinite(value)) usage[key] = value;
+          }
           if (typeof finalText !== 'string') throw new Error();
         }
       } catch { fail('INVALID_MODEL_JSON'); }
@@ -94,7 +104,7 @@ export class ProcessExecutor {
     });
     result.catch(() => {});
     child.stdin.end(input);
-    return { result, cancel, pid: child.pid };
+    return { result, cancel, pid: child.pid, usage };
   }
 }
 

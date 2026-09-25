@@ -47,9 +47,11 @@ test('Claude runtime runs claude headless with the schema, the mulino CLI only a
   assert.ok(spec.args.includes('type=volume,src=mulino-runtime-auth-test,dst=/home/mulino/.claude'));
   assert.ok(spec.args.includes('CLAUDE_CONFIG_DIR=/home/mulino/.claude'));
   assert.equal(arg('--model'), 'demo-model');
+  assert.equal(arg('--output-format'), 'json');
   assert.equal(arg('--permission-mode'), 'dontAsk');
   assert.equal(arg('--allowedTools'), 'Bash(mulino:*)');
   assert.deepEqual(JSON.parse(arg('--json-schema')).required, ['outcome', 'summary', 'waitingConditions', 'resultRef']);
+  assert.equal(JSON.parse(arg('--json-schema')).$schema, undefined);
   assert.match(arg('--append-system-prompt'), /\/opt\/mulino\/skills\/supply-chain\/SKILL\.md/);
   assert.ok(!spec.args.some(value => value.startsWith('CODEX_HOME=')));
   assert.ok(spec.args.includes('--read-only') && spec.args.includes('--cap-drop=ALL'));

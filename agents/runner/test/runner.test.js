@@ -293,3 +293,13 @@ test('lease lost during rejection verification blocks failure fallback', async t
   assert.equal((await runner.runOnce()).status, 'LEASE_LOST');
   assert.deepEqual(calls.map(call => call.action), ['claim', 'finish', 'heartbeat']);
 });
+
+test('model failure code and usage are logged without child output', async t => {
+  const { runner } = await setup(t, { mode: 'fail' });
+  const logs = [];
+  runner.logger = event => logs.push(event);
+  assert.equal((await runner.runOnce()).outcome, 'FAILED');
+  const finished = logs.find(event => event.event === 'model_finished');
+  assert.equal(finished.failure, 'MODEL_PROCESS_FAILED');
+  assert.doesNotMatch(JSON.stringify(logs), /secret-from-stderr/);
+});

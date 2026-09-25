@@ -95,6 +95,10 @@ export class Runner {
         timer.abort();
         if (event.kind === 'stop') continue;
         if (event.kind === 'result' || event.kind === 'failure') {
+          // Only fixed ExecutionError codes and numeric usage are logged, never child output.
+          const code = event.error?.code;
+          this.log('model_finished', { runRef: claim.runRef, ...(/^[A-Z_]{1,64}$/.test(code ?? '') ? { failure: code } : {}),
+            ...(handle.usage ?? {}) }, secretValues);
           let result;
           try {
             result = event.kind === 'result' ? validateResult(event.value) : {
