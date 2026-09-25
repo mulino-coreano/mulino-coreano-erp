@@ -10,10 +10,12 @@
 2026-09-25 실모델(claude-sonnet-5) 인수에서 스크립트 모델로는 통과하던
 흐름이 두 번 깨졌다.
 
-- 첫 번째: `$schema` 선언 거부 — 모델이 응답 JSON에 `$schema` 필드를
-  포함하는 것을 거부했다. 스크립트 에이전트는 통과했으나 실모델은 실패했다.
-- 두 번째: stream-json 한 줄 64 KiB 초과 — 모델이 단일 스트림 라인에
-  64 KiB를 초과하는 JSON을 출력해 runner 파서가 중단됐다.
+- 첫 번째: `$schema` 선언 거부 — Claude Code의 `--json-schema` 검사기가
+  우리 결과 스키마의 draft 2020-12 `$schema` 선언을 거부했다. 스크립트
+  에이전트는 하네스를 거치지 않아 드러나지 않았다.
+- 두 번째: stream-json 한 줄 64 KiB 초과 — `stream-json` 출력이 CLI 도구
+  응답(계획 31 KB, 근거 스냅샷 84 KB)을 한 줄에 실어 실행기의 64 KiB 한 줄
+  제한을 넘었다.
 
 현재 테스트 규모는 다음과 같다.
 
@@ -163,7 +165,7 @@ SAP 표준 테스트 도구다. 이 설계는 SAP 방법론(계층 구조, 인�
 |------|-----|-----|
 | 사람 역할 | 역할별 실제 stdio MCP | 역할별 실제 stdio MCP |
 | 에이전트 | 실제 runner + mulino CLI + 스크립트 에이전트(model.mjs) | 실제 runner + 하네스(Claude Code/Codex) + 모델 |
-| 런타임 환경 변수 | `MULINO_AGENT_RUNTIME`, `MULINO_AGENT_MODEL` | `MULINO_AGENT_RUNTIME`, `MULINO_AGENT_MODEL` |
+| 런타임 환경 변수 | 해당 없음(스크립트 에이전트) | `MULINO_AGENT_RUNTIME`, `MULINO_AGENT_MODEL` |
 | 백엔드 | 테스트 내 실제 Spring 구동; 고정 업무 시계 | 테스트 내 실제 Spring 구동; 고정 업무 시계 |
 | 확인 방법 | DB 업무 상태 | DB 업무 상태 |
 | 에이전트 단계 대기 | 기대 업무 상태 도달까지 최대 1분 | 기대 업무 상태 도달까지 최대 15분 |
