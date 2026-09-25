@@ -10,7 +10,7 @@ A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Itali
 
 ## Commands
 
-Use Java 21 and PostgreSQL 18. For the backend, create an empty DB and configure `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` and `MULINO_WORKER_TOKEN` locally; Flyway applies V1–V25, including Orchestrator/role bootstrap, external identities, planning data, leases/idempotency latest planning-attempt state and purchasing approval/application contracts plus versioned human Attention answers and server-managed replenishment follow-ups. Compilation generates jOOQ types from a disposable PostgreSQL 18 Docker container; Docker is therefore required for a clean backend build. Use a separate disposable DB for integration tests. The planning fixture must be loaded into an empty disposable business database before adding demo login identities; see `database/seed/replenishment_demo_README.md`.
+Use Java 21 and PostgreSQL 18. For the backend, create an empty DB and configure `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` and `MULINO_WORKER_TOKEN` locally; Flyway applies V1–V26, including Orchestrator/role bootstrap, external identities, planning data, leases/idempotency latest planning-attempt state and purchasing approval/application contracts plus versioned human Attention answers and server-managed replenishment follow-ups. Compilation generates jOOQ types from a disposable PostgreSQL 18 Docker container; Docker is therefore required for a clean backend build. Use a separate disposable DB for integration tests. The planning fixture must be loaded into an empty disposable business database before adding demo login identities; see `database/seed/replenishment_demo_README.md`.
 
 ```bash
 cd backend
@@ -46,6 +46,7 @@ psql -d mulino_coreano -f database/ddl/14_planning_attempt_marker.sql
 psql -d mulino_coreano -f database/ddl/15_purchase_approval.sql
 psql -d mulino_coreano -f database/ddl/16_attention_answer.sql
 psql -d mulino_coreano -f database/ddl/17_replenishment_followup.sql
+psql -d mulino_coreano -f database/ddl/18_run_timestamps_with_zone.sql
 psql -d mulino_coreano -f database/seed/interface.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```

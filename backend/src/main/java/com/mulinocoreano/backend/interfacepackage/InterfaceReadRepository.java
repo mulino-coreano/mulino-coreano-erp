@@ -193,7 +193,9 @@ public class InterfaceReadRepository {
                 field(
                         select(count().cast(Long.class))
                                 .from(c)
-                                .where(c.STATUS.in(CaseStatus.OPEN, CaseStatus.IN_PROGRESS)));
+                                // Every unfinished Case, so the at-risk subset can never exceed it.
+                                .where(c.STATUS.in(
+                                        CaseStatus.OPEN, CaseStatus.IN_PROGRESS, CaseStatus.WAITING)));
         var overdue =
                 exists(
                         selectOne()

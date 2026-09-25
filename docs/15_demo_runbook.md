@@ -58,7 +58,7 @@ cd backend
 ## 3. 폐기용 DB 초기화와 신원 연결 순서
 
 1. 운영자가 이름·호스트를 확인한 **새 빈 폐기용 DB**를 만들고 Backend용 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`를 설정한다. readiness는 DB를 만들지 않는다. DB 목록·접속 기본값에 의존하지 말고 매 명령의 대상을 명시한다.
-2. 그 DB로 Backend를 한 번 시작하여 Flyway를 최신 저장소 migration까지 적용하고 종료한다. 최신 버전은 `backend/src/main/resources/db/migration`의 파일을 기준으로 하며, 현재는 V25다.
+2. 그 DB로 Backend를 한 번 시작하여 Flyway를 최신 저장소 migration까지 적용하고 종료한다. 최신 버전은 `backend/src/main/resources/db/migration`의 파일을 기준으로 하며, 현재는 V26이다.
 3. [fixture 안내](../database/seed/replenishment_demo_README.md)에 따라 `database/seed/replenishment_demo.sql`을 적용한다. 이미 업무 데이터나 사용자가 있는 DB에서는 seed가 거절된다. 거절을 우회하거나 기존 행을 삭제하지 않는다.
 4. Backend를 다시 시작한 뒤 `X-Mulino-Local-Role: MANAGER` 헤더로 `/me`를 호출하여 역할과 capability를 확인한다. PoC는 로컬 역할 헤더로 신원을 설정한다. 실제 Auth0/OBO 연결은 보류(#21·#22)다.
 
