@@ -85,12 +85,18 @@ tasks.named('test') {
     // excludeTags 'scenario' therefore never matches them, and excludeEngines 'cucumber' was
     // verified (via an init-script dump of the resolved JUnitPlatformOptions, confirming
     // excludeEngines=[cucumber] was actually set) to NOT stop Gradle's test worker from still
-    // invoking the engine for classpath-resource-selected .feature files. The only wiring that
-    // actually keeps `test` at zero Cucumber scenarios is Cucumber's own filter: every real
-    // scenario in this repo is tagged @sit, @uat or @pending (testing skill §3), so excluding all
-    // three here guarantees nothing matches.
+    // invoking the engine for classpath-resource-selected .feature files. Cucumber's own
+    // cucumber.filter.tags is the only wiring that reaches this path.
+    //
+    // An earlier version of this filter excluded by KNOWN tag names ("not @sit and not @uat and
+    // not @pending"), which is a convention, not a guarantee: a future scenario tagged with
+    // something else, or left untagged, would slip through that exclusion and execute here.
+    // Instead, require an INCLUDE match on a sentinel tag that no real scenario should ever
+    // carry. Cucumber tag filters are an allowlist unless explicitly negated, so this matches
+    // nothing regardless of what tags any scenario -- present or future -- actually has; only a
+    // scenario author deliberately typing this exact sentinel tag could defeat it.
     useJUnitPlatform { excludeTags 'demo-e2e', 'scenario' }
-    systemProperty 'cucumber.filter.tags', 'not @sit and not @uat and not @pending'
+    systemProperty 'cucumber.filter.tags', '@do-not-tag-scenarios-with-this--unit-test-task-must-run-zero'
 }
 
 // Explicit acceptance suite: requires disposable PostgreSQL 18, Node dependencies and host Zig CLI.
