@@ -64,10 +64,26 @@ public final class AgentDriver {
 
     public boolean isAlive() { return process != null && process.isAlive(); }
 
+    /** Test hook: the runner's own OS pid, used to look up its live children directly (no stdout parsing). */
+    long pid() { return process.pid(); }
+
     public void stop() {
         if (process == null) return;
+        // Snapshot descendants (the runner's own children -- the scripted agent now, `docker run` in
+        // Task 5's live mode) while the process is still alive. Once it exits -- cooperatively below,
+        // or forcibly -- the OS no longer reports its former children through this handle, so this must
+        // happen before the first signal, not after the cooperative wait times out.
+        List<ProcessHandle> descendants = process.descendants().toList();
         process.destroy();
-        try { if (!process.waitFor(10, TimeUnit.SECONDS)) process.destroyForcibly().waitFor(5, TimeUnit.SECONDS); }
-        catch (InterruptedException e) { Thread.currentThread().interrupt(); process.destroyForcibly(); }
+        try {
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                descendants.forEach(ProcessHandle::destroyForcibly);
+                process.destroyForcibly().waitFor(5, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            descendants.forEach(ProcessHandle::destroyForcibly);
+            process.destroyForcibly();
+        }
     }
 }

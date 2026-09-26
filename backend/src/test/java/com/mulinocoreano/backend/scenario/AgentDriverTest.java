@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -19,5 +20,39 @@ class AgentDriverTest {
                 .hasMessageContaining("구매 제안 승인 대기").hasMessageContaining("MODEL_OUTPUT_TOO_LARGE");
         driver.stop();
         assertThat(driver.isAlive()).isFalse();
+    }
+
+    /**
+     * 수정 1차: stop()이 실행기(직접 자식) 하나만 강제 종료했다. 실행기가 Run마다 자기 자식을 또
+     * 띄우고(지금은 scripted agent, Task 5 live 모드에서는 docker run) SIGTERM을 무시하면 그
+     * 손자 프로세스가 고아로 남았다. 손자가 stop() 이후 살아남지 않음을 증명한다.
+     */
+    @Test
+    void stopKillsGrandchildProcessesEvenWhenTheRunnerIgnoresSigterm() throws InterruptedException {
+        String script = "process.on('SIGTERM', () => {}); "
+                + "const cp = require('child_process').spawn(process.execPath, "
+                + "['-e', 'process.on(\"SIGTERM\",()=>{});setInterval(()=>{},1000)'], "
+                + "{stdio:['ignore','ignore','ignore']}); "
+                + "console.log(String(cp.pid)); "
+                + "setInterval(()=>{},1000);";
+        var driver = new AgentDriver(new ObjectMapper(), List.of("node", "-e", script));
+        driver.start(Map.of());
+        ProcessHandle grandchild = awaitOnlyChild(driver.pid());
+        assertThat(grandchild.isAlive()).isTrue();
+
+        driver.stop();
+
+        assertThat(driver.isAlive()).isFalse();
+        assertThat(grandchild.isAlive()).isFalse();
+    }
+
+    private static ProcessHandle awaitOnlyChild(long pid) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        while (System.nanoTime() < deadline) {
+            Optional<ProcessHandle> child = ProcessHandle.of(pid).flatMap(p -> p.children().findFirst());
+            if (child.isPresent()) return child.get();
+            Thread.sleep(50);
+        }
+        throw new AssertionError("runner never spawned its grandchild within 5s");
     }
 }
