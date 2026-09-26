@@ -90,7 +90,7 @@ Worker API 응답의 소수·지수·JavaScript 안전 범위 밖 정수는 원�
 - 부분 본문 제한 시간 시험에서 Zig 0.16.0 `Client.fetch` 취소 경로의 비정상 종료를 재현했다. 하위 request/response API로 교체한 뒤 정상 JSON 오류·exit 2를 확인했다.
 - ARM64와 AMD64 Linux 정적 바이너리를 빌드했다. 실제 Docker 실행 검증은 ARM64에서 수행했다.
 - 이미지 smoke는 가짜 capability와 별도 임시 볼륨으로 사용자·파일·권한·환경·CA·CLI·정확한 JSON·Codex 설정 파싱과 취소 시 컨테이너 삭제를 확인한다. 외부 네트워크는 차단하며 모델 요청은 0건이다.
-- Codex 0.151.0의 `gpt-6-astra` 요청은 최신 Codex가 필요하다는 HTTP 400으로 실패하여 패키지와 이미지 기본 태그를 0.154.0으로 올렸다. 2026-09-12 ARM64 이미지 빌드·격리 smoke와 Node 실행기 48개 테스트가 통과했다. 전용 로그인 볼륨의 `gpt-6-astra` 최소 응답 요청은 크레딧 부족으로 종료했다. Codex 크레딧 소진으로 실제 업무 수행 인수가 불가능해져 Claude Code executor를 추가했다. 2026-09-25 arm64 OrbStack에서 이미지 빌드 후 컨테이너 내 `claude --version` = 2.1.282 확인, `smoke-image.mjs` 모든 점검 통과(모델 요청 0건); `claude -p --json-schema`를 `claude-haiku-4-5`로 로컬 확인해 result event 형태 검증($0.016). backend `./gradlew test` 525개 0 실패, `demoE2eTest` 두 케이스 PASSED; runner `npm test` 52/52.
+- Codex 0.151.0의 `gpt-6-astra` 요청은 최신 Codex가 필요하다는 HTTP 400으로 실패하여 패키지와 이미지 기본 태그를 0.154.0으로 올렸다. 2026-09-12 ARM64 이미지 빌드·격리 smoke와 Node 실행기 48개 테스트가 통과했다. 전용 로그인 볼륨의 `gpt-6-astra` 최소 응답 요청은 크레딧 부족으로 종료했다. Codex 크레딧 소진으로 실제 업무 수행 인수가 불가능해져 Claude Code executor를 추가했다. 2026-09-25 arm64 OrbStack에서 이미지 빌드 후 컨테이너 내 `claude --version` = 2.1.282 확인, `smoke-image.mjs` 모든 점검 통과(모델 요청 0건); `claude -p --json-schema`를 `claude-haiku-4-5`로 로컬 확인해 result event 형태 검증($0.016). backend `./gradlew test` 525개 0 실패, `demoE2eTest`(현재는 `sitTest`의 `BackendRestartRecoveryTest`로 이관) 두 케이스 PASSED; runner `npm test` 52/52.
 - 2026-09-25 CLAUDE 런타임, model claude-sonnet-5, backend MULINO_AGENT_RUNTIME=CLAUDE,
   재보충 fixture DB(기준일 2026-09-05, live clock)로 실제 인수를 수행했다. Case
   CASE-2da139104b024f, targetDate 2026-10-24, warehouse 1, 품목 DEMO-AMR/DEMO-BSC.

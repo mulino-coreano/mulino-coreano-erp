@@ -46,11 +46,11 @@ node agents/runner/scripts/build-image.mjs
 node agents/runner/scripts/smoke-image.mjs
 ```
 
-명시적 opt-in 로컬 연결 시험은 Node, OpenSSL, `mcp-server`의 `npm ci`, Zig CLI 빌드가 준비된 상태에서 실행한다. 별도로 생성한 폐기용 DB 이름은 정확히 `mulino_demo_e2e`여야 하며, `DB_URL`은 `jdbc:postgresql://127.0.0.1:<포트>/mulino_demo_e2e` 또는 `localhost` 형식으로 명시한다. `DB_USERNAME`·`DB_PASSWORD`도 해당 시험 DB 자격 증명으로 주입한다. 시험은 `demo_e2e` 스키마를 초기화한다. 일반 애플리케이션 DB 설정을 그대로 재사용하지 않는다. 상세 전제와 실행 예시는 [로컬 E2E 안내](../mcp-server/scripts/demo-e2e/README.md)를 따른다.
+`demoE2eTest`는 SAP 스타일 시나리오 시험 체계로 이관되어 폐기됐다(#57). 같은 승인 대기 중 Spring 재시작 검증은 이제 `BackendRestartRecoveryTest`가 맡으며, `mulino_demo_e2e` 전용 DB 없이 `sitTest` 자체의 폐기용 `*_scenario` DB에서 실행된다. 전제와 실행 방법은 [testing 스킬](../.agents/skills/testing/SKILL.md)을 따른다.
 
 ```bash
 cd backend
-./gradlew demoE2eTest
+./gradlew sitTest
 ```
 
 이 시험은 로컬 역할 헤더·worker 토큰과 scripted model을 사용한다. 실제 외부 신원 제공자 로그인이나 유료 모델 호출을 증명하지 않는다. 실패·skip을 실제 외부 인수 성공으로 해석하지 않는다. 일반 `test`와 opt-in 시험 결과를 별도로 기록한다.
@@ -132,7 +132,7 @@ PO 적용 뒤 Case가 `WAITING`으로 남고 서버 관리 후속 업무가 입�
 
 다음은 서로 대체할 수 없는 증거다. 실제 미수행 항목은 미검증으로 남긴다.
 
-- [ ] 로컬 Backend/MCP/CLI/Runner·readiness 회귀 시험과 opt-in `demoE2eTest`의 실행 결과를 기록했다.
+- [ ] 로컬 Backend/MCP/CLI/Runner·readiness 회귀 시험과 `sitTest`의 실행 결과를 기록했다.
 - [ ] 명시한 폐기용 PostgreSQL 18과 최신 Flyway·fixture 선행·이후 ERP 신원 mapping을 확인했다.
 - [ ] readiness JSON의 미충족 조건을 해소했으며 volume/image PASS의 한계를 기록했다.
 - [ ] (보류 #21·#22) 실제 Auth0 tenant/CIMD/사용자 permission/connection 및 OBO 신원 보존을 확인했다.

@@ -95,19 +95,8 @@ tasks.named('test') {
     // carry. Cucumber tag filters are an allowlist unless explicitly negated, so this matches
     // nothing regardless of what tags any scenario -- present or future -- actually has; only a
     // scenario author deliberately typing this exact sentinel tag could defeat it.
-    useJUnitPlatform { excludeTags 'demo-e2e', 'scenario' }
+    useJUnitPlatform { excludeTags 'scenario' }
     systemProperty 'cucumber.filter.tags', '@do-not-tag-scenarios-with-this--unit-test-task-must-run-zero'
-}
-
-// Explicit acceptance suite: requires disposable PostgreSQL 18, Node dependencies and host Zig CLI.
-tasks.register('demoE2eTest', Test) {
-    description = 'Run real HTTP/MCP/runner/CLI acceptance with simulated identity provider and model.'
-    group = 'verification'
-    testClassesDirs = sourceSets.test.output.classesDirs
-    classpath = sourceSets.test.runtimeClasspath
-    useJUnitPlatform { includeTags 'demo-e2e' }
-    outputs.upToDateWhen { false }
-    testLogging { events 'passed', 'failed'; showStandardStreams = true }
 }
 
 // SAP-style scenario suites (Cucumber, Korean Gherkin). SIT runs a scripted agent against
@@ -122,13 +111,14 @@ tasks.register('demoE2eTest', Test) {
 // NoTestsDiscoveredException before Cucumber's own tag filter ever runs. Selecting the class by
 // file pattern instead avoids adding any outer tag filter, so the nested discovery is unconstrained
 // and Cucumber's own cucumber.filter.tags (below) is the only filter that applies.
-def scenarioTask = { String taskName, String tags, String agent, boolean dryRun ->
+def scenarioTask = { String taskName, String tags, String agent, boolean dryRun, List<String> extraIncludes = [] ->
     tasks.register(taskName, Test) {
         group = 'verification'
         description = "Cucumber scenarios: ${tags}"
         testClassesDirs = sourceSets.test.output.classesDirs
         classpath = sourceSets.test.runtimeClasspath
         include '**/ScenarioSuite.class'
+        extraIncludes.each { include it }
         useJUnitPlatform()
         systemProperty 'cucumber.filter.tags', tags
         systemProperty 'mulino.scenario.agent', agent
@@ -146,6 +136,12 @@ def scenarioTask = { String taskName, String tags, String agent, boolean dryRun 
         testLogging { events 'passed', 'failed', 'skipped'; showStandardStreams = true }
     }
 }
-scenarioTask('sitTest', '@sit and not @pending', 'scripted', false)
+// BackendRestartRecoveryTest proves goal 4's one behaviour Cucumber cannot express (the real
+// Spring application context restarting while a purchase approval is PENDING). It is a plain
+// JUnit class tagged "scenario", not a Cucumber pickle, so it never matches cucumber.filter.tags
+// and must be added to sitTest's own include pattern; uatTest and pendingScenarios deliberately
+// leave it out since a context restart is scripted-agent infrastructure, not a live-model or
+// dry-run concern.
+scenarioTask('sitTest', '@sit and not @pending', 'scripted', false, ['**/BackendRestartRecoveryTest.class'])
 scenarioTask('uatTest', '@uat and not @pending', 'live', false)
 scenarioTask('pendingScenarios', '@pending', 'scripted', true)
