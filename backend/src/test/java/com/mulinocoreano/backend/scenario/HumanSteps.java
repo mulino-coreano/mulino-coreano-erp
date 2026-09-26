@@ -54,7 +54,15 @@ public class HumanSteps {
     JsonNode latestApproval(String role) {
         JsonNode view = channel().call(role, "get_case", Map.of("caseRef", world.caseRef)).content();
         JsonNode approvals = view.path("approvals");
-        long id = approvals.get(approvals.size() - 1).path("governanceActionId").asLong();
+        // CaseOverviewRepository.approvals() orders by governance_action_id DESC, but that
+        // ordering is an implementation detail this step must not depend on. Pick the highest
+        // governanceActionId explicitly so "latest" holds regardless of array order.
+        long id = -1;
+        for (JsonNode approval : approvals) {
+            long candidate = approval.path("governanceActionId").asLong();
+            if (candidate > id) id = candidate;
+        }
+        if (id < 0) throw new AssertionError("Case " + world.caseRef + " has no purchase approvals");
         return channel().call(role, "get_approval", Map.of("approvalId", id)).content();
     }
 }
