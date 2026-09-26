@@ -51,6 +51,13 @@ public class HumanSteps {
                 "requestKey", requestKey));
     }
 
+    /** 다른 스텝 클래스가 MCP 왕복 코드를 중복하지 않고 latestApproval을 재사용하기 위한 헬퍼. */
+    HumanSteps withContext(ScenarioWorld world, ObjectMapper mapper) {
+        this.world = world;
+        this.mapper = mapper;
+        return this;
+    }
+
     JsonNode latestApproval(String role) {
         JsonNode view = channel().call(role, "get_case", Map.of("caseRef", world.caseRef)).content();
         JsonNode approvals = view.path("approvals");
