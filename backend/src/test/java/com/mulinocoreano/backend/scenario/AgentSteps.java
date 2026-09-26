@@ -2,6 +2,7 @@ package com.mulinocoreano.backend.scenario;
 
 import io.cucumber.java.After;
 import io.cucumber.java.en.When;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -18,12 +19,33 @@ public class AgentSteps {
 
     Duration timeout() { return ScenarioContext.live() ? Duration.ofMinutes(15) : Duration.ofSeconds(60); }
 
+    @io.cucumber.java.Before(order = 1)
+    public void skipUatWithoutPrerequisites() {
+        if (!ScenarioContext.live()) return;
+        var missing = UatEvidence.prerequisitesMissing(System.getenv());
+        org.junit.jupiter.api.Assumptions.assumeTrue(missing.isEmpty(), "UAT skipped: prerequisite missing " + missing);
+    }
+
     AgentDriver driver() {
         if (driver == null) {
-            driver = new AgentDriver(mapper, List.of("node", HumanChannel.ROOT.resolve("agents/runner/scripts/scripted-runner.mjs").toString()));
-            driver.start(scriptedEnv());
+            var env = System.getenv();
+            driver = ScenarioContext.live()
+                    ? new AgentDriver(mapper, List.of("node", HumanChannel.ROOT.resolve("agents/runner/src/main.js").toString()))
+                    : new AgentDriver(mapper, List.of("node", HumanChannel.ROOT.resolve("agents/runner/scripts/scripted-runner.mjs").toString()));
+            driver.start(ScenarioContext.live() ? liveEnv(env) : scriptedEnv());
         }
         return driver;
+    }
+
+    Map<String, String> liveEnv(Map<String, String> env) {
+        var m = new java.util.HashMap<String, String>();
+        m.put("MULINO_WORKER_TOKEN", ScenarioContext.WORKER_TOKEN);
+        m.put("MULINO_WORKER_ID", "uat-" + world.port);
+        m.put("MULINO_API_BASE", world.apiBase());
+        m.put("MULINO_AGENT_API_URL", "http://host.docker.internal:" + world.port + "/api/v1");
+        for (String k : List.of("MULINO_AGENT_RUNTIME", "MULINO_AGENT_MODEL", "MULINO_RUNTIME_IMAGE", "MULINO_AUTH_VOLUME", "DOCKER_HOST"))
+            if (env.get(k) != null) m.put(k, env.get(k));
+        return m;
     }
 
     Map<String, String> scriptedEnv() {
@@ -47,6 +69,23 @@ public class AgentSteps {
     @When("에이전트가 반려를 확인한다")
     public void agentSeesBlock() {
         driver().awaitState("반려 후 에이전트 중단", () -> state.abortedOrchestratorRuns(world.caseRef) >= 1, timeout());
+    }
+
+    @After(order = 10)
+    public void recordUatEvidence(io.cucumber.java.Scenario scenario) throws Exception {
+        if (!ScenarioContext.live() || driver == null) return;
+        String tc = scenario.getSourceTagNames().stream().filter(t -> t.startsWith("@TC-")).findFirst().orElse("@TC-UNKNOWN").substring(1);
+        Map<String, Object> record = new java.util.LinkedHashMap<>();
+        record.put("testCase", tc);
+        record.put("status", scenario.getStatus().name());
+        record.put("runtime", System.getenv("MULINO_AGENT_RUNTIME"));
+        record.put("model", System.getenv("MULINO_AGENT_MODEL"));
+        record.putAll(UatEvidence.summarize(driver.modelFinished()));
+        record.put("appliedPurchaseOrders", state.appliedPurchaseOrders());
+        record.put("appliedPurchaseTotalKrw", state.appliedPurchaseTotal());
+        record.put("caseStatus", world.caseRef == null ? null : state.caseStatus(world.caseRef));
+        Path file = UatEvidence.write(mapper, Path.of("build/uat", java.time.LocalDate.now().toString()), tc, record);
+        scenario.log("UAT evidence: " + file);
     }
 
     @After
