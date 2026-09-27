@@ -39,14 +39,29 @@ public final class AgentDriver {
         } catch (java.io.IOException e) { throw new AssertionError("runner failed to start", e); }
     }
 
+    private static final int TAIL_LINES = 20;
+
     public void awaitState(String expected, BooleanSupplier reached, Duration timeout) {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
             if (reached.getAsBoolean()) return;
+            if (!isAlive()) {
+                throw new AssertionError("Agent did not reach: " + expected + "; runner process exited early ("
+                        + timeout + " timeout not used); last output:\n" + tail());
+            }
             try { Thread.sleep(250); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new AssertionError(e); }
         }
         List<String> codes = modelFinished().stream().map(e -> e.path("failure").asText("")).filter(s -> !s.isEmpty()).toList();
         throw new AssertionError("Agent did not reach: " + expected + " within " + timeout + "; model failures: " + codes);
+    }
+
+    /** Bounded tail of the runner's captured stdout/stderr, for a fast, readable failure when the
+     * process died early instead of waiting out the whole timeout. */
+    private String tail() {
+        synchronized (lines) {
+            int from = Math.max(0, lines.size() - TAIL_LINES);
+            return String.join("\n", lines.subList(from, lines.size()));
+        }
     }
 
     public List<JsonNode> modelFinished() {

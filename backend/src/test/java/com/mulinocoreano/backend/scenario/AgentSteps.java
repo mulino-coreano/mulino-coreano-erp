@@ -103,7 +103,7 @@ public class AgentSteps {
         record.put("status", scenario.getStatus().name());
         record.put("runtime", System.getenv("MULINO_AGENT_RUNTIME"));
         record.put("model", System.getenv("MULINO_AGENT_MODEL"));
-        record.putAll(UatEvidence.summarize(driver.modelFinished()));
+        record.putAll(UatEvidence.summarize(world.caseRef == null ? List.of() : state.runsForCase(world.caseRef), driver.modelFinished()));
         record.put("appliedPurchaseOrders", state.appliedPurchaseOrders());
         record.put("appliedPurchaseTotalKrw", state.appliedPurchaseTotal());
         record.put("caseStatus", world.caseRef == null ? null : state.caseStatus(world.caseRef));

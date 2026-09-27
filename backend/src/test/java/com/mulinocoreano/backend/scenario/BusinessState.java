@@ -1,6 +1,7 @@
 package com.mulinocoreano.backend.scenario;
 
 import java.math.BigDecimal;
+import java.util.List;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
@@ -102,4 +103,21 @@ public class BusinessState {
                 WHERE c.case_ref=:caseRef AND r.lease_owner=:workerId
                 """).param("caseRef", caseRef).param("workerId", workerId).query(Long.class).single();
     }
+
+    /** 이 Case에서 실행된 모든 Run(agent_key, run_ref, status, outcome), Run 순서대로. UAT 증거의
+     * "Run별 결과" 항목이 여기서 나온다 — 러너의 model_finished 로그(비용·토큰·실패 코드)는
+     * run_ref로 이 목록의 각 행과 합친다. */
+    public List<RunRecord> runsForCase(String caseRef) {
+        return jdbc.sql("""
+                SELECT a.agent_key, r.run_ref, r.status::text AS status, r.outcome
+                FROM runs r JOIN agents a USING(agent_id) JOIN cases c ON c.case_id=r.case_id
+                WHERE c.case_ref=:caseRef ORDER BY r.run_id
+                """).param("caseRef", caseRef)
+                .query((rs, rowNum) -> new RunRecord(rs.getString("agent_key"), rs.getString("run_ref"),
+                        rs.getString("status"), rs.getString("outcome")))
+                .list();
+    }
+
+    /** 이 Case의 Run 한 건: 에이전트, run_ref, DB 상태, 완료 결과(outcome, 아직 끝나지 않았으면 null). */
+    public record RunRecord(String agentKey, String runRef, String status, String outcome) {}
 }

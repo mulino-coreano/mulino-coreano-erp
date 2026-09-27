@@ -19,16 +19,50 @@ public final class UatEvidence {
         return REQUIRED.stream().filter(k -> env.getOrDefault(k, "").isBlank()).toList();
     }
 
-    static Map<String, Object> summarize(List<JsonNode> modelFinished) {
-        double cost = 0; long in = 0, out = 0; List<String> failures = new ArrayList<>();
+    /** 이 Case의 DB Run 목록(agent_key, run_ref, status, outcome)에 러너의 model_finished 로그
+     * (run_ref로 짝지은 비용·토큰·실패 코드)를 합쳐 Run별 결과 배열을 만들고, 전체 합계도 함께
+     * 남긴다. 한 run_ref에 model_finished가 여러 번 남을 수 있다 -- lease 만료 뒤 재청구된 Run은
+     * 이전 시도의 model_finished도 로그에 남기 때문에 -- 그래서 비용·토큰은 합산하고, 실패 코드는
+     * 가장 마지막 것을 남긴다. */
+    static Map<String, Object> summarize(List<BusinessState.RunRecord> dbRuns, List<JsonNode> modelFinished) {
+        Map<String, List<JsonNode>> byRunRef = new LinkedHashMap<>();
         for (JsonNode e : modelFinished) {
-            cost += e.path("costUsd").asDouble(0);
-            in += e.path("inputTokens").asLong(0);
-            out += e.path("outputTokens").asLong(0);
-            if (e.hasNonNull("failure")) failures.add(e.get("failure").asText());
+            String runRef = e.path("runRef").asText(null);
+            if (runRef == null) continue; // model_finished always carries runRef (agents/runner/src/runner.js); defensive only.
+            byRunRef.computeIfAbsent(runRef, k -> new ArrayList<>()).add(e);
         }
+
+        List<Map<String, Object>> runs = new ArrayList<>();
+        double totalCost = 0; long totalIn = 0, totalOut = 0; List<String> failures = new ArrayList<>();
+        for (BusinessState.RunRecord r : dbRuns) {
+            double cost = 0; long in = 0, out = 0; String failure = null;
+            for (JsonNode e : byRunRef.getOrDefault(r.runRef(), List.of())) {
+                cost += e.path("costUsd").asDouble(0);
+                in += e.path("inputTokens").asLong(0);
+                out += e.path("outputTokens").asLong(0);
+                if (e.hasNonNull("failure")) failure = e.get("failure").asText();
+            }
+            Map<String, Object> run = new LinkedHashMap<>();
+            run.put("agentKey", r.agentKey());
+            run.put("runRef", r.runRef());
+            run.put("status", r.status());
+            run.put("outcome", r.outcome());
+            run.put("failure", failure);
+            run.put("costUsd", cost);
+            run.put("inputTokens", in);
+            run.put("outputTokens", out);
+            runs.add(run);
+
+            if (failure != null) failures.add(failure);
+            totalCost += cost; totalIn += in; totalOut += out;
+        }
+
         Map<String, Object> s = new LinkedHashMap<>();
-        s.put("runs", modelFinished.size()); s.put("costUsd", cost); s.put("inputTokens", in); s.put("outputTokens", out); s.put("failures", failures);
+        s.put("runs", runs);
+        s.put("costUsd", totalCost);
+        s.put("inputTokens", totalIn);
+        s.put("outputTokens", totalOut);
+        s.put("failures", failures);
         return s;
     }
 

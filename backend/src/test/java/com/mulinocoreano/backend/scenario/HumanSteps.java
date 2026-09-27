@@ -28,16 +28,16 @@ public class HumanSteps {
     }
 
     @When("MANAGER가 구매 제안을 승인한다")
-    public void managerApproves() { world.lastDecision = decide("MANAGER", "APPROVE", "scenario-approve"); }
+    public void managerApproves() { decide("MANAGER", "APPROVE", "scenario-approve"); }
 
     @When("MANAGER가 구매 제안을 반려한다")
-    public void managerBlocks() { world.lastDecision = decide("MANAGER", "BLOCK", "scenario-block"); }
+    public void managerBlocks() { decide("MANAGER", "BLOCK", "scenario-block"); }
 
     @When("OPERATOR가 구매 제안 승인을 시도한다")
-    public void operatorTriesToApprove() { world.lastDecision = decide("OPERATOR", "APPROVE", "scenario-operator"); }
+    public void operatorTriesToApprove() { decide("OPERATOR", "APPROVE", "scenario-operator"); }
 
     @When("MANAGER가 기존 구매 제안 승인을 시도한다")
-    public void managerTriesStaleApproval() { world.lastDecision = decide("MANAGER", "APPROVE", "scenario-stale"); }
+    public void managerTriesStaleApproval() { decide("MANAGER", "APPROVE", "scenario-stale"); }
 
     /** 가장 최근 구매 제안을 현재 버전·해시로 결정한다. 거절 여부는 업무 상태로 확인한다. */
     HumanChannel.ToolResult decide(String role, String decision, String requestKey) {

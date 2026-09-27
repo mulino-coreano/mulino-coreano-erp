@@ -126,7 +126,7 @@ def scenarioTask = { String taskName, String tags, String agent, boolean dryRun,
         // still undefined throws PendingException per step, which JUnit reports as a failed test
         // even though dry-run's whole point is to compile/wire the script without running business
         // logic. ignoreFailures keeps that expected-until-#26/#27 state from failing the build,
-        // while the task's own stdout (testLogging above) still lists every pending case and its
+        // while the task's own stdout (testLogging below) still lists every pending case and its
         // undefined steps for a human to check.
         if (dryRun) {
             systemProperty 'cucumber.execution.dry-run', 'true'

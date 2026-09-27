@@ -22,6 +22,24 @@ class AgentDriverTest {
         assertThat(driver.isAlive()).isFalse();
     }
 
+    /** 목표 4 보조: 실행기 프로세스가 이미 죽었으면 타임아웃을 다 기다리지 않고 바로 실패해야
+     * 한다 -- 그래야 CI가 죽은 러너 뒤에서 몇 분씩 헛되이 대기하지 않는다. */
+    @Test
+    void diesEarlyFailsWellBeforeTheTimeoutNamingTheExpectedState() {
+        var driver = new AgentDriver(new ObjectMapper(), List.of("node", "-e", "console.log('runner exiting now')"));
+        driver.start(Map.of());
+
+        long startNanos = System.nanoTime();
+        assertThatThrownBy(() -> driver.awaitState("구매 제안 승인 대기", () -> false, Duration.ofMinutes(15)))
+                .hasMessageContaining("구매 제안 승인 대기");
+        long elapsedMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
+
+        // Nowhere near the 15-minute timeout: the process death must be caught on the next poll,
+        // not after waiting the whole duration out.
+        assertThat(elapsedMs).isLessThan(5000);
+        driver.stop();
+    }
+
     /**
      * 수정 1차: stop()이 실행기(직접 자식) 하나만 강제 종료했다. 실행기가 Run마다 자기 자식을 또
      * 띄우고(지금은 scripted agent, Task 5 live 모드에서는 docker run) SIGTERM을 무시하면 그
