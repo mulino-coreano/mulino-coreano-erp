@@ -45,15 +45,21 @@ import tools.jackson.databind.ObjectMapper;
 class BackendRestartRecoveryTest {
 
     /**
-     * Spring Boot auto-detects a nested @TestConfiguration class and applies it after the main
-     * configuration, so its bean definitions win even with allow-bean-definition-overriding. An
-     * {@code @Import(ScenarioContext.FixedClock.class)} on the test class itself was tried first
-     * and does NOT reliably win that ordering outside Cucumber's bootstrap: PlanningConfiguration's
-     * real-clock "planningClock" bean ended up replacing the fixed one, so the plan calculation ran
-     * against the real 2026-09-27 wall clock instead of the fixture's 2026-09-05 and produced
-     * NO_PURCHASE_REQUIRED. Declaring the fixed clock in this test's own nested @TestConfiguration
-     * avoids that ordering dependency, matching the retired backend acceptance test that this class
-     * replaces.
+     * Spring Boot's test framework auto-detects a {@code static} nested {@code @TestConfiguration}
+     * declared directly on the annotated test class and registers it after the main application
+     * configuration, so its bean definitions win even with allow-bean-definition-overriding.
+     * {@code ScenarioContext.FixedClock} gets this ordering "for free" only because it is nested
+     * inside {@code ScenarioContext} itself, the class Cucumber's {@code @CucumberContextConfiguration}
+     * points at. Pulling it in here instead via {@code @Import(ScenarioContext.FixedClock.class)} on
+     * this test class was tried first and does NOT get that "registered after" guarantee -- an
+     * {@code @Import} is just another config source at ordinary priority, so
+     * PlanningConfiguration's real-clock "planningClock" bean ended up replacing the fixed one, and
+     * the plan calculation ran against the real 2026-09-27 wall clock instead of the fixture's
+     * 2026-09-05 and produced NO_PURCHASE_REQUIRED. Declaring the fixed clock in this test's own
+     * nested @TestConfiguration (below) gets the same "after the main config" placement directly,
+     * matching the retired backend acceptance test that this class replaces. Do not copy the
+     * {@code @Import} pattern for this purpose elsewhere -- nest the {@code @TestConfiguration}
+     * instead.
      */
     @TestConfiguration
     static class Config {

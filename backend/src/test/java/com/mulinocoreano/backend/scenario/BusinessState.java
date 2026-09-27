@@ -92,4 +92,15 @@ public class BusinessState {
                 WHERE c.case_ref=:caseRef AND a.status='OPEN' AND a.governance_action_id IS NULL
                 """).param("caseRef", caseRef).query(Long.class).single();
     }
+
+    /** 이 Case에서 현재 실행 중(RUNNING)인 Run 건수. run_status는 QUEUED/RUNNING/COMPLETED/
+     * FAILED/ABORTED다(V8 types, V20 QUEUED 추가). 실행기를 재시작해도 안전한, 어떤 Run도
+     * 리스를 쥐고 있지 않은 유휴 시점을 확인하는 데 쓴다 — QUEUED는 아직 아무도 리스를 쥐지 않았으므로
+     * 대상이 아니다. */
+    public long runningRuns(String caseRef) {
+        return jdbc.sql("""
+                SELECT count(*) FROM runs r JOIN cases c ON c.case_id=r.case_id
+                WHERE c.case_ref=:caseRef AND r.status='RUNNING'
+                """).param("caseRef", caseRef).query(Long.class).single();
+    }
 }

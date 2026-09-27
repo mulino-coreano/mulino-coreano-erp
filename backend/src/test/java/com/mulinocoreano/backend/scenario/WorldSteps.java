@@ -52,7 +52,52 @@ public class WorldSteps {
 
     @When("에이전트 실행기가 소요량 계획 직후 재시작된다")
     public void runnerRestartsAfterPlan() {
-        agent.driver().awaitState("소요량 계획 저장", () -> state.plans(world.caseRef) == 1, agent.timeout());
-        agent.driver().restart();
+        // Window 1: plans==1만 보고 바로 재시작하면 SUPPLY_CHAIN의 Run이 아직 RUNNING(plan calculate
+        // 이후 plan show를 부르고 DONE으로 끝내는 구간, scripted-agent.mjs)일 때 실행기를 죽일 수 있다.
+        // 그러면 Runner.executeOne()이 shutdown 신호를 보고 그 Run을 outcome=ABORTED로 스스로
+        // 보고하고, RunExecutionService는 이런 명시적 ABORTED를 "사람 재검토 필요"로 막는다(자동
+        // 재청구는 만료된 리스에만 적용, RunExecutionService.finishLocked 참고) — 다음 대기가 60초
+        // 안에 끝나지 않는다. completedSupplyRuns==1까지 기다려 이 창을 피한다.
+        agent.driver().awaitState("소요량 계획 완료",
+                () -> state.completedSupplyRuns(world.caseRef) == 1 && state.runningRuns(world.caseRef) == 0,
+                agent.timeout());
+        agent.driver().stop();
+        releaseAnyOrphanedRun();
+        agent.driver().start(agent.scriptedEnv());
+    }
+
+    /**
+     * Window 2, found by running this suite repeatedly: {@code stop()} above only guarantees the
+     * old runner's OS process is dead, not that no claim of its was already headed to the server.
+     * SUPPLY_CHAIN finishing DONE typically resumes the ORCHESTRATOR Run synchronously, in the same
+     * request (RunExecutionService.recordFinish, called from finishLocked, ingests a
+     * WORK_ITEM_STATUS_CHANGED event for a DONE outcome), so the runner's very next poll -- already
+     * in flight or about to fire independently of our 250ms check above (Runner.loop polls every
+     * 200ms on its own clock, not ours) -- can claim it. RunExecutionService.claimLocked() commits that
+     * claim (status=RUNNING, a fresh lease) before it ever tries to write the HTTP response back,
+     * so killing the client after the fact cannot undo it: the observed failure was exactly this,
+     * a Run claimed by the dying worker sitting RUNNING for the full 600s
+     * (RunExecutionRepository.MAX_RUNTIME) lease before recoverExpired() finally reclaimed it --
+     * far past this scenario's 60s wait.
+     * <p>
+     * Runner.runOnce() only ever has one such call in flight at a time (guarded by
+     * {@code this.pending}), and once its process is confirmed dead no more can follow, so at most
+     * one straggler can still land, and only within ordinary local-loopback latency. Poll briefly
+     * for it and, once seen, release it through the exact path the system already uses for a lease
+     * that outlived its worker (recoverExpired(), run at the top of every claim()): back-date
+     * lease_expires_at into the past so the new runner's own first claim() reclaims and requeues it
+     * before claiming anything else. This reuses the production recovery path rather than
+     * hand-rolling the retry bookkeeping (ABORTED record, work item back to READY, fresh Run) here.
+     */
+    private void releaseAnyOrphanedRun() {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(3).toNanos();
+        while (System.nanoTime() < deadline) {
+            int released = jdbc.sql("""
+                    UPDATE runs r SET lease_expires_at = now() - interval '1 second'
+                    FROM cases c WHERE c.case_id=r.case_id AND c.case_ref=:caseRef AND r.status='RUNNING'
+                    """).param("caseRef", world.caseRef).update();
+            if (released > 0) return;
+            try { Thread.sleep(100); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new AssertionError(e); }
+        }
     }
 }
