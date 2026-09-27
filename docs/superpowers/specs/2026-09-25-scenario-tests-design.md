@@ -246,21 +246,23 @@ TC-P2P-005는 예외다: 워커 강제 종료(crash-restart) 뒤 재개를 기�
 ### 9.1 기준선 (2026-09-27, `mulino_test`/`mulino_scenario` 컨테이너 재생성 직후)
 
 DB: OrbStack PostgreSQL 18 컨테이너 `mulino-scenario-pg`(localhost:55433). `mulino_test`를
-`DROP DATABASE`/`CREATE DATABASE`로 재생성한 뒤 측정했다.
+`DROP DATABASE`/`CREATE DATABASE`로 재생성한 뒤 측정했다. 리뷰 반영 커밋(`e4ea9cb`)이
+`UatEvidenceTest`와 `AgentDriverTest`에 1건씩 추가해 backend 건수가 544에서 546으로 늘었다.
+늘어난 2건은 모두 `scenario` 패키지 소속이라 §9.2 분류표의 범위(525건)는 그대로다.
 
 | 스위트 | 명령 | 건수 | Wall time |
 |---|---|---|---|
-| backend `test` | `DB_URL=jdbc:postgresql://localhost:55433/mulino_test DB_USERNAME=postgres DB_PASSWORD=test ./gradlew clean test --no-daemon` | 544 (실행 531, 스킵 13) | 1분 34초 |
+| backend `test` | `DB_URL=jdbc:postgresql://localhost:55433/mulino_test DB_USERNAME=postgres DB_PASSWORD=test ./gradlew clean test --no-daemon` | 546 (실행 533, 스킵 13) | 1분 42초 |
 | agents/runner | `cd agents/runner && npm test` | 52 | 0.7초 |
 | mcp-server | `cd mcp-server && npm test` | 18 | 2.2초 |
-| scripts/demo | `node --test scripts/demo/readiness.test.mjs` | 17 | 0.19초 |
+| scripts/demo | `node --test scripts/demo/readiness.test.mjs` | 17 | 0.23초 |
 
-backend 544건 중 13건은 `test` 태스크의 센티널 태그 필터에 걸려 스킵 처리되며 실행되지 않는
+backend 546건 중 13건은 `test` 태스크의 센티널 태그 필터에 걸려 스킵 처리되며 실행되지 않는
 Cucumber 시나리오 픽클이다. 그중 8건은 `@pending` 시나리오(`batch-recall.feature` 3,
 `qm-inbound-inspection.feature` 5)이고 나머지 5건은 `@sit` 시나리오(`mrp-p2p.feature`)로, 두
 태그 집합 모두 같은 센티널 필터에 걸려 이 태스크에서는 실행되지 않는다
 (`build/test-results/test/TEST-feature_classpath_scenarios-*.xml`의 `skipped="tests"` 확인).
-실행된 531건 중 6건(`ScenarioGuardTest` 1, `UatEvidenceTest` 2, `AgentDriverTest` 3)은 이번 작업이
+실행된 533건 중 8건(`ScenarioGuardTest` 1, `UatEvidenceTest` 3, `AgentDriverTest` 4)은 이번 작업이
 새로 만든 `scenario` 패키지 소속이라 본 분류표의 범위 밖이다. 아래 표는 나머지
 **525건, `backend/src/test/java` 47개 클래스**(`interfacepackage`·`planning`·`procurement`·
 `execution`·`security`가 대부분이고 `common`·`idempotency`·`followup`에 1개씩 있다)를 다룬다. `WithTestActor`,
@@ -348,6 +350,23 @@ Cucumber 시나리오 픽클이다. 그중 8건은 `@pending` 시나리오(`batc
 - SIT 이관: 0건. 기존 클래스 중 흐름 전체를 Unit이 잘못 떠맡고 있는 사례는 발견하지 못했다(`DemoE2eTest`는 이미 이전 태스크에서 `BackendRestartRecoveryTest`로 이관·폐기됨).
 - 삭제: `BackendApplicationTests`(1건 전부)와 `GlobalExceptionHandlerTest`의 3건 중 2건(`responseStatusExceptionKeepsItsHttpStatus`, `annotatedConflictExceptionsStayConflicts`) = 2개 파일, 3건. 둘 다 목표를 증명하지 않을 뿐 아니라 `InterfaceIntakeIntegrationTest`·`DispatcherControllerIntegrationTest`가 같은 HTTP 상태 매핑을 실제 업무 흐름으로 이미 증명하는 중복이다. `GlobalExceptionHandlerTest`의 나머지 1건(`undeclaredFailuresStayInternal`)은 대체 테스트가 없는 500 안전망 유일 테스트라 삭제로 단정하지 않고 소유자 결정 항목으로 뺐다.
 - 예상 순감: 삭제 승인 시 525건 → 522건(backend, -3), 실행 시간 변화는 두 메서드 모두 수 ms대라 유의미한 단축은 없다. "고쳐 쓰기"는 삭제가 아니므로 건수는 그대로다.
+
+### 9.5 실행 결과와 삭제 적용 상태 (2026-09-27)
+
+§9.1과 같은 컨테이너·DB에서 시나리오 태스크를 실행한 결과다.
+
+| 태스크 | 결과 | Wall time |
+|---|---|---|
+| `./gradlew sitTest` | `mrp-p2p.feature` 5건 PASSED(28.3초), `BackendRestartRecoveryTest` 2건 PASSED(4.6초), `@pending` 8건 SKIPPED, 실패 0 | 50초 |
+| `./gradlew pendingScenarios` | `@pending` 8건이 "Undefined scenarios" 목록으로 분리 출력됨(`@issue-26` 5건, `@issue-27` 3건). 각 단계가 `UndefinedStepException`으로 보고되지만 `ignoreFailures`로 빌드는 성공 | 7초 |
+| `./gradlew uatTest` | 실행하지 않음. 실제 모델 호출로 비용이 발생하며, 증거 파일 형식(runtime, model, Run별 outcome·failure, costUsd, 토큰, 최종 업무 상태)은 `UatEvidenceTest`가 단위로 검증한다 | — |
+
+`DemoE2eTest`는 `backend/src/test/java`에 없다(`BackendRestartRecoveryTest`로 이관 후 삭제).
+
+§9.4의 삭제 대상 3건(`BackendApplicationTests` 1건, `GlobalExceptionHandlerTest` 2건)은 이 문서를
+포함한 구현 PR에서 적용하지 않았다. 분류표는 제시했고 소유자 확인을 기다린다. 확인이 나면 후속
+PR에서 삭제하고 그때의 `./gradlew test` 건수와 실행 시간을 이 절에 덧붙인다. 삭제 전 기준선은
+§9.1의 546건(실행 533)·1분 42초다.
 
 ## 10. 범위 밖
 
