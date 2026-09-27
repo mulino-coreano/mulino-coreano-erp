@@ -46,6 +46,36 @@ class AgentDriverTest {
         assertThat(grandchild.isAlive()).isFalse();
     }
 
+    /**
+     * kill()이 stop()과 실제로 다르게 동작함을 증명한다: stop()은 이 스크립트처럼 SIGTERM을
+     * 무시하는 프로세스를 만나면 10초 협조 대기 후에야 강제 종료로 넘어간다. kill()은 SIGTERM을
+     * 아예 보내지 않고 곧바로 강제 종료해야 하므로, SIGTERM을 무시하는 프로세스라도 stop()의
+     * 10초 대기 없이 곧바로(수 초 안에) 죽어야 한다.
+     */
+    @Test
+    void killDestroysTheWholeProcessTreeImmediatelyWithoutSigterm() throws InterruptedException {
+        String script = "process.on('SIGTERM', () => {}); "
+                + "const cp = require('child_process').spawn(process.execPath, "
+                + "['-e', 'process.on(\"SIGTERM\",()=>{});setInterval(()=>{},1000)'], "
+                + "{stdio:['ignore','ignore','ignore']}); "
+                + "console.log(String(cp.pid)); "
+                + "setInterval(()=>{},1000);";
+        var driver = new AgentDriver(new ObjectMapper(), List.of("node", "-e", script));
+        driver.start(Map.of());
+        ProcessHandle grandchild = awaitOnlyChild(driver.pid());
+        assertThat(grandchild.isAlive()).isTrue();
+
+        long startNanos = System.nanoTime();
+        driver.kill();
+        long elapsedMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
+
+        assertThat(driver.isAlive()).isFalse();
+        assertThat(grandchild.isAlive()).isFalse();
+        // stop()'s cooperative wait for this same script is 10s before it escalates; kill() must
+        // never wait that long because it never sends SIGTERM in the first place.
+        assertThat(elapsedMs).isLessThan(5000);
+    }
+
     private static ProcessHandle awaitOnlyChild(long pid) throws InterruptedException {
         long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
         while (System.nanoTime() < deadline) {

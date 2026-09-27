@@ -61,5 +61,10 @@ public class StateSteps {
     public void planCalculatedOnce() {
         assertThat(state.plans(world.caseRef)).isEqualTo(1);
         assertThat(state.completedSupplyRuns(world.caseRef)).isEqualTo(1);
+        // The restart itself must not be vacuous: at least one Run for this Case has to have been
+        // actually claimed by the restarted worker, or "restart" would have proven nothing (the
+        // original worker could have quietly finished everything before the kill even landed).
+        assertThat(state.runsClaimedBy(world.caseRef, WorldSteps.RESTARTED_WORKER_ID))
+                .as("the restarted worker must have claimed at least one Run").isGreaterThan(0);
     }
 }

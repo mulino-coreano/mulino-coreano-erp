@@ -16,8 +16,17 @@ public class AgentSteps {
     @Autowired JdbcClient jdbc;
     @Autowired BusinessState state;
     AgentDriver driver;
+    /** Set by WorldSteps right after a hard kill+restart, so the very next wait below can afford
+     * the killed Run's lease to actually expire (60s) and recoverExpired() to requeue it, on top of
+     * the new worker then re-running the interrupted step. Scenario-scoped like this bean, so it
+     * never leaks into another scenario. */
+    boolean afterRestart = false;
 
     Duration timeout() { return ScenarioContext.live() ? Duration.ofMinutes(15) : Duration.ofSeconds(60); }
+
+    private static Duration atLeast(Duration base, Duration minimum) {
+        return base.compareTo(minimum) >= 0 ? base : minimum;
+    }
 
     @io.cucumber.java.Before(order = 1)
     public void skipUatWithoutPrerequisites() {
@@ -48,17 +57,31 @@ public class AgentSteps {
         return m;
     }
 
-    Map<String, String> scriptedEnv() {
+    Map<String, String> scriptedEnv() { return scriptedEnv(null); }
+
+    /** @param workerId overrides MULINO_WORKER_ID (defaults to "scenario-scripted" in
+     * scripted-runner.mjs) when non-null -- used to give a runner started after a kill a distinct
+     * identity, so it never collides with the dead worker's still-live lease (WORKER_ALREADY_LEASED). */
+    Map<String, String> scriptedEnv(String workerId) {
         long warehouse = jdbc.sql("SELECT warehouse_id FROM warehouses WHERE plant_id='DEMO-KR-01'").query(Long.class).single();
         List<Long> products = jdbc.sql("SELECT product_id FROM products WHERE sku IN ('DEMO-AMR','DEMO-BSC') ORDER BY product_id").query(Long.class).list();
-        return Map.of("MULINO_API_BASE", world.apiBase(), "MULINO_WORKER_TOKEN", ScenarioContext.WORKER_TOKEN,
+        var env = new java.util.HashMap<>(Map.of("MULINO_API_BASE", world.apiBase(), "MULINO_WORKER_TOKEN", ScenarioContext.WORKER_TOKEN,
                 "DEMO_CLI", HumanChannel.ROOT.resolve("agents/cli/zig-out/bin/mulino").toString(),
-                "DEMO_PLAN_INPUT", "{\"warehouseId\":" + warehouse + ",\"productIds\":" + products + "}");
+                "DEMO_PLAN_INPUT", "{\"warehouseId\":" + warehouse + ",\"productIds\":" + products + "}"));
+        if (workerId != null) env.put("MULINO_WORKER_ID", workerId);
+        return env;
     }
 
     @When("에이전트가 소요량 계획과 구매 제안을 작성한다")
     public void agentPlansAndProposes() {
-        driver().awaitState("구매 제안 승인 대기", () -> state.pendingApprovals(world.caseRef) >= 1, timeout());
+        // A restart just before this call (WorldSteps.runnerRestartsAfterPlan) may leave the killed
+        // worker's Run RUNNING under a lease that only expires naturally 60s later
+        // (RunExecutionRepository.LEASE), before the server's recoverExpired() requeues it and the
+        // new worker re-runs the interrupted step -- the plain 60s timeout() below is not enough
+        // margin for that plus the actual work. Everywhere else this scenario doesn't restart, so
+        // afterRestart stays false and the wait is unchanged.
+        Duration wait = afterRestart ? atLeast(timeout(), Duration.ofSeconds(150)) : timeout();
+        driver().awaitState("구매 제안 승인 대기", () -> state.pendingApprovals(world.caseRef) >= 1, wait);
     }
 
     @When("에이전트가 발주 이후 업무를 정리한다")

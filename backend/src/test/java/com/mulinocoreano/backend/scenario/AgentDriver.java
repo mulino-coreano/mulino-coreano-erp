@@ -62,6 +62,24 @@ public final class AgentDriver {
 
     public void restart() { stop(); start(env); }
 
+    /**
+     * Hard-kills the whole process tree with no SIGTERM at all, unlike {@link #stop()}. Models an
+     * actual worker crash: the runner never gets a chance to notice a shutdown signal and
+     * gracefully report its current Run as ABORTED, so any Run it held at the moment of death stays
+     * RUNNING under the server's own bookkeeping until that Run's lease naturally expires and
+     * {@code recoverExpired()} reclaims and requeues it -- the same recovery path a genuine crash
+     * takes in production, not a test-only shortcut.
+     */
+    public void kill() {
+        if (process == null) return;
+        // Snapshot descendants while still alive -- same reasoning as stop().
+        List<ProcessHandle> descendants = process.descendants().toList();
+        process.destroyForcibly();
+        descendants.forEach(ProcessHandle::destroyForcibly);
+        try { process.waitFor(10, TimeUnit.SECONDS); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new AssertionError(e); }
+    }
+
     public boolean isAlive() { return process != null && process.isAlive(); }
 
     /** Test hook: the runner's own OS pid, used to look up its live children directly (no stdout parsing). */

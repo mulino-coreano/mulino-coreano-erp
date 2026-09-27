@@ -93,14 +93,13 @@ public class BusinessState {
                 """).param("caseRef", caseRef).query(Long.class).single();
     }
 
-    /** 이 Case에서 현재 실행 중(RUNNING)인 Run 건수. run_status는 QUEUED/RUNNING/COMPLETED/
-     * FAILED/ABORTED다(V8 types, V20 QUEUED 추가). 실행기를 재시작해도 안전한, 어떤 Run도
-     * 리스를 쥐고 있지 않은 유휴 시점을 확인하는 데 쓴다 — QUEUED는 아직 아무도 리스를 쥐지 않았으므로
-     * 대상이 아니다. */
-    public long runningRuns(String caseRef) {
+    /** 이 Case에서 주어진 워커 ID가 실제로 청구(claim)한 Run 건수. runs.lease_owner는 claim()
+     * 시점에 채워진다(V21__execution_and_idempotency.sql). 재시작 뒤 새 워커가 실제로 뭔가를
+     * 넘겨받았는지 — 즉 재시작이 헛돌지 않았는지 — 확인하는 데 쓴다. */
+    public long runsClaimedBy(String caseRef, String workerId) {
         return jdbc.sql("""
                 SELECT count(*) FROM runs r JOIN cases c ON c.case_id=r.case_id
-                WHERE c.case_ref=:caseRef AND r.status='RUNNING'
-                """).param("caseRef", caseRef).query(Long.class).single();
+                WHERE c.case_ref=:caseRef AND r.lease_owner=:workerId
+                """).param("caseRef", caseRef).param("workerId", workerId).query(Long.class).single();
     }
 }
