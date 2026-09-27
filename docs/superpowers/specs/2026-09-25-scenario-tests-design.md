@@ -63,7 +63,7 @@
 | 계층 | 도구 | 범위 | 실행 명령 | 주기 |
 |------|------|------|-----------|------|
 | Unit | JUnit | 개별 목표 로직; 테스트 이름에 목표 번호 포함 | `./gradlew test` | 매 커밋 |
-| SIT | Cucumber Gherkin; 실제 백엔드·CLI·MCP; 스크립트 에이전트 model.mjs | 업무 프로세스 전체 흐름 | `./gradlew sitTest` | 매 PR |
+| SIT | Cucumber Gherkin; 실제 백엔드·CLI·MCP; 스크립트 에이전트 scripted-agent.mjs | 업무 프로세스 전체 흐름 | `./gradlew sitTest` | 매 PR |
 | UAT | 같은 Gherkin 스크립트; 실제 하네스(Claude Code/Codex); 실제 모델; 사람 역할도 스크립트대로 | 실모델 인수; 비용·증거 기록 | `./gradlew uatTest` | 필요 시 |
 | Regression | SIT 전체 | 병합 직전 회귀 확인 | `./gradlew sitTest` | 병합 전 |
 
@@ -164,12 +164,15 @@ SAP 표준 테스트 도구다. 이 설계는 SAP 방법론(계층 구조, 인�
 | 항목 | SIT | UAT |
 |------|-----|-----|
 | 사람 역할 | 역할별 실제 stdio MCP | 역할별 실제 stdio MCP |
-| 에이전트 | 실제 runner + mulino CLI + 스크립트 에이전트(model.mjs) | 실제 runner + 하네스(Claude Code/Codex) + 모델 |
+| 에이전트 | 실제 runner + mulino CLI + 스크립트 에이전트(scripted-agent.mjs) | 실제 runner + 하네스(Claude Code/Codex) + 모델 |
 | 런타임 환경 변수 | 해당 없음(스크립트 에이전트) | `MULINO_AGENT_RUNTIME`, `MULINO_AGENT_MODEL` |
 | 백엔드 | 테스트 내 실제 Spring 구동; 고정 업무 시계 | 테스트 내 실제 Spring 구동; 고정 업무 시계 |
 | 확인 방법 | DB 업무 상태 | DB 업무 상태 |
 | 에이전트 단계 대기 | 기대 업무 상태 도달까지 최대 1분 | 기대 업무 상태 도달까지 최대 15분 |
 | 에이전트 단계 실패 | `model_finished` 실패 코드 첨부 | `model_finished` 실패 코드 첨부 |
+
+TC-P2P-005는 예외다: 워커 강제 종료(crash-restart) 뒤 재개를 기다리는 대기는
+죽은 Run의 lease가 자연 만료하는 150초까지 허용한다(위 "최대 1분"의 예외).
 
 **계층별로 잡는 버그**:
 
@@ -189,7 +192,7 @@ SAP 표준 테스트 도구다. 이 설계는 SAP 방법론(계층 구조, 인�
 
 모델 편차 때문에 과정이 아니라 결과(업무 상태)만 확인한다.
 
-**재사용 컴포넌트**: 픽스처, 고정 시계, model.mjs, runner, MCP 기동 코드.
+**재사용 컴포넌트**: 픽스처, 고정 시계, scripted-agent.mjs, runner, MCP 기동 코드.
 
 **신규 구현 필요**: Cucumber 연결 코드, 실행기 종류 선택(스크립트 에이전트
 또는 Docker 하네스).
@@ -252,9 +255,11 @@ DB: OrbStack PostgreSQL 18 컨테이너 `mulino-scenario-pg`(localhost:55433). `
 | mcp-server | `cd mcp-server && npm test` | 18 | 2.2초 |
 | scripts/demo | `node --test scripts/demo/readiness.test.mjs` | 17 | 0.19초 |
 
-backend 544건 중 13건은 `@pending` Cucumber 시나리오(`batch-recall.feature` 3, `mrp-p2p.feature` 5,
-`qm-inbound-inspection.feature` 5)로, `test` 태스크의 센티널 태그 필터에 의해 스킵 처리되며 실행되지
-않는다(`build/test-results/test/TEST-feature_classpath_scenarios-*.xml`의 `skipped="tests"` 확인).
+backend 544건 중 13건은 `test` 태스크의 센티널 태그 필터에 걸려 스킵 처리되며 실행되지 않는
+Cucumber 시나리오 픽클이다. 그중 8건은 `@pending` 시나리오(`batch-recall.feature` 3,
+`qm-inbound-inspection.feature` 5)이고 나머지 5건은 `@sit` 시나리오(`mrp-p2p.feature`)로, 두
+태그 집합 모두 같은 센티널 필터에 걸려 이 태스크에서는 실행되지 않는다
+(`build/test-results/test/TEST-feature_classpath_scenarios-*.xml`의 `skipped="tests"` 확인).
 실행된 531건 중 6건(`ScenarioGuardTest` 1, `UatEvidenceTest` 2, `AgentDriverTest` 3)은 이번 작업이
 새로 만든 `scenario` 패키지 소속이라 본 분류표의 범위 밖이다. 아래 표는 나머지
 **525건, `backend/src/test/java` 47개 클래스**(`interfacepackage`·`planning`·`procurement`·

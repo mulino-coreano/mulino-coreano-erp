@@ -37,11 +37,31 @@ behaviour you will prove for each. That list is the test plan.
 | Type | Use for | Form | Command |
 |---|---|---|---|
 | Unit | one goal's rule or invariant, deterministic | JUnit; name states goal and behaviour | `./gradlew test` |
-| SIT | a business process end to end: real backend, `mulino` CLI, stdio MCP, runner; scripted agent (`model.mjs`) | Gherkin in `backend/src/test/resources/scenarios/` | `./gradlew sitTest` |
+| SIT | a business process end to end: real backend, `mulino` CLI, stdio MCP, runner; scripted agent (`agents/runner/scripts/scripted-agent.mjs`) | Gherkin in `backend/src/test/resources/scenarios/` | `./gradlew sitTest` |
 | UAT | the same scripts with a real harness and model (`MULINO_AGENT_RUNTIME`, `MULINO_AGENT_MODEL`); costs money | same Gherkin, `@uat` | `./gradlew uatTest` |
 | Regression | all SIT before merge | — | `./gradlew sitTest` |
 
 Cross-layer flows belong in SIT, not in a Unit test that stubs half the system.
+
+### SIT/UAT prerequisites
+
+`sitTest` needs:
+- `DB_URL` pointing at a loopback `*_scenario` database (disposable — dropped/recreated
+  freely), plus `DB_USERNAME`/`DB_PASSWORD`.
+- Docker running, for jOOQ codegen's Testcontainers (`DOCKER_HOST` set for OrbStack, e.g.
+  `unix:///Users/<you>/.orbstack/run/docker.sock`).
+- `zig build` run in `agents/cli` (builds the `mulino` CLI binary the scripted agent shells
+  out to).
+- `npm ci` run in `mcp-server`.
+- Node 22+.
+
+`uatTest` needs everything above, plus (it costs money — real model calls):
+- `MULINO_AGENT_RUNTIME`, `MULINO_AGENT_MODEL`, `MULINO_RUNTIME_IMAGE`,
+  `MULINO_AUTH_VOLUME`, and `DOCKER_HOST` (for the harness container).
+- A runtime image built by `agents/runner/scripts/build-image.mjs`.
+- A logged-in auth volume (`MULINO_AUTH_VOLUME`) for that harness.
+
+Missing any UAT prerequisite reports "skipped: prerequisite missing", not failed.
 
 ## 3. Writing scenario scripts
 
