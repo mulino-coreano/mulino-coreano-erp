@@ -1,9 +1,9 @@
 # 시나리오 테스트 체계 구현 계획
 
-> **에이전트 작업자를 위한 안내:** 필수 서브스킬: superpowers:subagent-driven-development(권장)
-> 또는 superpowers:executing-plans를 사용해 이 계획을 태스크 단위로 구현한다.
-> 단계는 체크박스(`- [ ]`) 문법으로 진행 상황을 추적한다. 테스트를 작성하기 전에
-> 반드시 저장소의 `testing` 스킬을 로드한다.
+> **에이전트 작업자를 위한 안내:** 저장소의 `AGENTS.md`와 `testing` 스킬을 따른다.
+> 외부 workflow나 subagent를 자동으로 시작하지 않는다. 아래 Task/Step 표기는
+> 2026-09-25 원본 구현 계획의 구조다. 현재 작업은 #32 통합 계획의
+> Task·Step·subtask 정의와 integration gate를 따른다.
 
 ---
 
@@ -11,8 +11,8 @@
 >
 > 스펙 §5 예시 조건 "DEMO-AMR 가용 재고가 안전재고보다 적다"는 픽스처(가용 30 >
 > 안전 14)와 맞지 않는다. 재고가 안전재고보다 많아도 30일 수요를 채우지 못하는
-> 경우가 재보충 트리거다. 이 계획에서는 "DEMO-AMR 가용 재고 30으로는 30일 수요
-> 60과 안전재고 14를 채우지 못한다"를 사용한다.
+> 경우가 재보충 트리거다. 2026-10-02 스펙 예시도 "DEMO-AMR 가용 재고 30으로는
+> 30일 수요 60과 안전재고 14를 채우지 못한다"로 정정했다.
 
 > **알려진 공백**
 >
@@ -42,10 +42,14 @@ PostgreSQL 18, Node 22+, Zig 0.16.0 CLI, MCP SDK stdio client.
 
 ## 전역 제약
 
-- 베이스 브랜치: `feat/57-scenario-tests`는 `origin/feat/24-runtime-agnostic-execution`
+- 원본 베이스 브랜치: `feat/57-scenario-tests`는 `origin/feat/24-runtime-agnostic-execution`
   (PR #55)에서 분기한다 — UAT에 필요한 런타임 선택(`MULINO_AGENT_RUNTIME`/`MULINO_AGENT_MODEL`)과
   runner의 `model_finished` 로그가 해당 브랜치에만 존재한다. PR #58 브랜치를 병합해
-  스펙과 `testing` 스킬을 가져온다.
+  스펙과 `testing` 스킬을 가져온다. 이는 과거 원본 구현의 설명이다.
+  2026-10-02 이후 #32 계획에서는 이 stack을 main으로 병합하지 않는다.
+  foundation(#18·#46·#58) 병합·검증과 필요한 API/runtime 이식이 끝난 뒤
+  검증된 main에서 #57 branch를 만들고 아래 구현을 선별 이식한다.
+  이 문서의 체크박스는 원본 계획이며 현재 완료 증거로 사용하지 않는다.
 - Cucumber 8.0.1 (Spring 7.0.9, JUnit 6 기준 빌드).
 - 업무 시계는 `2026-09-05T00:00:00Z`(픽스처 기준일 2026-09-05, Asia/Seoul)로
   SIT와 UAT 모두 고정한다.
