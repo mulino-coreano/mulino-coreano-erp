@@ -262,3 +262,14 @@ flowchart TD
 - `decisions`와 `attention_requests`가 Work Item을 참조하면 같은 Case여야 한다. 인간 답변의 `answer_scope`/결정의 `scope`는 컨텍스트에 보존하며 자동으로 전사 정책으로 확대하지 않는다.
 - Work Item의 `metadata.businessRef`는 ERP 행을 가리키는 인덱스다. 운영 Case의 생성이나 승인 Event 수신이 발주·입고·리콜 등 ERP 쓰기 권한을 대신하지 않는다. 해당 변경은 위 거버넌스 승인 매트릭스를 그대로 따른다.
 - 실제 LLM executor, 인간 답변/승인 채널, ERP 변경 capability는 후속 구현이다. 현재 디스패처는 실행 예약까지 기록한다.
+
+## 로컬 인간의 Case 접수 (#47)
+
+`local` 프로필의 `POST /api/v1/cases`는 역할 헤더로 확인한
+OPERATOR 또는 MANAGER만 호출한다. Case의 생성자와 USER 참여자를
+같이 기록한다. `Idempotency-Key`를 보내면 인간별 scope에서 요청과
+응답을 `request_idempotency`에 저장하고, 같은 요청은 기존 응답을
+반환한다. 다른 본문으로 같은 키를 쓰면 409로 거부한다.
+Case·초기 Work Item·요청 기록은 같은 트랜잭션으로 처리한다.
+기본 프로필의 무인증 접수는 생성자 NULL을 유지하고 해당 키를 무시한다.
+이 기록은 LOT 사슬이나 ERP 승인 관계를 바꾸지 않는다.

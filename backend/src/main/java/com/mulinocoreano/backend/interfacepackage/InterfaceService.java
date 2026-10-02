@@ -3,13 +3,11 @@ package com.mulinocoreano.backend.interfacepackage;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 /**
  * 인터페이스 메커니즘 (docs/08_interface_overview.md) 구현.
@@ -21,18 +19,17 @@ import java.util.UUID;
 public class InterfaceService {
 
     private static final int INVENTORY_RESULT_LIMIT = 20;
-    private static final String DEFAULT_CHANNEL_REF = "SYSTEM_DEFAULT";
-    private static final Set<String> SUPPORTED_CHANNELS =
-            Set.of("CHAT", "SLACK", "EMAIL", "DASHBOARD", "API");
     private static final Set<String> CASE_STATUSES =
             Set.of("OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED");
 
     private final JdbcClient jdbc;
     private final RunService runService;
+    private final CaseIntakeService intake;
 
-    public InterfaceService(JdbcClient jdbc, RunService runService) {
+    public InterfaceService(JdbcClient jdbc, RunService runService, CaseIntakeService intake) {
         this.jdbc = jdbc;
         this.runService = runService;
+        this.intake = intake;
     }
 
     // ------------------------------------------------------------------ ASK
@@ -78,62 +75,8 @@ public class InterfaceService {
                 "sources=stock,products,warehouses;generated_by=inventory_search");
     }
 
-    // ------------------------------------------------------------------ ACT
-    @Transactional
     public CaseDto createCase(CreateCaseRequest req) {
-        ValidatedCaseRequest request = validateCaseRequest(req);
-        String caseRef = newPublicRef("CASE");
-        String title = truncate(request.objective(), 60);
-
-        // 기본 담당 = orchestrator 로 시작 (다중 배정은 UI/API로 확장)
-        long agentId = jdbc.sql("""
-                        SELECT agent_id FROM agents
-                        WHERE agent_key='ORCHESTRATOR' AND is_active=true
-                        FOR SHARE
-                        """)
-                .query(Long.class)
-                .optional()
-                .orElseThrow(() -> unavailable(
-                        "No active ORCHESTRATOR agent is configured"));
-        long channelId = jdbc.sql("""
-                        SELECT channel_id FROM channels
-                        WHERE channel_type=:channel::channel_type
-                          AND external_ref=:externalRef
-                        """)
-                .param("channel", request.channel())
-                .param("externalRef", DEFAULT_CHANNEL_REF)
-                .query(Long.class)
-                .optional()
-                .orElseThrow(() -> unavailable(
-                        "No default channel is configured for " + request.channel()));
-
-        jdbc.sql("""
-                INSERT INTO cases (case_ref, title, objective, intent_type, origin_channel_id)
-                VALUES (:ref, :title, :obj, 'ACT', :channelId)
-                """)
-                .param("ref", caseRef).param("title", title)
-                .param("obj", request.objective())
-                .param("channelId", channelId)
-                .update();
-
-        Long caseId = jdbc.sql("SELECT case_id FROM cases WHERE case_ref=:r")
-                .param("r", caseRef).query(Long.class).single();
-
-        jdbc.sql("""
-                INSERT INTO case_participants (case_id, actor_type, agent_id)
-                VALUES (:cid, 'AGENT', :aid)
-                """)
-                .param("cid", caseId).param("aid", agentId).update();
-
-        // 초기 Work Item 1건: 목표 분해
-        String wiRef = newPublicRef("WI");
-        jdbc.sql("""
-                INSERT INTO work_items (work_item_ref, case_id, title, status, assigned_agent_id)
-                VALUES (:ref, :cid, '목표 분해 및 계획 수립', 'READY', :aid)
-                """)
-                .param("ref", wiRef).param("cid", caseId).param("aid", agentId).update();
-
-        return getCase(caseRef);
+        return intake.createCase(req, null);
     }
 
     public CaseDto getCase(String caseRef) {
@@ -258,41 +201,11 @@ public class InterfaceService {
     }
 
     // ------------------------------------------------------------------ helpers
-    private ValidatedCaseRequest validateCaseRequest(CreateCaseRequest request) {
-        if (request == null || request.objective() == null || request.objective().isBlank()) {
-            throw new InvalidInterfaceRequestException("objective is required");
-        }
-        if (request.intentType() != null && !"ACT".equals(request.intentType())) {
-            throw new InvalidInterfaceRequestException("intentType must be ACT when supplied");
-        }
-        String channel = request.channel() == null ? "CHAT" : request.channel();
-        if (!SUPPORTED_CHANNELS.contains(channel)) {
-            throw new InvalidInterfaceRequestException("channel is invalid");
-        }
-        return new ValidatedCaseRequest(request.objective().trim(), channel);
-    }
-
     private String normalizeSearchTerm(String query) {
         return query == null || query.isBlank() ? null : query.trim();
-    }
-
-    private String newPublicRef(String prefix) {
-        int randomLength = 18 - prefix.length();
-        return prefix + "-" + UUID.randomUUID().toString().replace("-", "")
-                .substring(0, randomLength);
-    }
-
-    private ResponseStatusException unavailable(String reason) {
-        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, reason);
-    }
-
-    private String truncate(String s, int len) {
-        return s.length() <= len ? s : s.substring(0, len - 1) + "…";
     }
 
     private record InventorySearchRow(InventoryDto inventory, long totalLocations) {
     }
 
-    private record ValidatedCaseRequest(String objective, String channel) {
-    }
 }

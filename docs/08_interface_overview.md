@@ -311,3 +311,40 @@ npm start
 ```
 
 독립 DDL 검증에는 `database/ddl/00~09`를 번호 순서로 적용하고 `database/seed/interface.sql`을 적용한다. 이 경로로 만든 DB에 Flyway를 그대로 실행하면 비어 있지 않은 미관리 스키마 오류가 발생한다. 백엔드 실행용 빈 DB는 Flyway 경로 하나로 초기화한다. stdio 서버를 직접 실행하는 로컬 MCP 클라이언트는 지원하지만, 원격 ChatGPT 커넥터에 필요한 HTTP 전송은 아직 제공하지 않는다.
+
+### 13.1 로컬 인간 신원과 요청 재전송 (#47)
+
+실제 main 병합을 가정한 검증 branch는 foundation `ef2f3fb`에서
+분기했다. #18·#46·#58을 포함하며 #19 전체는 병합하지 않았다.
+이 기록은 실제 main의 병합 완료를 뜻하지 않는다.
+
+- 기본 프로필은 기존 인터페이스 경로를 무인증으로 허용한다.
+  `POST /cases`의 opener는 NULL이고 `Idempotency-Key`는 무시한다.
+  `/api/v1/me`와 등록되지 않은 경로는 403이다.
+- `local` 프로필의 인간 필터는 `GET /api/v1/me`와
+  `POST /api/v1/cases`에만 적용한다. 역할 헤더가 없으면 401,
+  VIEWER·QC·ADMIN의 Case 생성은 403이다. OPERATOR·MANAGER는
+  생성자로 기록되며 USER 참여자가 추가된다. 조회에는 역할을 요구하지 않는다.
+- `Idempotency-Key`는 선택 사항이다. 보내는 경우 인간별 scope에서
+  검증·정규화한 요청을 비교한다. 같은 키와 내용은 같은 응답을 반환하고,
+  다른 내용은 409다. 키가 없으면 새 Case를 만든다.
+- `V18`과 `database/ddl/10_request_idempotency.sql`은 요청 기록만
+  추가한다. 인증된 서비스·에이전트·그 밖의 principal은 인간 접수로
+  처리하지 않는다. Auth0, 외부 신원, Run lease는 포함하지 않는다.
+- 기존 `/api-docs`와 `/swagger-ui.html`을 유지하고 `/v3/api-docs`도
+  같은 OpenAPI 문서를 제공한다.
+
+로컬 실행은 기존 DB 환경 변수에 `SPRING_PROFILES_ACTIVE=local`을
+추가한다. 역할 헤더는 `X-Mulino-Local-Role: MANAGER`처럼 보낸다.
+이는 누구나 보낼 수 있는 PoC 신원이며 외부 사용자 인증이 아니다.
+기존 Event·Run 경로는 foundation 동작을 유지한다.
+
+검증 환경은 Java 21, PostgreSQL 18.6의 별도 폐기용 DB다.
+`./gradlew clean test bootJar --no-daemon` 통과 후 비활성 사용자와
+일반 인증 principal 검증을 추가하고 `./gradlew test bootJar --no-daemon`을
+다시 실행했다. 최종 198건, 실패·오류·스킵 0이며 9초에 완료됐다.
+`npm ci && npm test`는 MCP 6건이 통과했다.
+기본/local 실제 HTTP 호출, 동시 요청 8건의 단일 Case 생성,
+실제 stdio의 OPERATOR 생성·VIEWER 거부·조회 허용을 확인했다.
+새 빈 DB의 Flyway 및 독립 DDL에서 요청 테이블도 일치했다.
+전체 ERP 스키마의 기존 단가 정밀도 차이는 #48 범위로 남긴다.
