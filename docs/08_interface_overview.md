@@ -206,7 +206,7 @@ Event는 불변 사실이다. 애플리케이션과 무관하게 DB 트리거가
                 CASES
         ┌─────────┼─────────┐
       Agents   Work Items  Evidence
-        │                      
+        │
    Dispatcher → Agent Execution (Claude / Codex)
         │
     capabilities → ERP → Events
