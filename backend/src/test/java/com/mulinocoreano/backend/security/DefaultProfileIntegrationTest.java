@@ -35,6 +35,9 @@ class DefaultProfileIntegrationTest {
         mvc.perform(get("/v3/api-docs")).andExpect(status().isOk()).andExpect(jsonPath("$.openapi").isNotEmpty());
         mvc.perform(get("/api/v1/cases")).andExpect(status().isOk());
         mvc.perform(get("/api/v1/me")).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/plans/PLAN-test")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/cases/CASE-test/plans").contentType(MediaType.APPLICATION_JSON)
+                .content("{}" )).andExpect(status().isForbidden());
         mvc.perform(get("/unlisted")).andExpect(status().isForbidden());
     }
 }

@@ -54,6 +54,9 @@ const server = new Server(
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
+    { name: "whoami", description: "현재 로컬 인간 역할을 조회한다.", inputSchema: {type: "object", properties: {}} },
+    { name: "get_case", description: "Case 참조로 업무를 조회한다.", inputSchema: {type: "object", properties: {caseRef: {type: "string", minLength: 1}}, required: ["caseRef"]} },
+    { name: "get_plan", description: "저장된 재보충 계획과 근거를 조회한다.", inputSchema: {type: "object", properties: {planRef: {type: "string", minLength: 1}}, required: ["planRef"]} },
     {
       name: "ask_inventory",
       description:
@@ -114,6 +117,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const args = suppliedArguments ?? {};
   try {
     switch (name) {
+      case "whoami":
+      case "get_case":
+      case "get_plan": {
+        const ref = name === "get_case" ? args.caseRef : args.planRef;
+        if (name !== "whoami" && (typeof ref !== "string" || !ref.trim())) throw new Error("참조가 필요합니다.");
+        const path = name === "whoami" ? "/me" : (name === "get_case" ? "/cases/" : "/plans/") + encodeURIComponent(ref);
+        const data = await api(path, {headers: {"X-Mulino-Local-Role": process.env.MULINO_LOCAL_ROLE ?? "OPERATOR"}});
+        return {content: [{type: "text", text: JSON.stringify(data)}], structuredContent: data};
+      }
       case "ask_inventory": {
         const query = args?.productQuery?.trim();
         const data = await api(query ? "/ask?q=" + encodeURIComponent(query) : "/ask");
