@@ -356,3 +356,11 @@ npm start
 백엔드 329건(실패·오류·스킵 0), MCP 9건이 통과했다. 신규 계획·요청
 테이블 10개의 Flyway·독립 DDL 정의가 일치했다. 발주·답변 도구는 후속
 API와 함께 이식하므로 #52 완료를 뜻하지 않는다.
+
+### 13.3 실행 lease (#49)
+
+Run 예약은 QUEUED이며 RUNNING은 실제 claim 이후다. local worker 비밀과
+에이전트 capability를 분리하고 인간 계획 경로를 유지한다. 백엔드 348건이
+통과했고 Run·Work Item·계획의 Flyway/독립 DDL 정의가 일치했다.
+동시 worker의 단일 claim, 만료 1회 재시도 후 attention, 다른 Case 계획
+거부, READY 계획 이후 완료를 검증했다. 실제 모델 실행은 포함하지 않는다.

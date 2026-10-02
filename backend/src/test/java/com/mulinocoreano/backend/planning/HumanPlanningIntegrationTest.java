@@ -27,13 +27,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /** 목표 2·3·4: 인간이 계획을 계산하되 ERP 수량이나 발주를 변경하지 않는다. */
 @SpringBootTest(properties={"spring.flyway.schemas=human_planning_it", "spring.flyway.clean-disabled=false",
         "spring.flyway.init-sqls=CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public",
-        "spring.datasource.hikari.schema=human_planning_it", "spring.main.allow-bean-definition-overriding=true"})
+        "spring.datasource.hikari.schema=human_planning_it", "spring.main.allow-bean-definition-overriding=true", "mulino.local-auth.service-secret=local-test-secret"})
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 class HumanPlanningIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired JdbcClient jdbc;
     @Autowired Flyway flyway;
+    @Autowired com.mulinocoreano.backend.interfacepackage.RunService runs;
     @Autowired ObjectMapper mapper;
     long warehouse;
     List<Long> products;
@@ -102,6 +103,33 @@ class HumanPlanningIntegrationTest {
         }
         assertThat(jdbc.sql("SELECT count(*) FROM replenishment_plans").query(Long.class).single()).isEqualTo(1);
     }
+    @Test
+    void agentPlansOnlyItsCaseAndCompletesOnlyAfterReadyAttempt() throws Exception {
+        long caseId=jdbc.sql("SELECT case_id FROM cases WHERE case_ref=:ref").param("ref",caseRef).query(Long.class).single();
+        jdbc.sql("INSERT INTO work_items(work_item_ref,case_id,title,assigned_agent_id) SELECT 'WI-SUPPLY',:id,'supply',agent_id FROM agents WHERE agent_key='SUPPLY_CHAIN'").param("id",caseId).update();
+        runs.createRun(new com.mulinocoreano.backend.interfacepackage.CreateRunRequest("SUPPLY_CHAIN",caseRef,"WI-SUPPLY","CODEX"),null);
+        var claimResult=mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret")
+                .contentType("application/json").content("{\"workerId\":\"supply-worker\"}"))
+                .andExpect(status().isOk()).andReturn();
+        var claim=mapper.readTree(claimResult.getResponse().getContentAsString());
+        var finish=Map.of("runRef",claim.path("runRef").asString(),"workerId","supply-worker",
+                "leaseToken",claim.path("leaseToken").asString(),"outcome","DONE","summary","ready");
+        mvc.perform(post("/api/v1/internal/runs/finish").header("X-Mulino-Local-Service","local-test-secret")
+                .contentType("application/json").content(mapper.writeValueAsString(finish))).andExpect(status().isConflict());
+        String capability="Bearer "+claim.path("capabilityToken").asString();
+        mvc.perform(post("/api/v1/cases/CASE-other/plans").header("Authorization",capability)
+                .header("Idempotency-Key","wrong").contentType("application/json")
+                .content(mapper.writeValueAsString(Map.of("warehouseId",warehouse,"productIds",products))))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/cases/"+caseRef+"/plans").header("Authorization",capability)
+                .header("Idempotency-Key","agent").contentType("application/json")
+                .content(mapper.writeValueAsString(Map.of("warehouseId",warehouse,"productIds",products))))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/v1/internal/runs/finish").header("X-Mulino-Local-Service","local-test-secret")
+                .contentType("application/json").content(mapper.writeValueAsString(finish))).andExpect(status().isOk());
+        assertThat(jdbc.sql("SELECT status::text FROM work_items WHERE work_item_ref='WI-SUPPLY'").query(String.class).single()).isEqualTo("DONE");
+    }
+
     private JsonNode calculate(String role,String key,int status) throws Exception {
         var r=mvc.perform(post("/api/v1/cases/"+caseRef+"/plans").header("X-Mulino-Local-Role",role)
                 .header("Idempotency-Key",key).contentType("application/json")

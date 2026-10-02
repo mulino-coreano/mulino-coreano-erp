@@ -2,6 +2,10 @@
 
 이 문서는 현재 `V8`~`V17` migration, Case DDL, 인터페이스 service를 기준으로 Case 업무 표면의 계약을 기록한다. 문서의 현재 상태는 구현된 DB 제약과 service 동작을 구분해 적는다. 후속 설계 제안은 실행 코드, schema 변경, 확정된 정책이 아니다.
 
+#49 이후 Run 예약은 QUEUED이고 RUNNING은 lease를 claim한 상태다.
+아래 #18 검토 기록의 RUNNING 예약 설명은 과거 foundation을 가리킨다.
+현재 실행 계약은 [계획·실행 API](13_execution_and_plan_api.md)를 따른다.
+
 ## 1. 검토 범위와 현재 결론
 
 2026-10-02 검토에서 #18의 `4805c77`을 이 branch에 통합했다.

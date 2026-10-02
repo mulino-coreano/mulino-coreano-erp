@@ -208,7 +208,7 @@ class DispatcherSchemaIntegrationTest {
     private void insertRunningRun(String runRef, long agentId, long caseId, long workItemId) {
         jdbc.sql("""
                 INSERT INTO runs (run_ref, agent_id, case_id, work_item_id, runtime, status)
-                VALUES (:runRef, :agentId, :caseId, :workItemId, 'CODEX', 'RUNNING')
+                VALUES (:runRef, :agentId, :caseId, :workItemId, 'CODEX', 'QUEUED')
                 """)
                 .param("runRef", runRef)
                 .param("agentId", agentId)

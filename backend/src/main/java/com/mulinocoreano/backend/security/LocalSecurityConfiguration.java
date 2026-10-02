@@ -17,7 +17,7 @@ import org.springframework.http.HttpMethod;
 @EnableConfigurationProperties(LocalAuthProperties.class)
 public class LocalSecurityConfiguration {
     @Bean
-    @Order(1)
+    @Order(3)
     SecurityFilterChain humanSecurity(HttpSecurity http, LocalActorDirectory directory) throws Exception {
         var paths = PathPatternRequestMatcher.withDefaults();
         return InterfaceSecurityConfiguration.stateless(http)
@@ -40,7 +40,7 @@ public class LocalSecurityConfiguration {
     }
 
     @Bean
-    @Order(2)
+    @Order(4)
     SecurityFilterChain remainingInterfaceSecurity(HttpSecurity http) throws Exception {
         return InterfaceSecurityConfiguration.surface(http);
     }

@@ -1,6 +1,7 @@
 package com.mulinocoreano.backend.planning;
 
 import com.mulinocoreano.backend.security.HumanActor;
+import com.mulinocoreano.backend.execution.RunCapabilityAccess;
 import com.mulinocoreano.backend.idempotency.RequestIdempotency;
 import com.mulinocoreano.backend.interfacepackage.AttentionDto;
 import com.mulinocoreano.backend.persistence.PlanningDataGuard;
@@ -35,6 +36,7 @@ import java.util.UUID;
 public class PlanPersistenceService {
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final int MAX_ATTEMPTS = 4;
+    private final RunCapabilityAccess capabilities;
     private final PlanPersistenceRepository repository;
     private final PlanningSnapshotRepository snapshots;
     private final ReplenishmentCalculator calculator;
@@ -47,6 +49,7 @@ public class PlanPersistenceService {
     private final PlanQueryRepository planQueries;
 
     public PlanPersistenceService(
+            RunCapabilityAccess capabilities,
             PlanPersistenceRepository repository,
             PlanningSnapshotRepository snapshots,
             ReplenishmentCalculator calculator,
@@ -57,6 +60,7 @@ public class PlanPersistenceService {
             PlatformTransactionManager transactionManager,
             PlanningDataGuard dataGuard,
             PlanQueryRepository planQueries) {
+        this.capabilities = capabilities;
         this.repository = repository;
         this.snapshots = snapshots;
         this.calculator = calculator;
@@ -107,6 +111,85 @@ public class PlanPersistenceService {
                 // snapshot.
             }
         }
+    }
+
+    public PlanDto calculateAgent(
+            String caseRef, PlanRequest request, String key, String capabilityToken) {
+        PlanRequest normalized = normalize(request);
+        for (int attempt = 1; ; attempt++) {
+            try {
+                JsonNode response =
+                        transaction.execute(
+                                status -> {
+                                    dataGuard.lock();
+                                    // Intake uses this same order before touching the warehouse or
+                                    // its Case.
+                                    idempotency.coordinate(
+                                            "planning.warehouse",
+                                            String.valueOf(normalized.warehouseId()));
+                                    var scope =
+                                            capabilities.requireLocked(
+                                                    capabilityToken, "SUPPLY_CHAIN", caseRef);
+                                    JsonNode humanScope = requireCase(scope);
+                                    String namespace =
+                                            "plans:" + caseRef + ":" + scope.workItemRef();
+                                    var stored =
+                                            idempotency.executeJson(
+                                                    namespace,
+                                                    key,
+                                                    normalized,
+                                                    () -> {
+                                                        Object receipt =
+                                                                prepare(
+                                                                        new PlanningScope(scope.caseId(), scope.caseRef(), scope.workItemId()),
+                                                                        normalized,
+                                                                        humanScope);
+                                                        recordAttempt(new PlanningScope(scope.caseId(), scope.caseRef(), scope.workItemId()), receipt);
+                                                        return receipt;
+                                                    });
+                                    // The lease can expire during calculation. Throwing here rolls
+                                    // back the plan,
+                                    // Attention and idempotency row together; replays also require
+                                    // a live lease.
+                                    capabilities.requireLocked(
+                                            capabilityToken, "SUPPLY_CHAIN", caseRef);
+                                    return stored;
+                                });
+                if (response.has("error")) throw new Failure(HttpStatus.CONFLICT, response);
+                return mapper.treeToValue(response, PlanDto.class);
+            } catch (RuntimeException exception) {
+                if (!retryable(exception)) throw exception;
+                if (attempt == MAX_ATTEMPTS)
+                    throw failure(HttpStatus.CONFLICT, "PLANNING_CONCURRENT_CHANGE");
+                // Retry only after TransactionTemplate has rolled back, with an entirely new
+                // snapshot.
+            }
+        }
+    }
+
+    private JsonNode requireCase(RunCapabilityAccess.RunScope scope) {
+        var rows = repository.lockCase(scope.caseRef());
+        if (rows.isEmpty()) throw failure(HttpStatus.NOT_FOUND, "CASE_NOT_FOUND");
+        if (rows.getFirst().id() != scope.caseId())
+            throw failure(HttpStatus.FORBIDDEN, "CASE_SCOPE_MISMATCH");
+        if (!Set.of("OPEN", "IN_PROGRESS", "WAITING").contains(rows.getFirst().status()))
+            throw failure(HttpStatus.CONFLICT, "CASE_NOT_ACTIVE");
+        boolean sameWork =
+                repository.workBelongsToCase(
+                        scope.workItemId(), scope.caseId(), scope.workItemRef());
+        if (!sameWork) throw failure(HttpStatus.FORBIDDEN, "WORK_ITEM_SCOPE_MISMATCH");
+        return rows.getFirst().replenishment();
+    }
+
+    private void recordAttempt(PlanningScope scope, Object receipt) {
+        String outcome = "DATA_ERROR";
+        Long planId = null;
+        if (receipt instanceof PlanDto plan) {
+            outcome = plan.result().path("status").asString();
+            planId = repository.planId(plan.ref(), scope.caseId(), scope.workItemId());
+        }
+        int updated = repository.recordAttempt(scope.workItemId(), scope.caseId(), outcome, planId);
+        if (updated != 1) throw failure(HttpStatus.FORBIDDEN, "WORK_ITEM_SCOPE_MISMATCH");
     }
 
     public PlanDto get(String planRef) {
