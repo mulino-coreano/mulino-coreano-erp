@@ -4,6 +4,18 @@
 
 ## 1. 검토 범위와 현재 결론
 
+2026-10-02 검토에서 #18의 `4805c77`을 이 branch에 통합했다.
+Case 조회의 4xx 처리와 공통 HTTP 상태 보존은 최신 부모 구현을 따른다.
+이 문서는 V8~V17 foundation 계약이다. #19의 lease·재보충·승인 코드는
+[#32](https://github.com/mulino-coreano/mulino-coreano-erp/issues/32) 계획에
+따라 후속 이식하며 이 문서가 해당 구현의 완료를 뜻하지 않는다.
+
+DB가 nullable Case FK로 전역 Event를 허용하는 것과 현재 Dispatcher가
+전역 scope를 끝까지 유지하는 것은 별개다. claim evidence 처리의 scope
+축소, Attention 승인 검색 범위, SUPPLIER_REPLY 식별자 조합과 WAITING
+집계는 [#54](https://github.com/mulino-coreano/mulino-coreano-erp/issues/54)에
+남아 있다. 아래 FK·상태 계약을 해당 service 결함의 해결 증거로 쓰지 않는다.
+
 Case는 지속되는 업무 목표다. `ASK`는 재고 조회 응답으로 끝나며 Case를 만들지 않고, `ACT` 입력만 Case와 초기 Work Item을 만든다. 아래 그림은 현재 FK 관계다. `||`는 부모가 정확히 하나, `|o`는 부모가 없거나 하나, `o{`는 자식이 0개 이상임을 뜻한다.
 
 ```mermaid
