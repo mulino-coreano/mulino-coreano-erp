@@ -24,6 +24,8 @@ public class InterfaceService {
     private static final String DEFAULT_CHANNEL_REF = "SYSTEM_DEFAULT";
     private static final Set<String> SUPPORTED_CHANNELS =
             Set.of("CHAT", "SLACK", "EMAIL", "DASHBOARD", "API");
+    private static final Set<String> CASE_STATUSES =
+            Set.of("OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED");
 
     private final JdbcClient jdbc;
     private final RunService runService;
@@ -143,10 +145,15 @@ public class InterfaceService {
                 .query((rs, i) -> new CaseDto(
                         rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4),
                         rs.getString(5), rs.getString(6), rs.getTimestamp(7).toInstant()))
-                .single();
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Case not found: " + caseRef));
     }
 
     public List<CaseDto> listCases(String statusFilter) {
+        if (statusFilter != null && !CASE_STATUSES.contains(statusFilter)) {
+            throw new InvalidInterfaceRequestException("status is invalid");
+        }
         String sql = """
                 SELECT case_id, case_ref, title, objective, status::text, intent_type::text, opened_at
                 FROM cases
