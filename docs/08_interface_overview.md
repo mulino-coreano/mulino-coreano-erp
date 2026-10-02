@@ -272,6 +272,29 @@ ERP 쓰기 게이트는 기존 [#33](https://github.com/mulino-coreano/mulino-co
 
 ### 로컬 실행
 
+2026-10-02 foundation 검증은 PR #18의 `4805c77`을 기준으로 수행했다.
+`./gradlew clean test bootJar --no-daemon`은 PostgreSQL 18.6,
+Java 21.0.12에서 189건(실패·오류·스킵 0)으로 통과했고 MCP 테스트는
+4건 통과했다. 이 기록은 main 병합 후 검증이나 실제 LLM 인수가 아니다.
+
+빈 DB의 Flyway V1~V17과 독립 DDL 00~09를 비교하면 Case 테이블,
+enum, index, FK/check와 trigger는 일치한다. 전체 스키마에는 기존
+`order_items.unit_price`와 `purchase_order_items.unit_price`의 차이가
+남아 있다(Flyway NUMERIC(10,2), DDL NUMERIC(15,2)).
+[#48](https://github.com/mulino-coreano/mulino-coreano-erp/issues/48)의
+V19 migration이 이 차이를 바로잡는다. 전체 스키마 일치를 주장하지 않는다.
+
+현재 MONITOR의 GET은 실행 가능한 대기를 재판정하며 ASK는 product type을
+필터링하지 않는다. WAITING 집계, SUPPLIER_REPLY 식별자 조합, 글로벌
+claim 이벤트와 Attention 승인 범위의 결함은
+[#54](https://github.com/mulino-coreano/mulino-coreano-erp/issues/54)에서
+추적한다. #56 원본의 수정을 필요한 기반 위에 선별 이식하기 전까지
+해결됐다고 보지 않는다.
+
+통합은 [#32](https://github.com/mulino-coreano/mulino-coreano-erp/issues/32)의
+2026-10-02 계획을 따른다. #18·#46·#58을 인간이 병합하고 main을 검증한
+뒤 #19·#55·#56·#59에서 기존 이슈별로 필요한 변경만 이식한다.
+
 ```bash
 # 1. PostgreSQL 18에 빈 DB를 만든다. Flyway가 스키마와 기본 인터페이스 등록을 적용한다.
 createdb mulino_coreano
