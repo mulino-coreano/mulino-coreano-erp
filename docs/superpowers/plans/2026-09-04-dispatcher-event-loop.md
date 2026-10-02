@@ -321,7 +321,7 @@ Run: `cd backend && ./gradlew clean test --no-daemon`
 
 ### Task 11: PR #18 원래 계획 대조 검토와 수정 (2026-09-05)
 
-**검토 기준:** S1~S6 인터페이스 설계 대화, `docs/08_interface_overview.md`, `docs/09_dispatcher_spec.md`, 위 Task 1~10. 실제 LLM executor와 L1 인증·거버넌스/승인 채널은 명시된 후속 경계를 유지한다.
+**검토 기준:** `docs/08_interface_overview.md`, `docs/09_dispatcher_spec.md`, 위 Task 1~10. 실제 LLM executor와 L1 인증·거버넌스/승인 채널은 명시된 후속 경계를 유지한다.
 
 | 발견한 불일치 | 수정 및 검증 근거 |
 |---|---|
@@ -335,7 +335,7 @@ Run: `cd backend && ./gradlew clean test --no-daemon`
 | 같은 참여자 중복과 교차 Case Decision/Attention 허용 | V16 NULL 안전 UNIQUE·복합 FK; `SchemaReviewIntegrationTest` |
 | 정상적인 WAITING Case를 전부 위험으로 집계 | 미완료 업무 기한 초과 또는 열린 중대 예외만 Case당 한 번 집계; `InterfaceMonitorIntegrationTest` |
 | MCP 응답 정지·인자 없는 조회가 정상 처리되지 않음 | 본문까지 적용되는 시간 제한·불확실한 쓰기 결과 표시·선택 인자/상태 검증; `mcp-server/test/server.test.js` |
-| 문서가 S1~S6 전체 실행 가능으로 읽히고 새 스키마를 누락 | 구현/후속 경계 명시, 업무 흐름·13개 테이블 ERD·초기화 안내 정합화 |
+| 문서가 목표 인터페이스 전체를 실행 가능한 것으로 설명하고 새 스키마를 누락 | 구현/후속 경계 명시, 업무 흐름·13개 테이블 ERD·초기화 안내 정합화 |
 
 - [x] 신규 회귀 테스트가 수정 전 동작에서 예상한 이유로 실패함을 확인했다.
 - [x] agent `FOR SHARE`만 제거한 독립 사본에서 동시 비활성화 회귀 테스트가 실패함을 확인했다.

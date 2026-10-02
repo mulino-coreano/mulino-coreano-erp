@@ -2,7 +2,7 @@
 
 > 이 문서는 Codex 구현의 **계약(contract)** 이다. `docs/08_interface_overview.md`의 "대기와 디스패처"를 실행 가능한 상태 전이 규칙으로 정형화한 하위 명세다.
 > 관련 문서: `08_interface_overview.md`(인터페이스 철학), `02_flow.md`(업무 흐름 SSOT), `03_erd.md`(스키마)
-> 구현 대상: `backend` (Spring Boot) — `DispatcherService`, `RunService`, `ContextSnapshotService`와 REST 어댑터.
+> 현재 구현: `backend`의 Dispatcher·Run·컨텍스트·실행 권한 API와 `agents/runner/`의 Node 실행기. 실제 Codex CLI·이미지·모델 실행 인수와 구매 승인·적용은 후속이다. 최신 실행 계약과 검증 결과는 [실행·계획 API 안내](13_execution_and_plan_api.md)를 따른다.
 
 ---
 
@@ -35,10 +35,12 @@ Dispatcher는 다음 두 경로에서 실행된다.
 
 ### 1-B. 명시적 재실행 (pull)
 
-- `DISPATCH_REQUESTED`와 `DISPATCH_SWEEP_TRIGGERED`는 내부 전용이다. 외부 `/events` 인입에서 거부하여 호출자가 미완료 의존 업무를 완료 상태로 위조할 수 없게 한다.
-- `RESOLVED`·`CLOSED` Case는 대기 판정 대상에서 제외한다. 대기 변경과 Run 생성 직전에 Case를 잠가 상태를 재확인하며, 종료 Case의 남은 업무를 다시 실행하지 않는다.
-- `POST /api/v1/dispatch` — 관리·테스트용 수동 트리거. 호출 사실을 `DISPATCH_REQUESTED`(`source=MANUAL`)로 항상 기록한다.
-- `monitor()`에서 실행 가능한 대기가 발견되면 `DISPATCH_SWEEP_TRIGGERED`(`source=MONITOR`)를 기록하고 재판정한다. 실행 가능한 대기가 없으면 Event를 만들지 않으며, 사전 조회는 행 잠금을 잡지 않는다.
+- `DISPATCH_REQUESTED`와 `DISPATCH_SWEEP_TRIGGERED`는 내부 전용이며 외부 `/events` 인입에서 거부한다. 호출자가 미완료 의존 업무를 완료 상태로 위조할 수 없게 한다.
+- `RESOLVED`·`CLOSED` Case는 대기 판정 대상에서 제외하고, 대기 변경과 Run 생성 직전에 Case를 잠가 상태를 재확인한다.
+- Attention 기반 승인 이벤트는 `AUTHORITY_REQUIRED` 요청의 인간 승인만 근거로 삼는다. 일반 질문에 대한 답변은 승인으로 해석하지 않는다.
+- `POST /api/v1/dispatch` — 허용된 실행기 서비스의 `worker:dispatch` 권한으로 호출하는 관리·테스트용 트리거. 호출 사실을 `DISPATCH_REQUESTED`(`source=MANUAL`)로 항상 기록한다.
+- `GET /api/v1/monitor`는 인증된 조회이며 이벤트·대기·Run을 변경하지 않는다.
+- Node 실행기의 기본 5초 poll이 호출하는 `/api/v1/internal/runs/claim`은 lease 복구와 `dispatchScheduledIfActionable()`을 수행한다. 기한 도래나 이미 완료된 의존 업무가 있을 때만 `DISPATCH_SWEEP_TRIGGERED`를 기록한다. 인간 모니터 조회를 재판정 트리거로 사용하지 않는다.
 
 ---
 
@@ -55,7 +57,7 @@ Dispatcher는 다음 두 경로에서 실행된다.
 | `SUPPLIER_REPLY` | 이벤트가 `SUPPLIER_EMAIL_RECEIVED`이고 `payload.supplier_id` 또는 `payload.po_ref`가 `condition_payload`와 일치 |
 | `EMAIL_SENT` | 이벤트가 `EMAIL_SENT`이고 `payload.case_id`/`payload.work_item_id`가 일치 |
 | `APPROVAL` | 이벤트가 `CHANGE_REQUEST_APPROVED`이고 DB에서 완료된 Attention 또는 승인된 Governance Action의 ID가 조건과 일치. 결정 문자열만으로는 절대 매칭하지 않음 |
-| `SCHEDULED_TIME` | `condition_payload.due_at` ≤ now (이벤트 인입과 무관하게 폴링/스케줄러로 충족 가능) |
+| `SCHEDULED_TIME` | offset을 포함한 `condition_payload.dueAt` 또는 기존 `due_at` ≤ now. 실행기의 claim sweep으로도 충족 가능 |
 | `EXTERNAL_DATA` | 이벤트가 `THIRD_PARTY_*_RECEIVED`이고 `condition_payload.expected_source`와 일치. 조건에 `event_type`이 있으면 그것도 정확히 일치 |
 | `DEPENDENCY_DONE` | 실제 `WORK_ITEM_STATUS_CHANGED`의 대상 또는 수동/모니터 스윕 시 재조회한 `dependent_wi_ref`가 DB에서 `DONE`/`CANCELLED`임 |
 
@@ -88,7 +90,7 @@ Dispatcher는 다음 두 경로에서 실행된다.
 | FROM | TO | 조건 |
 |---|---|---|
 | `WAITING` | `READY` | 대기 조건 SATISFIED. 그 외 전이 금지 |
-| `READY` | `IN_PROGRESS` | Run 시작 시 (Dispatcher가 아닌 실행 계층의 몫) |
+| `READY` | `IN_PROGRESS` | 실행 계층이 QUEUED Run을 성공적으로 claim한 때. 예약 생성만으로 전이하지 않음 |
 | `DONE`/`CANCELLED` | any | **불변**. 완료된 WI는 Dispatcher가 건드리지 않는다 |
 | `IN_PROGRESS` | `WAITING` | 에이전트가 명시적으로 "대기 선언" 시 (Run 안에서) |
 
@@ -100,19 +102,20 @@ Dispatcher는 다음 두 경로에서 실행된다.
 
 ```
 이벤트 → Dispatcher 판정 → 영향받은 WI 목록
-                         └─▶ per-WI: 현 에이전트(runs.execution)로 run 생성 요청
+                         └─▶ per-WI: 현재 배정 에이전트의 QUEUED Run 생성
+                             └─▶ worker claim → RUNNING / WI IN_PROGRESS
 ```
 
-- 중복 방지: 같은 WI가 이미 scheduling된 상태면 중복 요청하지 않는다. 애플리케이션은 원자적 생성 결과를 사용하고, DB는 `RUNNING` 상태에 대한 Work Item별 partial unique index로 다른 Run 생산자와의 경합도 차단한다.
+- 중복 방지: 같은 WI에 `QUEUED` 또는 `RUNNING` Run이 있으면 중복 생성하지 않는다. DB의 Work Item별 partial unique index와 worker별 활성 lease 유일성으로 다른 예약·claim 생산자와의 경합도 차단한다.
 - **여러 WI → 여러 에이전트**: WI마다 배정 에이전트가 다르면 각각 독립 Run으로 스케줄한다. 한 에이전트의 여러 WI는 1회 실행으로 묶는 것을 기본으로 하되, 이는 최적화 옵션(기본: WI당 1 Run).
 - 실행 자체는 기존 `createRun()` 계약을 재사용하고, `trigger_event_id`에 이벤트를 기록해 "이 Run은 이 이벤트 때문에 시작됐다"를 감사 가능하게 한다.
-- Work Item Run은 잠근 WI가 `READY`이고, 사용자 배정이 없으며, 요청한 에이전트가 현재 배정된 활성 에이전트와 일치할 때만 생성한다. 런타임은 `CLAUDE` 또는 `CODEX`만 허용한다.
+- Work Item Run은 잠근 WI가 `READY`이고, 사용자 배정이 없으며, 요청한 에이전트가 현재 배정된 활성 에이전트와 일치할 때만 생성한다. 예약 API의 런타임 값은 `CLAUDE` 또는 `CODEX`이며, 현재 자동 실행기는 Work Item에 연결된 `CODEX` 예약만 claim한다. Claude 자동 실행 어댑터는 이 데모 범위 밖이다.
 - Work Item 조회는 `assigneeType`(USER/AGENT/UNASSIGNED), `assigneeId`, `assigneeName`으로 실제 담당을 반환한다. 기존 `assignedAgent`는 에이전트 이름을 유지하되 인간 담당에는 null을 반환한다.
 - 대기 해소 시 에이전트와 사용자 모두 미배정인 WI는 `READY` 상태와 함께 `MISSING_HUMAN_CONTEXT` attention을 생성한다. 사용자에게 직접 배정된 WI는 Run 없이 `READY`가 정상이다.
 - 배정 에이전트가 비활성화된 경우에도 수신 Event와 대기 해소·READY 전이는 보존한다. 실행을 예약하지 않고 중복 없는 `MISSING_HUMAN_CONTEXT` attention을 열어 담당 복구를 요청한다.
 - 컨텍스트 재구성에 최종 실패한 Run은 `FAILED`로 종료하고 응답의 `failedRuns`에만 포함한다. Dispatcher는 해당 WI에 중복되지 않는 `MATERIAL_EXCEPTION` attention을 열어 운영자에게 복구 필요성을 노출한다.
 
-> **최소 구현 범위**: "이벤트를 받아 → 충족되는 대기 조건을 SATISFIED로 → WI를 READY로 → Run 생성 요청"까지를 하나의 트랜잭션으로 구현한다. Run의 실제 LLM 실행 호출(Claude/Codex)은 기존 스택에 위임.
+> **현재 구현 경계**: Dispatcher는 이벤트·대기 해소·READY·QUEUED 예약을 한 트랜잭션으로 처리한다. 실행 계층은 claim·lease·종료·복구를, Node 실행기는 자식 프로세스 제어를 맡는다. 실제 Codex 모델 호출은 전용 CLI·이미지·로그인 준비 후 별도로 인수한다.
 
 ---
 
@@ -124,18 +127,19 @@ Dispatcher는 다음 두 경로에서 실행된다.
 
 | 단계 | 시점 | 내용 |
 |---|---|---|
-| **현재 구현** | Run 생성 시 | 해당 Case의 Work Item이 가진 `metadata.businessRef`를 `references` 배열로 재조회해 저장 |
-| **향후 확장** | ERP 조회 capability 확장 시 | `suppliers`/`purchase_orders`/`stock`/`production_lots`의 참조와 핵심 필드를 같은 인덱스에 보강 |
+| **현재 구현** | Run 예약 생성 시 | 해당 Case의 Work Item이 가진 `metadata.businessRef`를 `references` 배열로 재조회해 `context_snapshot`에 저장 |
+| **현재 구현** | claim 시 | 현재 Case 맥락을 재구성하고, 기존 계획이 있으면 그 범위의 제품·자재·LOT·발주·공급 조건을 실제 ERP snapshot으로 읽어 `execution_context.currentBusinessFacts`에 추가 |
+| **후속 확장** | ERP 조회 capability 확장 시 | 최신 계획 범위와 무관한 범용 리소스 조회·업무별 facts 연결 보강 |
 | **Phase 5 이후** | 거버넌스 연동 시 | 승인 매트릭스·정책 참조를 `control` 계층에 포함 |
 
 - **refresh 트리거**: `context_snapshot`은 `RunService.createRun()`과 `RunService.tryCreateRun()`에서 Run 생성 직후 항상 재구성하며 캐시하지 않는다.
-- **일관성 경계**: Case 목표와 다섯 컨텍스트 계층은 하나의 PostgreSQL SELECT 문에서 조립되어 같은 statement snapshot을 공유한다.
-- **구현 책임**: 비즈니스 참조 조회는 `ContextSnapshotService`, 재시도·저장·실패 감사 처리는 `RunService`가 담당한다.
+- **일관성 경계**: 예약용 Case 목표와 다섯 컨텍스트 계층은 하나의 PostgreSQL SELECT에서 조립한다. claim의 현재 맥락과 ERP 사실은 반복 읽기 트랜잭션에서 함께 구성한다.
+- **구현 책임**: 예약용 참조 조회는 `ContextSnapshotService`, 예약 재시도·저장은 `RunService`, claim 시 현재 사실 구성과 별도 실행 snapshot 저장은 `ExecutionContextBuilder`·`RunExecutionService`가 담당한다.
 
 ### 4-2. `control` 계층 — refresh 트리거
 
 - 현재 `{"governance":"see docs/02_flow.md"}` 는 거버넌스 규칙 소스에 대한 참조이며, 아직 데이터 행 기반 정책 인덱스는 아니다.
-- **Phase 5 시작 전까지는 유지**(거버넌스 원장이 없으므로), **Phase 5에서 `governance_actions`/승인 매트릭스가 생기면** 해당 테이블의 관련 정책 행 참조로 교체한다.
+- `governance_actions` 등 저장 구조는 있지만 승인·ERP 변경 어댑터와 정책 인덱스는 아직 연결하지 않았다. 거버넌스 실행 계층을 구현할 때 관련 정책 행 참조로 보강한다.
 - trigger: 승인 매트릭스(라우팅 규칙)가 데이터로 존재하는 순간, `control`은 그 데이터의 인덱스를 내려보낸다.
 
 ---
@@ -146,24 +150,25 @@ Dispatcher는 다음 두 경로에서 실행된다.
 
 ### 5-1. 원칙: 스냅샷은 "기록"이고, 실행 결정의 근거는 "재구성"이다
 
-- `context_snapshot` JSONB는 **그 Run이 무엇을 보고 실행됐는지**를 감사·디버그용으로 보존하는 **감사 레코드**다.
-- **Run이 시작될 때의 판독(reading)은 스냅샷을 그대로 쓰지 않고, 현재 DB 상태로 재구성**한다 (always-refresh).
-  - 현재 재구성 소스는 `objective`/`obligation`/`organizational`/`businessRef`/`epistemic`/`control`이다.
-- 결과적으로 성공한 `context_snapshot`은 재구성 SELECT가 본 일관된 최신 상태다. 재개된 Run이 이전 스냅샷을 정상 실행 입력으로 재사용하지 않는다.
+- `context_snapshot`은 **예약 당시 맥락**, `execution_context`는 **claim 당시 맥락**을 보존하는 별도의 감사 기록이다.
+- claim은 현재 `objective`/`obligation`/`organizational`/`businessRef`/`epistemic`/`control`과 Case 범위를 재구성한다. 기존 계획이 있으면 과거 `latestPlan`과 새로 읽은 `currentBusinessFacts`를 구분한다.
+- 새 실행은 이전 snapshot을 덮어쓰거나 과거 ERP 사실을 현재 값으로 표시하지 않는다. 계획의 원본 source snapshot도 불변으로 유지한다.
 
 ### 5-2. 재개 시 재구성 규칙 명세
 
 | 항목 | 규칙 |
 |---|---|
-| Run이 WI에 연결되고 WI가 `WAITING→READY`로 재개 | 새 Run 생성 전에 §4 재구성을 수행 |
-| 재구성 실패 시 | Run은 1회 재시도 후 `FAILED`로 기록. 스냅샷에는 마지막 성공 스냅샷 + `stale: true` 플래그를 남겨 차이를 감사 가능하게 |
-| 스냅샷 신선도 지표 | `context_snapshot->>'reconstructed_at'` 타임스탬프를 항상 기록. 대시보드에서 "최근 24h 재구성 못한 Run" 집계 가능 |
+| Run이 WI에 연결되고 WI가 `WAITING→READY`로 재개 | 새 QUEUED Run 생성 직후 예약 snapshot을 재구성하고, 실제 claim에서 다시 현재 사실을 읽음 |
+| 예약 재구성 실패 | 1회 재시도 후 `FAILED`. 마지막 성공 snapshot에 `stale:true`와 실패 이력을 추가한 별도 실패 snapshot 저장 |
+| claim 재구성 실패 | 예약 snapshot을 보존하고 Run `FAILED`, WI `BLOCKED`, 인간 Attention 기록. 실패한 사실을 정상 실행 맥락으로 사용하지 않음 |
+| 스냅샷 신선도 지표 | 각 `reconstructed_at`을 해당 예약/claim 시점으로 해석. 표시할 때 원본 계획과 현재 사실의 관측 시점을 구분 |
 
 ### 5-3. 현재 구현
 
 - `RunService.createRun()`과 `RunService.tryCreateRun()`은 대상을 해소하고 원자적으로 Run을 삽입한 뒤 `ContextSnapshotService.build(caseRef)`를 항상 호출한다.
 - `ContextSnapshotService`는 Case 목표, Work Item 상태, 참여 에이전트, `businessRef`, Evidence를 현재 DB에서 조회하고 `reconstructed_at`과 `stale:false`를 기록한다.
 - 재구성은 저장점(savepoint) 기반으로 1회 재시도한다. 모두 실패하면 같은 Case에서 가장 최근에 성공적으로 재구성된 `stale=false` 스냅샷을 Work Item이나 이후 실행 상태와 무관하게 복사해 `stale:true`와 실패 메타데이터를 남기고 Run을 `FAILED`로 종료한다.
+- claim은 현재 담당·Case·lease를 검사하고 별도 `execution_context`를 저장한다. 완료된 Run을 다시 claim하지 않으며, 만료된 lease의 이전 결과로 상태를 덮어쓰지 않는다.
 
 ---
 
@@ -182,7 +187,7 @@ Event(event_id)
 - **불변성**: Event는 한 번 쓰면 `UPDATE`, `DELETE`, `TRUNCATE`할 수 없다. Event/Run의 `(work_item_id, case_id)`는 composite FK로 같은 Case임을 DB가 강제한다.
 - **승인 출처**: 승인 Event는 권위 있는 DB 결정에서 Case/WI와 인간 `actor_type=USER`, `user_id`를 도출한다. 호출자가 보낸 결정 문자열은 권한 근거가 아니다.
 - **ERP 리소스 승인 범위**: `CASE`/`WORK_ITEM` 리소스는 DB에서 scope를 해소한다. `PURCHASE_ORDER` 등 Case 매핑이 없는 L1 리소스는 전역 승인 Event로만 수신하고, 각 대기의 승인 ID로 대상을 찾는다. 호출자의 Case/WI 지정이나 Claim/Evidence를 통한 임의 scope 축소는 거부한다.
-- **식별자 별칭**: snake_case/camelCase 등 허용된 별칭을 함께 제공하면 값이 모두 일치해야 한다. 상충하는 대기 조건은 매칭하지 않고, 상충하는 의존 이벤트 source는 Event 기록 전에 거부한다.
+- **식별자 별칭**: snake_case/camelCase 등 허용된 별칭을 함께 제공하면 값이 모두 일치해야 한다. agent 대기 생성 API는 상충·누락·잘못된 시각을 저장 전에 거부하고 일치하는 별칭은 하나의 표기로 정규화한다. 기존에 저장된 상충 조건은 matcher가 해소하지 않으며, 상충하는 의존 이벤트 source는 Event 기록 전에 거부한다.
 - **조회 의미**: Case 필터는 직접 scope뿐 아니라 해소된 wait/triggered Run의 간접 연관 Event도 반환하지만, 전역 Event의 `caseRef`를 필터 값으로 재작성하지 않는다.
 
 ### 멱등성
@@ -190,19 +195,24 @@ Event(event_id)
 Dispatcher 판정은 **결정론적**이어야 하며, 같은 이벤트를 두 번 받아도 같은 최종 상태를 만든다.
 - `waiting_conditions`에 `resolved_by_event_id`가 이미 있으면 재판정 후에도 상태를 재변경하지 않는다 (WHERE `resolved_by_event_id IS NULL` 가드).
 - 중복 이벤트 방지: 공개 `POST /api/v1/events`는 비어 있지 않은 이벤트 고유 키(예: 이메일 message-id, 워크북 해시)를 `external_ref`로 요구한다. `UNIQUE (event_type, external_ref)`가 중복 insert를 차단하며, 같은 키를 다른 scope/payload에 재사용하면 `409 Conflict`로 거절한다. 내부 합성 이벤트는 Dispatcher가 자체 고유 키를 만든다.
+- Case·계획·agent 업무 쓰기는 `Idempotency-Key`로 원래 응답을 재생한다. 과거 계획 응답의 재생은 최신 계산 성공/실패 판정을 되돌리지 않는다.
+- claim은 토큰 원문을 저장하지 않는 발급 예외라 재생하지 않는다. worker별 활성 lease 하나를 강제하고 응답 유실 후 Node 실행기는 60초 기다린다. heartbeat/finish는 기존 terminal receipt를 보존하며, 수동 dispatch는 매 호출의 관리 사실을 기록한다. 모든 관리 경로에 공통 멱등 응답 저장을 적용했다고 해석하지 않는다.
 
 ---
 
-## 7. API/엔드포인트 명세 (최소 구현)
+## 7. 현재 API/엔드포인트 명세
 
 | 메서드 | 경로 | 동작 | 상태 |
 |---|---|---|---|
-| `POST` | `/api/v1/events` | 이벤트 인입 → Dispatcher 판정 → 영향받은 WI/대기조건 갱신 → (Run 생성 요청) | **신규 구현** |
-| `POST` | `/api/v1/dispatch` | 명시적 재판정 (관리/테스트) | **신규 구현** |
-| `GET` | `/api/v1/events?caseRef=` | Case별 이벤트 내역 (직접 case_id뿐 아니라 wait 해소/Run trigger로 간접 연결된 전역 이벤트 포함) | 신규(가벼움) |
-| 기존 | `/api/v1/runs` (`createRun`) | Dispatcher가 실행 요청을 만드는 대상. `trigger_event_id` 활용 | 재사용 |
+| `POST` | `/api/v1/events` | 이벤트 인입 → 판정 → 대기/WI 갱신 → QUEUED 예약 | 구현: worker 전용 |
+| `POST` | `/api/v1/dispatch` | 명시적 재판정 (관리/테스트) | 구현: worker 전용 |
+| `GET` | `/api/v1/events?caseRef=` | 직접·간접 연관 Case 이벤트 조회 | 구현: ERP 조회 권한 |
+| `POST` | `/api/v1/runs` (`createRun`) | 실행 예약 생성, `trigger_event_id`로 원인 연결 | 구현: worker 전용 |
+| `POST` | `/api/v1/cases` | 인간 접수·초기 WI·QUEUED Run 원자적 생성 또는 같은 목표 재사용 | 구현: 인간 업무 위임 권한·멱등 키 |
+| `POST` | `/api/v1/internal/runs/claim`, `/heartbeat`, `/finish`, `/retry` | lease 발급·갱신·종료·통제된 복구 | 구현: 실행기 worker 토큰 |
+| `POST` | `/api/v1/agent/work-items`, `/{ref}/transition` | 역할별 자식 업무·완료·대기 저장 | 구현: 현재 Run capability·멱등 키 |
 
-현재 엔드포인트는 애플리케이션 내부/신뢰 경계용이다. L1 인증·거버넌스 인터셉터가 연결되기 전에는 인터넷 또는 비신뢰 네트워크에 직접 노출하면 안 된다. 승인 Event 자체는 DB의 완료된 인간 결정으로 재검증하지만, 이것이 일반 API 인증을 대신하지는 않는다.
+현재 인증 계층은 인간 역할 헤더(`X-Mulino-Local-Role`), 실행기 worker 토큰(`Authorization: Bearer $MULINO_WORKER_TOKEN`), Case·Work Item·역할·lease에 묶인 agent capability를 구분한다(PoC 로컬 신원; Auth0는 보류(#21·#22)). 승인 Event의 DB 결정 검증과 실제 발주 승인·ERP 변경 어댑터는 별개이며, 후자는 아직 미구현이다. 계획 API와 실제 외부 인증·모델 실행의 남은 검증은 [실행·계획 API 안내](13_execution_and_plan_api.md)를 따른다.
 
 ### 요청/응답 예시 (POST /api/v1/events)
 
@@ -246,7 +256,7 @@ Dispatcher 판정은 **결정론적**이어야 하며, 같은 이벤트를 두 �
 | T8 | `businessRef` 인덱스 구성 | `context_snapshot.business.references`에 Case의 실제 Work Item 참조가 존재 |
 | T9 | Dispatcher 경유 Run에 `trigger_event_id` 기록 | 감사 경로(event→run) 추적 가능 |
 | T10 | 권위 ID 없는 승인 문자열 또는 존재하지 않는 의존 WI | Event INSERT/대기 해소 없이 4xx 거절 |
-| T11 | 수동/모니터 재판정 | 각각 `DISPATCH_REQUESTED`/`DISPATCH_SWEEP_TRIGGERED`와 정확한 source 기록 |
+| T11 | 실행기 수동 재판정 / 인간 모니터 조회 | 수동 dispatch는 `DISPATCH_REQUESTED`·MANUAL을 기록하고 모니터 조회는 업무·이벤트·Run을 변경하지 않음. 내부 조건부 sweep은 별도 서비스 테스트로 검증 |
 | T12 | Claim과 Evidence가 다른 Case | Event 및 `claim_evidence` 모두 기록하지 않고 거절 |
 | T13 | 컨텍스트 재구성 최종 실패 | `scheduledRuns` 제외, `failedRuns` 포함, `MATERIAL_EXCEPTION` attention 생성 |
 | T14 | Event 직접 SQL 변조/교차 Case scope | DB 제약으로 UPDATE/DELETE/TRUNCATE 및 불일치 INSERT 거절 |
@@ -255,18 +265,30 @@ Dispatcher 판정은 **결정론적**이어야 하며, 같은 이벤트를 두 �
 | T17 | 회신 도착 전 담당 에이전트 비활성화 | Event·SATISFIED·READY 보존, Run 없음, 담당 복구 attention |
 | T18 | 다중 담당·인간 참여·반증된 Claim이 있는 Case | 컨텍스트에 책임·역할·대기·증거 출처·Claim 상태·지지/반증·결정 범위 보존 |
 | T19 | 참여자 중복, 다른 Case의 Decision/Attention | DB 제약으로 거부; 독립 DDL과 Flyway 동일 |
+| T20 | 같은 WI 또는 worker의 동시 claim | 활성 lease 중복 없음; claim 전 QUEUED와 claim 후 RUNNING 구분 |
+| T21 | lease 만료·교차 Case/역할·늦은 결과 | 무효 쓰기 거부, 한 번의 만료 재예약, 반복 실패는 Attention; 기존 terminal receipt 보존 |
+| T22 | 미래 시각·완료 의존성·여러 대기 | worker sweep에서 필요한 이벤트만 생성하고 모든 조건 충족 후 한 번 재개 |
+| T23 | 최신 계산 오류 뒤 과거 READY 응답 재생 | 서버 소유 최신 시도 판정 유지, 공급망 DONE 거부; 원본 계획은 읽기 가능 |
+
+로컬 서버·Node 자식 프로세스 검증과 실제 Codex 실행 인수는 구분한다. Auth0 인수는 보류(#21·#22)다. 최신 자동 검사 결과는 [실행·계획 API 안내](13_execution_and_plan_api.md)에 기록한다.
 
 ---
 
-## 9. 구현된 순서와 다음 경계
+## 9. 구현 이력과 현재 경계
+
+### 초기 Dispatcher 구현 이력 — V15~V17
 
 1. Event insert → 조건 판정 → 상태 전이 → Run 기록을 한 트랜잭션으로 구현했다.
 2. 여섯 Waiting Condition의 fail-closed matcher와 Run 중복 방지를 구현했다.
 3. Run 생성 시 단일 SQL 컨텍스트 재구성, 재시도, 실패 감사를 구현했다.
 4. V15에서 교차 Case 참조와 Event 불변성을 DB 수준으로 보강했다.
-5. 다음 경계는 실제 LLM executor와 L1 인증/거버넌스 인터셉터다. 이 PR의 `RUNNING` 행은 실행 스케줄 레코드이며, executor가 이를 소비해 `COMPLETED`/`FAILED`로 종결해야 한다.
+5. 당시 `RUNNING` 행은 실제 모델 호출을 뜻하지 않는 예약 기록이었다. V20~V21에서 이 과거 기록을 ABORTED로 보존하고 실제 예약 상태를 QUEUED로 분리했다.
 
-### PR #18 원래 계획 대조 후 보강
+### 현재 실행 연결 — V20~V22
+
+인증된 접수·역할별 업무 API, lease 서버, 현재 사실 재구성, Node 실행기와 최신 계산 결과 검증을 로컬에서 구현했다. 실제 모델은 전용 Codex CLI·이미지·로그인 준비 후 인수하며, 구매 승인·발주 적용과 외부 회신 어댑터는 후속이다. 예약 생성 또는 Run 종료를 상위 품절 방지 목표의 달성으로 표시하지 않는다.
+
+### 과거 PR #18 계획 대조 후 보강 기록
 
 - 컨텍스트의 `obligation`은 Case 내 Work Item 참조 목록을 유지하되 제목·책임자·기한·활성 대기·의존 참조를 포함한다. Run의 `work_item_id`와 결합해 현재 책임과 병렬 업무를 구별한다.
 - `organizational`은 에이전트와 인간 참여자의 역할을 포함한다. `epistemic`은 `evidence`, `claims`, `decisions` 배열을 가진 객체이며, 증거 출처/관측 시각, Claim 상태·지지/반증, 인간 결정의 적용 범위를 구분한다. 이전 Run 감사 스냅샷은 수정하지 않는다.

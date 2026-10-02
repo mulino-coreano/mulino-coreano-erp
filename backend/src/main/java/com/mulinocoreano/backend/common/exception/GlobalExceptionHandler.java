@@ -5,6 +5,7 @@ import com.mulinocoreano.backend.common.error.CommonErrorCode;
 import com.mulinocoreano.backend.common.error.ErrorCode;
 import com.mulinocoreano.backend.common.error.FieldError;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +14,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -48,6 +52,14 @@ public class GlobalExceptionHandler {
                 .body(ApiError.of(CommonErrorCode.INVALID_INPUT_VALUE, e.getMessage()));
     }
 
+    @ExceptionHandler(TypeMismatchException.class)
+    public ResponseEntity<ApiError> handleTypeMismatch(TypeMismatchException e) {
+        log.info("Type mismatch: {}", e.getMessage());
+        return ResponseEntity
+                .status(CommonErrorCode.INVALID_INPUT_VALUE.getStatus())
+                .body(ApiError.of(CommonErrorCode.INVALID_INPUT_VALUE));
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ApiError> handleResponseStatus(ResponseStatusException e) {
         HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
@@ -58,7 +70,18 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiError> handleException(Exception e) {
+    public ResponseEntity<ApiError> handleException(Exception e) throws Exception {
+        // Spring Security must still turn these into 401/403.
+        if (e instanceof AccessDeniedException || e instanceof AuthenticationException) {
+            throw e;
+        }
+        // MVC exceptions (unknown route, missing header, ...) already carry their status.
+        if (e instanceof ErrorResponse framework) {
+            HttpStatus status = HttpStatus.resolve(framework.getStatusCode().value());
+            if (status != null && status != HttpStatus.INTERNAL_SERVER_ERROR) {
+                return declaredStatus(status, framework.getBody().getDetail());
+            }
+        }
         ResponseStatus declared = AnnotatedElementUtils.findMergedAnnotation(
                 e.getClass(), ResponseStatus.class);
         if (declared != null && declared.code() != HttpStatus.INTERNAL_SERVER_ERROR) {

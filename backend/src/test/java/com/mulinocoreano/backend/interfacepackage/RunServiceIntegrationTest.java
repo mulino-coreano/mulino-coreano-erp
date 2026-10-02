@@ -8,8 +8,8 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Proxy;
+import org.jooq.DSLContext;
+import org.jooq.ExecuteListener;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,12 +21,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 @SpringBootTest
 @Transactional
 class RunServiceIntegrationTest {
+    @Autowired RunSchedulingRepository scheduling;
+    @Autowired ContextSnapshotRepository contextRepository;
+    @Autowired DSLContext dsl;
+
 
     @Autowired
     RunService runService;
-
-    @Autowired
-    InterfaceService interfaceService;
 
     @Autowired
     JdbcClient jdbc;
@@ -44,7 +45,7 @@ class RunServiceIntegrationTest {
         RunDto run = runService.createRun(request(fixture), eventId);
 
         JsonNode snapshot = snapshot(run.runId());
-        assertThat(run.status()).isEqualTo("RUNNING");
+        assertThat(run.status()).isEqualTo("QUEUED");
         assertThat(triggerEventId(run.runId())).isEqualTo(eventId);
         assertThat(snapshot.path("objective").asString())
                 .isEqualTo("Investigate delayed purchase order");
@@ -107,14 +108,14 @@ class RunServiceIntegrationTest {
         complete(newer.runId());
 
         AtomicInteger attempts = new AtomicInteger();
-        ContextSnapshotService failingBuilder = new ContextSnapshotService(jdbc, objectMapper) {
+        ContextSnapshotService failingBuilder = new ContextSnapshotService(contextRepository, objectMapper) {
             @Override
             public Map<String, Object> build(String caseRef) {
                 attempts.incrementAndGet();
                 throw new IllegalStateException("forced reconstruction failure");
             }
         };
-        RunService failingRunService = new RunService(jdbc, objectMapper, failingBuilder);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingBuilder);
 
         RunDto failed = failingRunService.createRun(request(fixture), null);
 
@@ -155,6 +156,24 @@ class RunServiceIntegrationTest {
     }
 
     @Test
+    void reconstructionFailurePreservesExactNumbersInThePriorSnapshot() {
+        Fixture fixture = fixture("Exact fallback evidence", """
+                {"type":"stock","ref":"STOCK-EXACT","quantity":999999999999.123456,"id":9007199254740993}
+                """);
+        RunDto original = runService.createRun(request(fixture), null);
+        complete(original.runId());
+
+        RunDto failed = createFailedRun(fixture, "force fallback");
+
+        assertThat(failed.status()).isEqualTo("FAILED");
+        assertThat(jdbc.sql("SELECT context_snapshot #>> '{business,references,0,quantity}' FROM runs WHERE run_id=:id")
+                .param("id", failed.runId()).query(String.class).single()).isEqualTo("999999999999.123456");
+        assertThat(jdbc.sql("SELECT context_snapshot #>> '{business,references,0,id}' FROM runs WHERE run_id=:id")
+                .param("id", failed.runId()).query(String.class).single()).isEqualTo("9007199254740993");
+        assertThat(snapshot(failed.runId()).path("stale").asBoolean()).isTrue();
+    }
+
+    @Test
     void contextReconstructionReadsEveryDynamicLayerAndTimestampWithOneStatement() {
         Fixture fixture = fixture(
                 "One statement objective",
@@ -176,7 +195,8 @@ class RunServiceIntegrationTest {
                 .update();
         AtomicInteger statements = new AtomicInteger();
         ContextSnapshotService oneStatementService = new ContextSnapshotService(
-                countingJdbc(statements), objectMapper);
+                new ContextSnapshotRepository(dsl.configuration().deriveAppending(
+                        ExecuteListener.onExecuteStart(ctx -> statements.incrementAndGet())).dsl()), objectMapper);
 
         JsonNode snapshot = objectMapper.valueToTree(oneStatementService.build(fixture.caseRef()));
 
@@ -231,14 +251,14 @@ class RunServiceIntegrationTest {
                 "No prior snapshot",
                 "{\"type\":\"stock\",\"ref\":\"STOCK-9\"}");
         AtomicInteger attempts = new AtomicInteger();
-        ContextSnapshotService failingBuilder = new ContextSnapshotService(jdbc, objectMapper) {
+        ContextSnapshotService failingBuilder = new ContextSnapshotService(contextRepository, objectMapper) {
             @Override
             public Map<String, Object> build(String caseRef) {
                 attempts.incrementAndGet();
                 throw new IllegalArgumentException("context source unavailable");
             }
         };
-        RunService failingRunService = new RunService(jdbc, objectMapper, failingBuilder);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingBuilder);
 
         RunDto failed = failingRunService.createRun(request(fixture), null);
 
@@ -262,7 +282,7 @@ class RunServiceIntegrationTest {
                 "Uncommitted dispatcher-visible objective",
                 "{\"type\":\"purchase_order\",\"ref\":\"PO-RETRY\"}");
         AtomicInteger attempts = new AtomicInteger();
-        ContextSnapshotService failsOnce = new ContextSnapshotService(jdbc, objectMapper) {
+        ContextSnapshotService failsOnce = new ContextSnapshotService(contextRepository, objectMapper) {
             @Override
             public Map<String, Object> build(String caseRef) {
                 if (attempts.incrementAndGet() == 1) {
@@ -273,14 +293,14 @@ class RunServiceIntegrationTest {
                 return super.build(caseRef);
             }
         };
-        RunService retryingRunService = new RunService(jdbc, objectMapper, failsOnce);
+        RunService retryingRunService = new RunService(scheduling, objectMapper, failsOnce);
         AtomicReference<RunDto> result = new AtomicReference<>();
 
         assertThatCode(() -> result.set(retryingRunService.createRun(request(fixture), null)))
                 .doesNotThrowAnyException();
 
         assertThat(attempts).hasValue(2);
-        assertThat(result.get().status()).isEqualTo("RUNNING");
+        assertThat(result.get().status()).isEqualTo("QUEUED");
         assertThat(snapshot(result.get().runId()).path("objective").asString())
                 .isEqualTo("Uncommitted dispatcher-visible objective");
         assertThat(snapshot(result.get().runId()).path("stale").asBoolean()).isFalse();
@@ -302,14 +322,14 @@ class RunServiceIntegrationTest {
     }
 
     @Test
-    void interfaceServiceCreateRunDelegatesToTransactionalRunService() {
+    void manualSchedulingUsesTransactionalRunServiceWithoutTriggerEvent() {
         Fixture fixture = fixture(
                 "Interface delegation",
                 "{\"type\":\"stock\",\"ref\":\"STOCK-DELEGATE\"}");
 
-        RunDto run = interfaceService.createRun(request(fixture));
+        RunDto run = runService.createRun(request(fixture), null);
 
-        assertThat(run.status()).isEqualTo("RUNNING");
+        assertThat(run.status()).isEqualTo("QUEUED");
         assertThat(triggerEventIsNull(run.runId())).isTrue();
         assertThat(snapshot(run.runId()).path("objective").asString())
                 .isEqualTo("Interface delegation");
@@ -414,13 +434,13 @@ class RunServiceIntegrationTest {
     }
 
     private RunDto createFailedRun(Fixture fixture, String message) {
-        ContextSnapshotService failingBuilder = new ContextSnapshotService(jdbc, objectMapper) {
+        ContextSnapshotService failingBuilder = new ContextSnapshotService(contextRepository, objectMapper) {
             @Override
             public Map<String, Object> build(String caseRef) {
                 throw new IllegalStateException(message);
             }
         };
-        return new RunService(jdbc, objectMapper, failingBuilder)
+        return new RunService(scheduling, objectMapper, failingBuilder)
                 .createRun(request(fixture), null);
     }
 
@@ -485,22 +505,6 @@ class RunServiceIntegrationTest {
                 .param("workItemId", fixture.workItemId())
                 .param("objective", objective)
                 .update();
-    }
-
-    private JdbcClient countingJdbc(AtomicInteger statements) {
-        return (JdbcClient) Proxy.newProxyInstance(
-                JdbcClient.class.getClassLoader(),
-                new Class<?>[]{JdbcClient.class},
-                (proxy, method, args) -> {
-                    if (method.getName().equals("sql")) {
-                        statements.incrementAndGet();
-                    }
-                    try {
-                        return method.invoke(jdbc, args);
-                    } catch (InvocationTargetException failure) {
-                        throw failure.getCause();
-                    }
-                });
     }
 
     private static String unique(String prefix) {

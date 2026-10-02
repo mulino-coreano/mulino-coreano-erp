@@ -54,9 +54,9 @@ class RunServiceTransactionIntegrationTest {
 
             assertThat(contextSnapshotService.attempts()).isEqualTo(2);
             assertThat(contextSnapshotService.observedTransaction()).isTrue();
-            assertThat(run.status()).isEqualTo("RUNNING");
+            assertThat(run.status()).isEqualTo("QUEUED");
             assertThat(run.runRef()).startsWith("RUN-");
-            assertThat(persistedStatus(run.runId())).isEqualTo("RUNNING");
+            assertThat(persistedStatus(run.runId())).isEqualTo("QUEUED");
             assertThat(snapshot(run.runId()).path("objective").asString())
                     .isEqualTo("Committed run after savepoint recovery");
             assertThat(snapshot(run.runId()).path("stale").asBoolean()).isFalse();
@@ -201,8 +201,8 @@ class RunServiceTransactionIntegrationTest {
         @Bean
         @Primary
         FailsOnceContextSnapshotService failsOnceContextSnapshotService(
-                JdbcClient jdbc, ObjectMapper objectMapper) {
-            return new FailsOnceContextSnapshotService(jdbc, objectMapper);
+                JdbcClient jdbc, ObjectMapper objectMapper, ContextSnapshotRepository repository) {
+            return new FailsOnceContextSnapshotService(jdbc, objectMapper, repository);
         }
     }
 
@@ -215,8 +215,8 @@ class RunServiceTransactionIntegrationTest {
         private final AtomicReference<CountDownLatch> blockedBuildStarted = new AtomicReference<>();
         private final AtomicReference<CountDownLatch> blockedBuildRelease = new AtomicReference<>();
 
-        FailsOnceContextSnapshotService(JdbcClient jdbc, ObjectMapper objectMapper) {
-            super(jdbc, objectMapper);
+        FailsOnceContextSnapshotService(JdbcClient jdbc, ObjectMapper objectMapper, ContextSnapshotRepository repository) {
+            super(repository, objectMapper);
             this.jdbc = jdbc;
         }
 

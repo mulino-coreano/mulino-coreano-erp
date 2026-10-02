@@ -4,14 +4,16 @@ spring:
     username: ${DB_USERNAME:mulino_app}
     password: ${DB_PASSWORD}
 
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    open-in-view: false
-
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+# PoC 로컬 신원. Auth0/OAuth는 보류(#21·#22). 역할 헤더와 실행기 토큰만 인정한다.
+mulino:
+  local-auth:
+    issuer: https://local.mulino.test/
+    # 비워 두면 실행기(worker) 인증 경로를 열지 않는다.
+    worker-token: ${MULINO_WORKER_TOKEN:}
 
 springdoc:
   api-docs:
