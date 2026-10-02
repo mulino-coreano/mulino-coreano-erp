@@ -139,7 +139,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "create_case": {
         const data = await api("/cases", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json",
+            "X-Mulino-Local-Role": process.env.MULINO_LOCAL_ROLE ?? "OPERATOR" },
           body: JSON.stringify({ objective: args.objective, channel: args.channel ?? "CHAT" }),
         });
         return {

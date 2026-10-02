@@ -571,3 +571,23 @@ erDiagram
 - 기존 발주·입고·리콜 승인 매트릭스와 양방향 LOT 추적 경로는 그대로 유지한다.
 
 추가 ENUM 13종은 `channel_type`, `actor_type`, `intent_type`, `case_status`, `case_priority`, `work_item_status`, `waiting_condition_type`, `waiting_status`, `run_status`, `claim_status`, `attention_reason_type`, `decision_scope`, `attention_request_status`이다. 전체 타입 정의는 `database/ddl/00_types.sql`을 따른다.
+
+### 요청 재전송 기록 (#47, V18)
+
+Case를 중복 생성하지 않도록 인간별 scope와 요청 키에 응답을 보관한다.
+Case FK를 추가하지 않으며 원래 응답을 재전송한다. 요청 기록과 Case는
+같은 트랜잭션에서 저장된다. LOT·승인 관계는 바뀌지 않는다.
+
+```mermaid
+erDiagram
+    request_idempotency {
+        varchar scope PK
+        varchar request_key PK
+        char request_hash
+        jsonb response
+        timestamptz created_at
+    }
+```
+
+`request_hash`는 SHA-256 64자리이며 `response`는 JSON object다.
+독립 DDL은 `database/ddl/10_request_idempotency.sql`이다.
