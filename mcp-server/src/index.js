@@ -226,7 +226,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text:
-                "Case (열림/진행): " + data.casesOpen +
+                "Case (열림/진행/대기): " + data.casesOpen +
                 "\nCase (위험): " + data.casesAtRisk +
                 "\nWork Item (READY): " + data.workItemsReady +
                 "\nWork Item (WAITING): " + data.workItemsWaiting +

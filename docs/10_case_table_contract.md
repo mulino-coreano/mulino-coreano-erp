@@ -209,3 +209,14 @@ WAITING 후속 책임을 남기며 입고·생산을 만들어 Case를 끝내지
 15,2 base 가격과 정확한 구매 금액, version/idempotency, V24~V26과
 독립 DDL 16~18 계약은 [인간 답변·구매 결정](14_human_purchase_api.md)을
 따른다. #33의 나머지 ERP gate와 #34의 실제 데모 DB 검증은 남아 있다.
+
+
+## #54 이후의 Dispatcher·Run 계약
+
+SUPPLIER_REPLY는 지정한 식별자를 모두 검사한다. Case 없는 사실은
+claim/evidence 연결 뒤에도 글로벌로 남고 Attention 승인의 검색만 같은
+Case로 넓힌다. Governance 승인 범위는 원래 Work Item에 묶인다.
+Run의 시점은 V27·독립 DDL 19의 TIMESTAMPTZ로 통일하며 기존
+Asia/Seoul 벽시계 값을 명시적으로 복원한다. GET /monitor는 조회만
+하고 ASK는 완제품만 반환한다. 재현·전제·검증 범위는
+[Dispatcher 범위와 실행 시점](15_dispatcher_defects.md)을 따른다.
