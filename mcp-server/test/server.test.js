@@ -155,10 +155,10 @@ function within(promise, timeoutMs, message) {
 
 for (const role of [undefined, "MANAGER"]) {
   test(`create_case forwards the configured human role (${role ?? "default"})`, async () => {
-    let headers;
+    let headers; let body;
     const apiServer = http.createServer((req, res) => {
       headers = req.headers;
-      req.resume();
+      const chunks=[]; req.on("data",chunk=>chunks.push(chunk)); req.on("end",()=>{ body=JSON.parse(Buffer.concat(chunks)); });
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ caseRef: "CASE-test", title: "work", status: "OPEN" }));
     });
@@ -167,9 +167,11 @@ for (const role of [undefined, "MANAGER"]) {
     const env = { MULINO_API_BASE: `${apiBase}/api/v1` };
     if (role) env.MULINO_LOCAL_ROLE = role;
     const client = await connectClient(env);
-    const result = await client.callTool({ name: "create_case", arguments: { objective: "work" } });
+    const result = await client.callTool({ name: "create_case", arguments: { objective: "work", requestKey: "scope-key", replenishment: { warehouseId: 3, productSkus: ["SKU-A"], targetDate: "2026-09-05" } } });
     assert.equal(result.isError, undefined);
     assert.equal(headers["x-mulino-local-role"], role ?? "OPERATOR");
+    assert.equal(headers["idempotency-key"], "scope-key");
+    assert.deepEqual(body.replenishment,{ warehouseId: 3, productSkus: ["SKU-A"], targetDate: "2026-09-05" });
     assert.equal(headers.authorization, undefined);
     assert.equal(headers["x-mulino-local-service"], undefined);
   });

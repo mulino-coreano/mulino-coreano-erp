@@ -1,0 +1,7 @@
+.{
+    .name = .mulino_cli,
+    .fingerprint = 0xe988c482f462e3bf,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{ "build.zig", "build.zig.zon", "src", "test", "README.md" },
+}
