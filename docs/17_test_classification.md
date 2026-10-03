@@ -12,13 +12,17 @@
 | `GlobalExceptionHandlerTest.undeclaredFailuresStayInternal` | 유지 | 예상하지 않은 실패를 성공이나 다른 업무 오류로 바꾸지 않는 HTTP 경계를 검증한다. 소유자가 명시적으로 유지했다. |
 | 나머지 기존 469건 | 유지 | 이번 삭제 승인 범위 밖이다. 기존 업무·권한·가격 정밀도·lease 검증을 그대로 유지했다. 전수 품질 재분류를 수행했다는 뜻은 아니다. |
 
-현재 부모 `c5f1958`에서 473건이 통과했고 실행 시간은 82초였다.
-이번 삭제만 적용하면 기존 테스트는 470건이다. 새 scenario helper
-12건을 더한 Unit 실행은 482건이다. Cucumber가 같은 classpath에서
-발견한 업무 시나리오 13건은 Unit task에서 제외하여 skipped로
-보고하므로 JUnit XML 발견 합계는 495건이다.
-최종 `test bootJar` 실행 시간은 92초였다. 원본 stack의 오래된 546건이나
-402건을 현재 branch의 전후 수치로 쓰지 않는다.
+초기 부모 `c5f1958`의 473건에서 승인한 3건을 삭제하고 scenario helper
+12건을 더해 482건을 검증했다. 이때 실행 시간은 92초였다.
+
+통합 검증에서 발견한 활성 창고 중복 접수 문제는 #65에서 수정했다.
+`RuntimeIntakeIntegrationTest`의 순차 충돌·replay와 동시 접수 2건은
+추가 유지한다. 수정 후 부모의 `test bootJar`는 475건, 79초로 통과했다.
+현재는 삭제 후 472건에 helper 12건을 더해 Unit 484건이다.
+Cucumber가 발견한 업무 시나리오 13건은 Unit에서 제외되어 skipped로
+보고하므로 JUnit XML 합계는 497건이다. 최종 통합 `test bootJar`는
+93초, 실패·오류 0건으로 통과했다. 오래된 stack의 546건이나 402건을
+현재 branch의 전후 수치로 쓰지 않는다.
 
 MRP→P2P 전체 흐름은 새 SIT로 검증한다. 부모에는 `DemoE2eTest`가
 없으므로 이 파일을 이식하거나 삭제한 것으로 보고하지 않는다.
