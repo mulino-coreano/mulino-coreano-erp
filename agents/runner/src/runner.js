@@ -16,11 +16,12 @@ const transient = error => !error.status || error.status >= 500 || error.status 
 
 export class Runner {
   constructor({ api, executor, workerId, clock = realClock, pollMs = 5000, heartbeatMs = 15000,
-    maxRunMs = 600000, retryMs = 1000, logger = () => {}, secrets = [], runtime = 'CODEX' }) {
+    maxRunMs = 600000, retryMs = 1000, terminalGraceMs = 60000, logger = () => {}, secrets = [], runtime = 'CODEX' }) {
     if (typeof workerId !== 'string' || !workerId || workerId.length > 128
       || ![pollMs, heartbeatMs, maxRunMs, retryMs].every(n => Number.isFinite(n) && n > 0)
-      || maxRunMs > 600000) throw new Error('INVALID_RUNNER_CONFIG');
-    Object.assign(this, { api, executor, workerId, clock, pollMs, heartbeatMs, maxRunMs, retryMs, logger, secrets, runtime });
+      || maxRunMs > 600000 || !Number.isFinite(terminalGraceMs) || terminalGraceMs <= 0
+      || terminalGraceMs > 60000) throw new Error('INVALID_RUNNER_CONFIG');
+    Object.assign(this, { api, executor, workerId, clock, pollMs, heartbeatMs, maxRunMs, retryMs, terminalGraceMs, logger, secrets, runtime });
     this.shutdown = new AbortController();
     this.pending = null;
     this.cooldownUntil = 0;
@@ -95,10 +96,7 @@ export class Runner {
         timer.abort();
         if (event.kind === 'stop') continue;
         if (event.kind === 'result' || event.kind === 'failure') {
-          // Only fixed ExecutionError codes and numeric usage are logged, never child output.
-          const code = event.error?.code;
-          this.log('model_finished', { runRef: claim.runRef, runtime: claim.runtime, model: this.executor.model ?? null, ...(/^[A-Z_]{1,64}$/.test(code ?? '') ? { failure: code } : {}),
-            ...(handle.usage ?? {}) }, secretValues);
+          this.recordModelFinished(claim, handle, event, secretValues);
           let result;
           try {
             result = event.kind === 'result' ? validateResult(event.value) : {
@@ -113,8 +111,7 @@ export class Runner {
             Math.min(leaseDeadline, runDeadline), this.shutdown.signal);
           if (receipt?.runRef !== claim.runRef) throw new HttpError('INVALID_HEARTBEAT_RESPONSE', 422);
           if (terminalReceipt(receipt)) {
-            await handle.cancel('ALREADY_FINISHED');
-            return this.recordTerminal(claim, receipt);
+            return await this.collectTerminalOutput(claim, receipt, handle, child, runDeadline, secretValues);
           }
           const expiry = Date.parse(receipt?.leaseExpiresAt);
           if (receipt?.status !== 'RUNNING' || !validInstant(receipt?.leaseExpiresAt) || expiry <= this.clock.now()) {
@@ -133,6 +130,42 @@ export class Runner {
         }
       }
     } finally { await handle.cancel('CLEANUP'); }
+  }
+
+  async collectTerminalOutput(claim, receipt, handle, child, runDeadline, secrets) {
+    // The backend has revoked the capability and fixed the business outcome. This grace only
+    // collects the CLI's final JSON/usage; it never renews authority or sends another finish.
+    if (receipt.status !== 'COMPLETED') {
+      await handle.cancel('BACKEND_TERMINATED');
+      this.recordModelFinished(claim, handle, await child, secrets, 'BACKEND_TERMINATED');
+      return this.recordTerminal(claim, receipt);
+    }
+    const deadline = Math.min(runDeadline, this.clock.now() + this.terminalGraceMs);
+    const timer = new AbortController();
+    let event;
+    try {
+      event = await Promise.race([child, this.clock.sleep(Math.max(0, deadline - this.clock.now()),
+        AbortSignal.any([timer.signal, this.shutdown.signal]))
+        .then(() => ({ kind: 'timeout' }), () => ({ kind: 'stop' }))]);
+    } finally { timer.abort(); }
+    let failure;
+    if (event.kind === 'timeout' || event.kind === 'stop') {
+      failure = event.kind === 'stop' ? 'TERMINAL_FINALIZATION_INTERRUPTED' : 'TERMINAL_FINALIZATION_TIMEOUT';
+      await handle.cancel(failure);
+      event = await child;
+    } else if (event.kind === 'result') {
+      try {
+        if (validateResult(event.value).outcome !== receipt.outcome) failure = 'MODEL_TERMINAL_OUTCOME_MISMATCH';
+      } catch { failure = 'INVALID_MODEL_RESULT'; }
+    }
+    this.recordModelFinished(claim, handle, event, secrets, failure);
+    return this.recordTerminal(claim, receipt);
+  }
+
+  recordModelFinished(claim, handle, event, secrets, failure = event.error?.code) {
+    // Never retain child output. Missing usage remains unknown, not an invented zero cost.
+    this.log('model_finished', { runRef: claim.runRef, runtime: claim.runtime, model: this.executor.model ?? null,
+      ...(/^[A-Z_]{1,64}$/.test(failure ?? '') ? { failure } : {}), ...(handle.usage ?? {}) }, secrets);
   }
 
   async requestBefore(action, body, key, deadline, signal) {

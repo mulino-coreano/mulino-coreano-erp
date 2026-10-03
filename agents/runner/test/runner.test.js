@@ -113,15 +113,69 @@ test('heartbeat transport failure retries with same key and stops at lease deadl
   assert.equal(new Set(heartbeatKeys).size, 1);
 });
 
-test('terminal heartbeat receipt wins and child gets terminated without downgrade', async t => {
+test('terminal heartbeat bounds final output grace and preserves the committed outcome', async t => {
   const { runner, calls, handles, clock } = await setup(t, { mode: 'hang', route: ({ action, res }) => {
     if (action === 'heartbeat') { json(res, { ...receipt('WAITING'), alreadyFinished: true }); return true; }
   } });
   const running = runner.runOnce();
   await until(() => handles.length === 1);
   await clock.advance(15_000);
+  await until(() => clock.waiters.some(waiter => waiter.at === clock.now() + 60_000));
+  await clock.advance(60_000);
   assert.equal((await running)?.outcome, 'WAITING');
   assert.equal(calls.filter(c => c.action === 'finish').length, 0);
+});
+
+async function terminalModel(t, backendOutcome = 'WAITING') {
+  const clock = new ManualClock();
+  const calls = [], logs = [];
+  let resolve, reject;
+  const handle = { result: new Promise((yes, no) => { resolve = yes; reject = no; }), usage: {},
+    cancel: async () => { reject(Object.assign(new Error('cancelled'), { code: 'MODEL_PROCESS_FAILED' })); } };
+  const api = { post: async action => {
+    calls.push(action);
+    if (action === 'claim') return claim({ leaseExpiresAt: new Date(clock.now() + 60_000).toISOString() });
+    if (action === 'heartbeat') return { ...receipt(backendOutcome), alreadyFinished: true };
+    assert.fail('a committed receipt must not be overwritten');
+  } };
+  const runner = new Runner({ api, executor: { model: 'model-1', start: () => handle }, workerId: 'worker-1',
+    clock, logger: event => logs.push(event) });
+  t.after(() => runner.stop());
+  const running = runner.runOnce();
+  await until(() => clock.waiters.length > 0);
+  await clock.advance(15_000);
+  await until(() => clock.waiters.some(waiter => waiter.at === clock.now() + 60_000));
+  return { runner, running, clock, calls, logs, handle, resolve };
+}
+
+test('committed purchase wait allows final model usage without another mutation or child', async t => {
+  const { runner, running, calls, logs, handle, resolve } = await terminalModel(t);
+  assert.equal((await runner.runOnce()).status, 'BUSY');
+  handle.usage = { costUsd: 0.12, inputTokens: 10, outputTokens: 20, resolvedModel: 'model-1' };
+  resolve({ outcome: 'WAITING', summary: 'Proposal stored', waitingConditions: [], resultRef: 'APPROVAL-42' });
+  assert.equal((await running).outcome, 'WAITING');
+  assert.deepEqual(calls, ['claim', 'heartbeat']);
+  const model = logs.filter(e => e.event === 'model_finished');
+  assert.equal(model.length, 1);
+  assert.equal(model[0].costUsd, 0.12);
+  assert.equal(model[0].failure, undefined);
+});
+
+test('shutdown during terminal grace preserves authority and marks unknown finalization', async t => {
+  const { runner, running, calls, logs } = await terminalModel(t);
+  await runner.stop();
+  assert.equal((await running).outcome, 'WAITING');
+  assert.deepEqual(calls, ['claim', 'heartbeat']);
+  const model = logs.find(e => e.event === 'model_finished');
+  assert.equal(model.failure, 'TERMINAL_FINALIZATION_INTERRUPTED');
+  assert.equal(model.costUsd, undefined);
+});
+
+test('late model outcome cannot downgrade the committed business outcome', async t => {
+  const { running, logs, resolve } = await terminalModel(t);
+  resolve({ outcome: 'FAILED', summary: 'A later tool was denied' });
+  assert.equal((await running).outcome, 'WAITING');
+  assert.equal(logs.find(e => e.event === 'model_finished').failure, 'MODEL_TERMINAL_OUTCOME_MISMATCH');
 });
 
 test('crash after business commit preserves original finish receipt', async t => {

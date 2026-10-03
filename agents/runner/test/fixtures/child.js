@@ -18,7 +18,7 @@ else if (mode === 'date-only') send({ outcome: 'WAITING', summary: 'Pending', wa
 // Claude Code stream-json: progress events, then one result event carrying the schema output.
 else if (mode === 'claude') process.stdout.write([{ type: 'system', subtype: 'init' }, { type: 'assistant' },
   { type: 'result', subtype: 'success', is_error: false, result: 'ignored when structured',
-    total_cost_usd: 0.12, num_turns: 3, usage: { input_tokens: 10, output_tokens: 20 },
+    total_cost_usd: 0.12, num_turns: 3, modelUsage: { 'claude-sonnet-5': {} }, usage: { input_tokens: 10, output_tokens: 20 },
     structured_output: { outcome: 'DONE', summary: JSON.parse(input).context.objective, resultRef: 'PLAN-7' } }]
   .map(event => JSON.stringify(event)).join('\n') + '\n');
 else if (mode === 'codex-usage') {

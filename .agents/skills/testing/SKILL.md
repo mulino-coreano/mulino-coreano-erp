@@ -88,6 +88,12 @@ A UX check is valid only as behaviour: doing A causes B.
   each Run's outcome and failure code, cost and tokens (from the runner's
   `model_finished` log), final business state.
 - Real models vary: assert the business result, never the agent's steps.
+- The current runner's finalization failures remain failures even when a purchase
+  proposal is already PENDING. Preserve missing cost/token metrics as unknown,
+  retain known partial cost separately, and wait for the original coordinator's
+  follow-up responsibility and final usage after human approval.
+- Current commands, source-role limitations and classification evidence are in
+  `docs/16_scenario_tests.md` and `docs/17_test_classification.md`.
 
 ## 6. Reviewing or pruning existing tests
 
