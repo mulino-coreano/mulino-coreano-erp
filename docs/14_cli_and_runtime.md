@@ -44,6 +44,10 @@ warehouse는 planning policy가 있어야 하고 SKU는 활성 완제품이어�
 productIds/warehouseId/targetDate를 Case metadata에 저장한다.
 익명 요청에는 이 기능을 허용하지 않는다. MCP `create_case`도
 선택 replenishment와 requestKey를 전달하며 인간 역할 헤더만 쓴다.
+동일 warehouse에 ACTIVE planning Case가 있으면 새 접수는 HTTP 409로
+거부한다. 거부된 요청의 Case, Work Item, Run, request receipt는
+저장하지 않는다. 성공한 요청과 같은 Idempotency-Key·입력의 재전송은
+기존 응답을 그대로 반환한다.
 
 ## 프로세스와 이미지 검증
 
