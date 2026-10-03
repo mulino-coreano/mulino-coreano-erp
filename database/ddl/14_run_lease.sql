@@ -44,4 +44,3 @@ INSERT INTO agents(agent_key,display_name,role_scope) VALUES
     ('PROCUREMENT','구매 에이전트','발주 승인안 준비'),
     ('QC','품질 에이전트','품질 검토')
 ON CONFLICT(agent_key) DO NOTHING;
-
