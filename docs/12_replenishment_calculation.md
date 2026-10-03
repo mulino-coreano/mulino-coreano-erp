@@ -46,7 +46,7 @@ KG/G, L/ML, EA, CASE를 지원한다. CASE와 EA는 포장 구성 없이 서로 
 
 ## 예시 데이터와 기대 결과
 
-[Fixture 설명](../database/seed/replenishment_demo_README.md)과 [SQL](../database/seed/replenishment_demo.sql)은 **마이그레이션만 적용한 빈 폐기용 DB**에서 먼저 실행한다. 이후 실제 데모용 사용자와 외부 신원을 연결한다. SQL은 기존 사용자·업무 데이터가 있으면 거부하며 이를 삭제하거나 덮어쓰지 않는다.
+[Fixture SQL](../database/seed/replenishment_demo.sql)은 **마이그레이션만 적용한 빈 폐기용 DB**에서 먼저 실행한다. 이후 실제 데모용 사용자와 외부 신원을 연결한다. SQL은 기존 사용자·업무 데이터가 있으면 거부하며 이를 삭제하거나 덮어쓰지 않는다.
 
 | 계산 | 손계산 결과 |
 |---|---|
