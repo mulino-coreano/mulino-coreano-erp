@@ -281,3 +281,10 @@ Case·초기 Work Item·요청 기록은 같은 트랜잭션으로 처리한다.
 남긴다. 이 단계는 발주나 재고를 변경하지 않는다. 같은 요청은 같은 계획을
 반환하고 새 요청은 버전을 증가시킨다. 상세 계약은
 [계획 API](13_execution_and_plan_api.md)를 따른다.
+
+## 실행기의 업무 청구 (#49)
+
+Run 예약(QUEUED) → service claim → lease가 있는 RUNNING →
+해당 Case capability로 실행 → 결과와 업무 상태를 함께 기록한다.
+만료는 1회 재시도하며 두 번째 실패는 인간 attention으로 넘긴다.
+SUPPLY_CHAIN은 최근 계획 READY 증거가 있어야 DONE으로 종료한다.

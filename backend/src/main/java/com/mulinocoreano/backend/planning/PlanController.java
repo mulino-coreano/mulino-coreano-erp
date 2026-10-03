@@ -24,8 +24,11 @@ public class PlanController {
     @PostMapping("/cases/{caseRef}/plans")
     public PlanDto calculate(@PathVariable String caseRef, @Valid @RequestBody PlanRequest request,
                              @RequestHeader("Idempotency-Key") String key,
-                             @AuthenticationPrincipal HumanActor actor) {
-        return plans.calculate(caseRef, request, key, actor);
+                             @AuthenticationPrincipal Object actor,
+                             @RequestHeader(value="Authorization", required=false) String authorization) {
+        if (actor instanceof com.mulinocoreano.backend.security.AgentActor)
+            return plans.calculateAgent(caseRef, request, key, authorization.substring(7));
+        return plans.calculate(caseRef, request, key, actor instanceof HumanActor human ? human : null);
     }
 
     @GetMapping("/plans/{planRef}")

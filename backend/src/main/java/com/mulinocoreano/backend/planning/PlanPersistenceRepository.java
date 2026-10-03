@@ -163,6 +163,27 @@ public class PlanPersistenceRepository {
                 .execute();
     }
 
+    public long planId(String ref, long caseId, long workId) {
+        var p = REPLENISHMENT_PLANS;
+        return dsl.select(p.REPLENISHMENT_PLAN_ID)
+                .from(p)
+                .where(p.PLAN_REF.eq(ref))
+                .and(p.CASE_ID.eq(caseId))
+                .and(p.CREATED_BY_WORK_ITEM_ID.eq(workId))
+                .fetchSingle(r -> r.value1());
+    }
+
+    public int recordAttempt(long workId, long caseId, String outcome, Long planId) {
+        var w = WORK_ITEMS;
+        return dsl.update(w)
+                .set(w.PLANNING_ATTEMPT_SEQUENCE, w.PLANNING_ATTEMPT_SEQUENCE.add(1))
+                .set(w.LATEST_PLANNING_OUTCOME, outcome)
+                .set(w.LATEST_PLANNING_PLAN_ID, planId)
+                .where(w.WORK_ITEM_ID.eq(workId))
+                .and(w.CASE_ID.eq(caseId))
+                .execute();
+    }
+
     public boolean activeHuman(long id) {
         var u = com.mulinocoreano.backend.generated.Tables.USERS;
         return dsl.fetchExists(selectOne().from(u).where(u.USER_ID.eq(id)).and(u.IS_ACTIVE.isTrue())
