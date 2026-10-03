@@ -412,7 +412,11 @@ public class DispatcherService {
         } else if (scope.caseId() != null) {
             sql.append(" AND wi.case_id=:caseId\n");
         }
-        if (!dependencyEvent && scope.workItemId() != null) {
+        // Attention approval serves matching waits across the same Case. The Event remains
+        // attributed to the question's original Work Item; governance actions keep their scope.
+        boolean attentionApproval = event != null && "CHANGE_REQUEST_APPROVED".equals(event.eventType())
+                && event.payload().get("attention_request_id") != null;
+        if (!dependencyEvent && !attentionApproval && scope.workItemId() != null) {
             sql.append(" AND wi.work_item_id=:workItemId\n");
         }
         sql.append(" ORDER BY wc.waiting_condition_id");
@@ -426,7 +430,7 @@ public class DispatcherService {
         } else if (scope.caseId() != null) {
             query = query.param("caseId", scope.caseId());
         }
-        if (!dependencyEvent && scope.workItemId() != null) {
+        if (!dependencyEvent && !attentionApproval && scope.workItemId() != null) {
             query = query.param("workItemId", scope.workItemId());
         }
         return query.query((rs, rowNum) -> new WaitingCandidate(
@@ -806,13 +810,8 @@ public class DispatcherService {
         payload.put("evidenceRef", evidenceRef);
         payload.put("evidence_ref", evidenceRef);
         payload.put("relation", relation);
-        EventScope authoritativeScope = requestedScope.caseId() == null
-                ? new EventScope(
-                        target.claimCaseId(), target.caseRef(),
-                        requestedScope.workItemId(), requestedScope.workItemRef())
-                : requestedScope;
-        return new PreparedClaimEvidence(
-                authoritativeScope, claimId, target.evidenceId(), relation);
+        // Evidence attribution does not narrow a case-less business fact.
+        return new PreparedClaimEvidence(requestedScope, claimId, target.evidenceId(), relation);
     }
 
     private boolean containsClaimEvidenceSelector(Map<String, Object> payload) {

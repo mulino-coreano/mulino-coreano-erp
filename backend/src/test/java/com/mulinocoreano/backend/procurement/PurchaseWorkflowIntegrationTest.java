@@ -802,8 +802,15 @@ CREATE TRIGGER fail_second_purchase_line AFTER INSERT ON purchase_order_items
         jdbc.sql("UPDATE purchase_order_items SET expected_delivery_date=DATE '2026-09-03' WHERE purchase_order_id IN (SELECT purchase_order_id FROM purchase_orders WHERE purchase_application_id IS NOT NULL)").update();
         jdbc.sql("UPDATE replenishment_followups SET due_at=TIMESTAMPTZ '2026-09-03T15:00:00Z'").update();
         long events = count("events");
+        long runsBefore=count("runs"),attentionBefore=count("attention_requests");
+        mvc.perform(get("/api/v1/monitor")).andExpect(status().isOk());
+        assertThat(count("events")).isEqualTo(events);assertThat(count("runs")).isEqualTo(runsBefore);
+        assertThat(count("attention_requests")).isEqualTo(attentionBefore);
         var changed = dispatcher.dispatchScheduledIfActionable().orElseThrow();
         assertThat(changed.scheduledRuns()).isEmpty();
+        assertThat(jdbc.sql("SELECT status::text FROM work_items WHERE work_item_id IN(SELECT work_item_id FROM replenishment_followups)").query(String.class).single()).isEqualTo("WAITING");
+        assertThat(jdbc.sql("SELECT count(*) FROM runs WHERE work_item_id IN(SELECT work_item_id FROM replenishment_followups) AND status IN('QUEUED','RUNNING')").query(Long.class).single()).isZero();
+        assertThat(count("runs")).isEqualTo(runsBefore);
         assertThat(jdbc.sql("SELECT work_item_id=(SELECT work_item_id FROM replenishment_followups) FROM events WHERE event_id=:id")
                 .param("id", changed.eventId()).query(Boolean.class).single()).isTrue();
         assertThat(count("events")).isEqualTo(events + 1);

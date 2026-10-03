@@ -719,6 +719,42 @@ class DispatcherIntegrationTest {
         assertThat(observation.propertyCount()).isEqualTo(3);
     }
 
+    @Test
+    void supplierReplyForAnotherPurchaseCannotReleaseTheNamedPurchase() {
+        Fixture waiting=waitingFixture("SUPPLIER_REPLY","{\"supplier_id\":3,\"po_ref\":\"PO-104\"}","WAITING");
+        var result=dispatcher.ingest(new CreateEventRequest("SUPPLIER_EMAIL_RECEIVED",unique("other-po"),null,null,Map.of("supplierId",3,"poRef","PO-200")));
+        assertThat(result.satisfiedWaiting()).isEmpty();assertThat(result.scheduledRuns()).isEmpty();
+        assertThat(jdbc.sql("SELECT status::text FROM work_items WHERE work_item_id=:id").param("id",waiting.workItemId()).query(String.class).single()).isEqualTo("WAITING");
+        assertThat(runCountForEventAndWorkItem(result.eventId(),waiting.workItemId())).isZero();
+    }
+
+    @Test
+    void globalFactKeepsOtherCasesWaitingForTheSameSupplierInScopeDespiteEvidence() {
+        Fixture a=waitingFixture("SUPPLIER_REPLY","{\"supplier_id\":881}","WAITING");
+        Fixture b=waitingFixture("SUPPLIER_REPLY","{\"supplier_id\":881}","WAITING");
+        Fixture c=waitingFixture("SUPPLIER_REPLY","{\"supplier_id\":881}","WAITING");
+        long claimId=claim(a.caseId());String evidenceRef=evidence(a.caseId());
+        var result=dispatcher.ingest(new CreateEventRequest("SUPPLIER_EMAIL_RECEIVED",unique("global"),null,null,Map.of("supplierId",881,"claimId",claimId,"evidenceRef",evidenceRef)));
+        assertThat(result.readyWorkItems()).containsExactlyInAnyOrder(a.workItemRef(),b.workItemRef(),c.workItemRef());
+        assertThat(result.scheduledRuns()).hasSize(3);
+        assertThat(claimEvidenceCount(claimId,evidenceRef,"SUPPORTS")).isEqualTo(1);
+        assertThat(eventAttribution(result.eventId()).caseId()).isNull();
+    }
+
+    @Test
+    void attentionApprovalResumesSameCaseWaitersButKeepsOriginalAttribution() {
+        Fixture asked=waitingFixture("APPROVAL","{}","WAITING");
+        Fixture sibling=waitingWorkItem(asked.caseId(),asked.caseRef(),asked.agentId(),"APPROVAL","{}","WAITING");
+        Fixture unrelated=waitingWorkItem(asked.caseId(),asked.caseRef(),asked.agentId(),"APPROVAL","{\"attention_request_id\":9223372036854775807}","WAITING");
+        long attentionId=answeredAttention(asked,user("attention-shared"),"APPROVED");
+        jdbc.sql("UPDATE waiting_conditions SET condition_payload=jsonb_build_object('attention_request_id',:id) WHERE waiting_condition_id IN(:first,:second)").param("id",attentionId).param("first",asked.waitingId()).param("second",sibling.waitingId()).update();
+        var result=dispatcher.ingest(new CreateEventRequest("CHANGE_REQUEST_APPROVED",unique("shared-attention"),null,null,Map.of("attentionRequestId",attentionId)));
+        assertThat(result.readyWorkItems()).containsExactlyInAnyOrder(asked.workItemRef(),sibling.workItemRef());
+        assertThat(result.scheduledRuns()).hasSize(2);
+        assertThat(eventAttribution(result.eventId()).workItemId()).isEqualTo(asked.workItemId());
+        assertThat(jdbc.sql("SELECT status::text FROM work_items WHERE work_item_id=:id").param("id",unrelated.workItemId()).query(String.class).single()).isEqualTo("WAITING");
+    }
+
     private Fixture waitingFixture(String conditionType, String conditionPayload, String workItemStatus) {
         long agentId = jdbc.sql("""
                 INSERT INTO agents (agent_key, display_name)

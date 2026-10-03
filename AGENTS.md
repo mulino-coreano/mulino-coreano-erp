@@ -10,7 +10,7 @@ A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Itali
 
 ## Commands
 
-Use Java 21 and PostgreSQL 18. For the backend, create an empty DB and configure `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` locally; Flyway applies V1–V26, including the required Orchestrator/channel bootstrap. Use a separate disposable DB for integration tests.
+Use Java 21 and PostgreSQL 18. For the backend, create an empty DB and configure `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` locally; Flyway applies V1–V27, including the required Orchestrator/channel bootstrap. Use a separate disposable DB for integration tests.
 
 ```bash
 cd backend
@@ -47,6 +47,7 @@ psql -d mulino_coreano -f database/ddl/15_planning_attempt.sql
 psql -d mulino_coreano -f database/ddl/16_attention_answer.sql
 psql -d mulino_coreano -f database/ddl/17_purchase_approval.sql
 psql -d mulino_coreano -f database/ddl/18_replenishment_followup.sql
+psql -d mulino_coreano -f database/ddl/19_run_timestamps_with_zone.sql
 psql -d mulino_coreano -f database/seed/interface.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```

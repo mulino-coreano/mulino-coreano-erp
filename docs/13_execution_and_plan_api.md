@@ -65,3 +65,14 @@ capability 없이는 401이며 실제 제안 구현은 #50에서 추가한다.
 업무를 남긴다. SUPPLY_CHAIN의 DONE은 최근 계획 attempt가 READY이고
 같은 Case·Work Item의 계획을 가리킬 때만 허용된다. 과거의 성공 계획만으로
 현재 실패를 덮지 않는다. 실행기 이미지·실제 모델 실행은 후속 범위다.
+
+
+## #54 이후의 Dispatcher·Run 계약
+
+SUPPLIER_REPLY는 지정한 식별자를 모두 검사한다. Case 없는 사실은
+claim/evidence 연결 뒤에도 글로벌로 남고 Attention 승인의 검색만 같은
+Case로 넓힌다. Governance 승인 범위는 원래 Work Item에 묶인다.
+Run의 시점은 V27·독립 DDL 19의 TIMESTAMPTZ로 통일하며 기존
+Asia/Seoul 벽시계 값을 명시적으로 복원한다. GET /monitor는 조회만
+하고 ASK는 완제품만 반환한다. 재현·전제·검증 범위는
+[Dispatcher 범위와 실행 시점](15_dispatcher_defects.md)을 따른다.

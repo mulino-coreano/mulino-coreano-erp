@@ -86,7 +86,6 @@ public class InterfaceController {
     // ------------------------------------------------------------ Monitor
     @GetMapping("/monitor")
     public MonitorDto monitor() {
-        dispatcher.dispatchScheduledIfActionable();
         return service.monitor();
     }
 

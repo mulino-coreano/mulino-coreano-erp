@@ -36,8 +36,8 @@ public class InterfaceService {
     public AskResponse ask(String productQuery) {
         String query = normalizeSearchTerm(productQuery);
         String filter = query == null ? "" : """
-                WHERE POSITION(LOWER(:query) IN LOWER(p.name)) > 0
-                   OR POSITION(LOWER(:query) IN LOWER(p.sku)) > 0
+                AND (POSITION(LOWER(:query) IN LOWER(p.name)) > 0
+                   OR POSITION(LOWER(:query) IN LOWER(p.sku)) > 0)
                 """;
         String sql = """
                 SELECT p.name, p.sku, s.quantity, w.name,
@@ -45,6 +45,7 @@ public class InterfaceService {
                 FROM stock s
                 JOIN products p ON p.product_id = s.product_id
                 JOIN warehouses w ON w.warehouse_id = s.warehouse_id
+                WHERE p.product_type='FINISHED_GOODS'
                 %s
                 ORDER BY p.name, p.sku, w.name, w.warehouse_id
                 LIMIT %d
@@ -164,7 +165,7 @@ public class InterfaceService {
     public MonitorDto monitor() {
         Map<String, Long> counts = jdbc.sql("""
                 SELECT
-                  (SELECT count(*) FROM cases WHERE status IN ('OPEN','IN_PROGRESS')) AS cases_open,
+                  (SELECT count(*) FROM cases WHERE status IN ('OPEN','IN_PROGRESS','WAITING')) AS cases_open,
                   (SELECT count(*)
                    FROM cases c
                    WHERE c.status IN ('OPEN','IN_PROGRESS','WAITING')
