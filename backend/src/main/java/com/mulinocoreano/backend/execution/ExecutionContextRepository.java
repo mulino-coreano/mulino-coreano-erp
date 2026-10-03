@@ -29,6 +29,56 @@ public class ExecutionContextRepository {
                 .data();
     }
 
+    public List<String> recentPurchasing(long caseId) {
+        var g = GOVERNANCE_ACTIONS;
+        var p = REPLENISHMENT_PLANS;
+        var w = WORK_ITEMS;
+        var a = PURCHASE_APPLICATIONS;
+        var po = PURCHASE_ORDERS;
+        var orders =
+                select(jsonbArrayAgg(po.PURCHASE_ORDER_ID).orderBy(po.PURCHASE_ORDER_ID))
+                        .from(po)
+                        .where(po.PURCHASE_APPLICATION_ID.eq(a.PURCHASE_APPLICATION_ID));
+        var item =
+                jsonbObject(
+                        key("approvalId").value(g.GOVERNANCE_ACTION_ID),
+                        key("status").value(g.STATUS),
+                        key("version").value(g.PROPOSAL_VERSION),
+                        key("proposalHash").value(g.PROPOSAL_HASH),
+                        key("planRef").value(p.PLAN_REF),
+                        key("workItemRef").value(w.WORK_ITEM_REF),
+                        key("applicationId").value(a.PURCHASE_APPLICATION_ID),
+                        key("purchaseOrderIds")
+                                .value(coalesce(orders.asField(), val(JSONB.valueOf("[]")))));
+        return dsl.select(item)
+                .from(g)
+                .join(p)
+                .on(p.REPLENISHMENT_PLAN_ID.eq(g.REPLENISHMENT_PLAN_ID))
+                .join(w)
+                .on(w.WORK_ITEM_ID.eq(g.WORK_ITEM_ID))
+                .leftJoin(a)
+                .on(a.GOVERNANCE_ACTION_ID.eq(g.GOVERNANCE_ACTION_ID))
+                .where(g.CASE_ID.eq(caseId))
+                .orderBy(g.GOVERNANCE_ACTION_ID.desc())
+                .limit(10)
+                .fetch(record -> record.value1().data());
+    }
+
+    public boolean hasAppliedPurchase(long caseId, long orderId) {
+        return dsl.fetchExists(
+                dsl.selectOne()
+                        .from(PURCHASE_ORDERS)
+                        .join(PURCHASE_APPLICATIONS)
+                        .on(
+                                PURCHASE_APPLICATIONS.PURCHASE_APPLICATION_ID.eq(
+                                        PURCHASE_ORDERS.PURCHASE_APPLICATION_ID))
+                        .where(
+                                PURCHASE_ORDERS
+                                        .PURCHASE_ORDER_ID
+                                        .eq(orderId)
+                                        .and(PURCHASE_APPLICATIONS.CASE_ID.eq(caseId))));
+    }
+
     public Optional<PriorPlan> latestPlan(long caseId) {
         var p = REPLENISHMENT_PLANS;
         return dsl.select(

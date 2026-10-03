@@ -25,13 +25,17 @@ public class LocalSecurityConfiguration {
                         .requestMatchers(paths.matcher(HttpMethod.GET, "/api/v1/me"),
                                 paths.matcher(HttpMethod.POST, "/api/v1/cases"),
                                 paths.matcher(HttpMethod.POST, "/api/v1/cases/*/plans"),
-                                paths.matcher(HttpMethod.GET, "/api/v1/plans/*")))
+                                paths.matcher(HttpMethod.GET, "/api/v1/plans/*"),
+                                paths.matcher(HttpMethod.GET, "/api/v1/approvals/*"),
+                                paths.matcher(HttpMethod.GET, "/api/v1/purchase-orders/*"),
+                                paths.matcher(HttpMethod.POST, "/api/v1/approvals/*/decision"),
+                                paths.matcher(HttpMethod.POST, "/api/v1/attention/*/answer")))
                 .addFilterBefore(new LocalActorFilter(directory), AnonymousAuthenticationFilter.class)
                 .authorizeHttpRequests(requests -> requests.anyRequest().access((authentication, context) -> {
                     var actor = authentication.get().getPrincipal();
                     return new AuthorizationDecision(actor instanceof HumanActor human
                             && human.capabilities().contains(context.getRequest().getMethod().equals("POST")
-                                    ? "work:write" : "erp:read"));
+                                    ? (context.getRequest().getRequestURI().endsWith("/decision") ? "procurement:decide" : "work:write") : "erp:read"));
                 }))
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint((request, response, error) -> response.setStatus(401))

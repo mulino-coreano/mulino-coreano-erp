@@ -195,7 +195,8 @@ public class ContextSnapshotService {
                                     'decided_by', jsonb_build_object(
                                         'user_id', d.decided_by_user_id,
                                         'name', deciding_user.name),
-                                    'decided_at', d.decided_at)
+                                    'decided_at', d.decided_at,
+                                    'metadata', d.metadata)
                                 ORDER BY d.decision_id)
                             FROM decisions d
                             JOIN users deciding_user

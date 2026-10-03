@@ -26,13 +26,15 @@ public class DispatcherService {
     private static final String MANUAL_DISPATCH_EVENT = "DISPATCH_REQUESTED";
     private static final String MONITOR_DISPATCH_EVENT = "DISPATCH_SWEEP_TRIGGERED";
 
+    private final com.mulinocoreano.backend.followup.ReplenishmentFollowupService followups;
     private final JdbcClient jdbc;
     private final ObjectMapper objectMapper;
     private final WaitingConditionMatcher matcher;
     private final RunService runService;
 
     public DispatcherService(JdbcClient jdbc, ObjectMapper objectMapper,
-                             WaitingConditionMatcher matcher, RunService runService) {
+                             WaitingConditionMatcher matcher, RunService runService, com.mulinocoreano.backend.followup.ReplenishmentFollowupService followups) {
+        this.followups = followups;
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.matcher = matcher;
@@ -84,6 +86,7 @@ public class DispatcherService {
 
     @Transactional
     public EventDispatchResponse dispatchScheduled() {
+        followups.sweepDue();
         Instant requestedAt = Instant.now();
         Map<String, Object> payload = scheduledPayload(requestedAt, "MANUAL");
         return recordScheduledDispatch(MANUAL_DISPATCH_EVENT, "dispatch", payload);
@@ -91,6 +94,7 @@ public class DispatcherService {
 
     @Transactional
     public Optional<EventDispatchResponse> dispatchScheduledIfActionable() {
+        var followupEvents = followups.sweepDue();
         Instant requestedAt = Instant.now();
         Map<String, Object> payload = scheduledPayload(requestedAt, "MONITOR");
         EventScope allCases = new EventScope(null, null, null, null);
@@ -102,7 +106,7 @@ public class DispatcherService {
             return matcher.matches(condition, enrichManualDependencyState(condition, preview), requestedAt);
         });
         if (!actionable) {
-            return Optional.empty();
+            return followupEvents.isEmpty() ? Optional.empty() : Optional.of(emptyResponse(followupEvents.getLast()));
         }
         return Optional.of(recordScheduledDispatch(
                 MONITOR_DISPATCH_EVENT, "dispatch-sweep", payload));
@@ -393,6 +397,7 @@ public class DispatcherService {
                 WHERE wc.status='ACTIVE'
                   AND wc.resolved_by_event_id IS NULL
                   AND wi.status='WAITING'
+                  AND NOT EXISTS(SELECT 1 FROM replenishment_followups rf WHERE rf.work_item_id=wi.work_item_id)
                   AND c.status NOT IN ('RESOLVED','CLOSED')
                 """);
         boolean dependencyEvent = event != null
@@ -615,6 +620,8 @@ public class DispatcherService {
                     WHERE ar.attention_request_id=:attentionId
                       AND ar.status='ANSWERED'
                       AND ar.resolved_by_user_id IS NOT NULL
+                      AND ar.reason_type='AUTHORITY_REQUIRED'
+                      AND ar.governance_action_id IS NULL
                     FOR SHARE OF ar
                     """)
                     .param("attentionId", attentionId)
@@ -642,6 +649,38 @@ public class DispatcherService {
             assertCompatibleScope(requestedScope, authoritative);
             return new PreparedApproval(
                     authoritative, new EventActor("USER", attention.userId()), false);
+        }
+
+        boolean purchase = jdbc.sql("SELECT EXISTS(SELECT 1 FROM governance_actions WHERE governance_action_id=:id AND replenishment_plan_id IS NOT NULL)")
+                .param("id", governanceActionId).query(Boolean.class).single();
+        if (purchase) {
+            var approved = jdbc.sql("""
+                    SELECT g.case_id,c.case_ref,g.work_item_id,w.work_item_ref,d.decided_by
+                    FROM governance_actions g
+                    JOIN cases c ON c.case_id=g.case_id
+                    JOIN work_items w ON w.work_item_id=g.work_item_id AND w.case_id=g.case_id
+                    JOIN replenishment_plans p ON p.replenishment_plan_id=g.replenishment_plan_id AND p.case_id=g.case_id
+                    JOIN governance_decisions d ON d.governance_action_id=g.governance_action_id
+                    JOIN users u ON u.user_id=d.decided_by
+                    WHERE g.governance_action_id=:id AND g.status='APPROVED'
+                      AND g.required_role='MANAGER' AND g.resource_type='REPLENISHMENT_PLAN'
+                      AND g.resource_id=p.replenishment_plan_id AND d.is_final AND d.decision='APPROVE'
+                      AND u.role='MANAGER' AND u.is_active
+                      AND d.governance_decision_id=(SELECT latest.governance_decision_id FROM governance_decisions latest
+                          WHERE latest.governance_action_id=g.governance_action_id
+                          ORDER BY latest.decided_at DESC,latest.governance_decision_id DESC LIMIT 1)
+                    FOR SHARE OF g,d,u
+                    """).param("id", governanceActionId)
+                    .query((rs,row) -> new PreparedApproval(new EventScope(rs.getLong(1),rs.getString(2),rs.getLong(3),rs.getString(4)),new EventActor("USER",rs.getLong(5)),false))
+                    .optional().orElseThrow(() -> new InvalidInterfaceRequestException("Purchase approval requires its final active MANAGER decision"));
+            assertCompatibleScope(requestedScope, approved.scope());
+            validateDecisionAliases(payload, "APPROVED");
+            payload.put("approval_id", Long.toString(governanceActionId));
+            payload.put("approvalId", Long.toString(governanceActionId));
+            payload.put("governance_action_id", Long.toString(governanceActionId));
+            payload.put("governanceActionId", Long.toString(governanceActionId));
+            payload.put("decision", "APPROVED");
+            return approved;
         }
 
         ApprovedGovernanceAction approval = jdbc.sql("""

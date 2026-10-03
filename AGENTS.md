@@ -6,11 +6,11 @@ This file is the operating guide for agent sessions working in this repository, 
 
 A hypothetical ERP + AI agent governance system assuming Mulino Bianco (an Italian food brand) enters the Korean market. A SAP consulting portfolio project that localizes a EU-standard ERP to Korean food regulations (Food Traceability Act, 22 allergens, electronic tax invoices, etc.).
 
-**Current status**: Phase 4 is in progress. The Spring Boot backend implements Case intake, inventory lookup, event dispatch and Run scheduling; `mcp-server/` provides a local stdio connector. PostgreSQL has 30 ERP tables plus 13 interface tables and one request receipt table. On top of that, `main` already has the common response/exception layer and Swagger (#16). `governance/`, `dashboard/` and the Zig CLI remain scaffolds. Actual LLM execution and approval/write adapters are future work; see `docs/08_interface_overview.md` §13. What remains in Phase 4, and every Phase after it, lives on the project board rather than only in this file. All business documentation is written in Korean.
+**Current status**: Phase 4 is in progress. The Spring Boot backend implements Case intake, inventory lookup, event dispatch and Run scheduling; `mcp-server/` provides a local stdio connector. PostgreSQL has 30 ERP tables plus 13 interface tables and one request receipt table. On top of that, `main` already has the common response/exception layer and Swagger (#16). `governance/`, `dashboard/` and the Zig CLI remain scaffolds. Actual LLM execution, other ERP approval/write adapters and channel authentication remain future work. The local human-answer and purchasing decision contract is in `docs/14_human_purchase_api.md`; see `docs/08_interface_overview.md` §13 for the wider boundary. What remains in Phase 4, and every Phase after it, lives on the project board rather than only in this file. All business documentation is written in Korean.
 
 ## Commands
 
-Use Java 21 and PostgreSQL 18. For the backend, create an empty DB and configure `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` locally; Flyway applies V1–V23, including the required Orchestrator/channel bootstrap. Use a separate disposable DB for integration tests.
+Use Java 21 and PostgreSQL 18. For the backend, create an empty DB and configure `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` locally; Flyway applies V1–V26, including the required Orchestrator/channel bootstrap. Use a separate disposable DB for integration tests.
 
 ```bash
 cd backend
@@ -44,6 +44,9 @@ psql -d mulino_coreano -f database/ddl/12_planning_data.sql
 psql -d mulino_coreano -f database/ddl/13_queued_run_status.sql
 psql -d mulino_coreano -f database/ddl/14_run_lease.sql
 psql -d mulino_coreano -f database/ddl/15_planning_attempt.sql
+psql -d mulino_coreano -f database/ddl/16_attention_answer.sql
+psql -d mulino_coreano -f database/ddl/17_purchase_approval.sql
+psql -d mulino_coreano -f database/ddl/18_replenishment_followup.sql
 psql -d mulino_coreano -f database/seed/interface.sql
 psql -d mulino_coreano -f database/seed/allergens.sql
 ```

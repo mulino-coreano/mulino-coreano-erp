@@ -115,7 +115,7 @@ class DispatcherIntegrationTest {
         };
         RunService failingRunService = new RunService(scheduling, objectMapper, failingContext);
         DispatcherService failingDispatcher = new DispatcherService(
-                jdbc, objectMapper, new WaitingConditionMatcher(), failingRunService);
+                jdbc, objectMapper, new WaitingConditionMatcher(), failingRunService, org.mockito.Mockito.mock(com.mulinocoreano.backend.followup.ReplenishmentFollowupService.class));
 
         EventDispatchResponse result = failingDispatcher.ingest(new CreateEventRequest(
                 "SUPPLIER_EMAIL_RECEIVED", unique("msg"), fixture.caseRef(), null,

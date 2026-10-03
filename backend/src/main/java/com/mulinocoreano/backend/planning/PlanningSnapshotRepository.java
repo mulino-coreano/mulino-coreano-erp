@@ -510,7 +510,11 @@ public class PlanningSnapshotRepository {
                                         PURCHASE_ORDER_ITEMS.UNIT_PRICE,
                                         PURCHASE_ORDERS.SUPPLIER_ID,
                                         PURCHASE_ORDERS.ORDER_DATE,
-                                        PURCHASE_ORDERS.EXPECTED_DELIVERY_DATE,
+                                        coalesce(
+                                                        PURCHASE_ORDER_ITEMS.EXPECTED_DELIVERY_DATE,
+                                                        PURCHASE_ORDERS.EXPECTED_DELIVERY_DATE)
+                                                .as("expected_delivery_date"),
+                                        PURCHASE_ORDERS.WAREHOUSE_ID.as("purchase_warehouse_id"),
                                         PURCHASE_ORDERS.STATUS)
                                 .from(PURCHASE_ORDER_ITEMS)
                                 .join(PURCHASE_ORDERS)
@@ -572,6 +576,8 @@ public class PlanningSnapshotRepository {
                     && due != null
                     && !due.isBefore(start)
                     && !due.isAfter(end)) {
+                if (item.get("purchase_warehouse_id") != null
+                        && id(item, "purchase_warehouse_id") != warehouse) continue;
                 supply.add(
                         new BomPlanner.StockLot(
                                 "purchase_order_items:" + itemId,

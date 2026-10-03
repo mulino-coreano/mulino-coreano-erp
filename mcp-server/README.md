@@ -26,16 +26,35 @@ npm start   # Mulino Coreano backend (localhost:8080) 기본 상대
 - QUERY는 자동으로 업무가 되지 않습니다 — 사용자가 명시할 때만 ACT로 전환합니다.
 - 외부 대표 권한(이메일 발송 등)은 인간에게 있으며, 이 서버에는 포함하지 않았습니다.
 
-## 로컬 인간 역할 (#47)
+## 로컬 인간 역할과 결정 (#47·#48·#52)
 
-`create_case`는 `MULINO_LOCAL_ROLE`을 `X-Mulino-Local-Role` 헤더로
-보낸다. 기본값은 OPERATOR다. local 백엔드는 OPERATOR·MANAGER의
-접수만 허용한다. 조회 도구에는 역할 헤더를 보내지 않는다.
-백엔드는 `SPRING_PROFILES_ACTIVE=local`로 기동한다.
-이 헤더는 로컬 PoC 전용이며 외부 인증을 대체하지 않는다.
-MCP의 키 지정 재시도는 아직 제공하지 않는다. REST 호출에서만
-선택적인 `Idempotency-Key`를 사용할 수 있다.
+백엔드는 `SPRING_PROFILES_ACTIVE=local`로 기동한다. 인간 도구는
+`MULINO_LOCAL_ROLE` (기본 OPERATOR)을 `X-Mulino-Local-Role`로 보낸다.
+service/capability/Authorization 헤더와 internal/agent API는 쓰지 않는다.
+역할 헤더는 로컬 PoC 전용이며 외부 인증을 대체하지 않는다.
 
-#48은 인간 조회 도구 `whoami`, `get_case(caseRef)`, `get_plan(planRef)`을
-추가한다. 이 도구는 로컬 역할 헤더만 전달한다. `get_plan`은 local
-프로필에서만 사용 가능하다. 후속 승인·답변 도구는 #52에 남는다.
+| 도구 | 입력과 행동 |
+|---|---|
+| `whoami` | 현재 인간 역할 조회 |
+| `get_case` / `get_plan` | caseRef / planRef로 업무·계획 조회 |
+| `get_approval` / `get_purchase_order` | approvalId / purchaseOrderId로 승인 근거·실제 발주 조회 |
+| `decide_purchase` | MANAGER의 APPROVE/BLOCK. approvalId, expectedVersion, proposalHash, reason 필수 |
+| `answer_attention` | OPERATOR·MANAGER의 일반 답변. attentionRequestId, expectedVersion, answer, scope 필수 |
+
+쓰기 도구의 `requestKey`는 선택적이다. 생략하면 UUID를 생성해 오류에도
+반환한다. 같은 입력의 사용자 지시 재전송만 같은 key를 쓴다. 자동으로
+재시도하지 않는다. 구매 승인 Attention은 get_approval 확인 뒤
+인간의 명시적 선택으로 decide_purchase를 호출한다. 일반 답변은 ERP
+승인을 대신하지 않는다. Node 22 이상을 사용한다. decimal과 unsafe ID는
+응답 문자열로 보존한다. 전체 계약은
+[인간 답변·구매 결정](../docs/14_human_purchase_api.md)에 있다.
+
+## 로컬 업무 SIT
+
+`npm test`는 stdio 요청·권한 헤더·정확한 숫자 전달을 검증한다.
+`node scripts/local-human-flow.mjs`는 이미 준비된 local 구매 제안을
+실제 HTTP API로 승인하고 같은 발주 묶음과 답변을 재조회한다.
+`MULINO_API_BASE`, `MULINO_TEST_APPROVAL_ID`, `MULINO_TEST_PLAN_REF`,
+`MULINO_TEST_CASE_REF`, `MULINO_TEST_ATTENTION_ID`를 지정해야 한다.
+이 script는 실제 ERP 발주를 생성하므로 폐기용 fixture DB에서만 실행한다.
+worker secret·capability를 받지 않으며 모델 실행·UAT를 뜻하지 않는다.

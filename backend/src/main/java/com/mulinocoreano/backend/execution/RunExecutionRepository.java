@@ -119,6 +119,30 @@ public class RunExecutionRepository {
                 .toInstant();
     }
 
+    public boolean lockPendingPurchaseApproval(long id, long caseId, long workId, long agentId) {
+        var g = GOVERNANCE_ACTIONS;
+        var w = WORK_ITEMS;
+        return dsl.select(g.GOVERNANCE_ACTION_ID)
+                .from(g)
+                .join(w)
+                .on(w.WORK_ITEM_ID.eq(g.WORK_ITEM_ID).and(w.CASE_ID.eq(g.CASE_ID)))
+                .where(g.GOVERNANCE_ACTION_ID.eq(id))
+                .and(g.CASE_ID.eq(caseId))
+                .and(g.WORK_ITEM_ID.eq(workId))
+                .and(g.PROPOSED_BY_AGENT_ID.eq(agentId))
+                .and(g.REPLENISHMENT_PLAN_ID.isNotNull())
+                .and(g.RESOURCE_TYPE.eq("REPLENISHMENT_PLAN"))
+                .and(g.REQUIRED_ROLE.eq(UserRole.MANAGER))
+                .and(g.STATUS.eq(GovernanceActionStatus.PENDING))
+                .and(g.EXPIRES_AT.isNull().or(g.EXPIRES_AT.gt(LOCAL_NOW)))
+                .and(w.PROCUREMENT_PLAN_ID.eq(g.REPLENISHMENT_PLAN_ID))
+                .and(w.PROCUREMENT_OUTCOME.eq("PROPOSED"))
+                .forUpdate()
+                .of(g)
+                .fetchOptional()
+                .isPresent();
+    }
+
     public Optional<String> findRetry(long id) {
         return dsl.select(RUNS.RUN_REF)
                 .from(RUNS)
@@ -149,6 +173,11 @@ public class RunExecutionRepository {
                 .set(WORK_ITEMS.STATUS, status)
                 .where(WORK_ITEMS.WORK_ITEM_ID.eq(id))
                 .execute();
+    }
+
+    public boolean noPurchaseRequired(long workId) {
+        return dsl.fetchExists(WORK_ITEMS, WORK_ITEMS.WORK_ITEM_ID.eq(workId)
+                .and(WORK_ITEMS.PROCUREMENT_OUTCOME.eq("NO_PURCHASE_REQUIRED")));
     }
 
     public void markDone(long id) {
@@ -203,6 +232,8 @@ public class RunExecutionRepository {
                         .from(WORK_ITEMS)
                         .where(WORK_ITEMS.CASE_ID.eq(caseId))
                         .and(WORK_ITEMS.WORK_ITEM_ID.ne(workId))
+                        .and(notExists(selectOne().from(REPLENISHMENT_FOLLOWUPS)
+                                .where(REPLENISHMENT_FOLLOWUPS.WORK_ITEM_ID.eq(WORK_ITEMS.WORK_ITEM_ID))))
                         .and(
                                 jsonbGetAttributeAsText(WORK_ITEMS.METADATA, "parentWorkItemRef")
                                         .eq(ref))

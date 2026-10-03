@@ -190,3 +190,41 @@ for (const [name,args,url] of [["whoami",{},"/me"],["get_case",{caseRef:"CASE-a"
     const result=await client.callTool({name,arguments:args});assert.equal(result.isError,undefined);
   });
 }
+
+for (const [name,args,url,method] of [
+  ['get_approval',{approvalId:'9007199254740993'},'/approvals/9007199254740993','GET'],
+  ['get_purchase_order',{purchaseOrderId:'9007199254740993'},'/purchase-orders/9007199254740993','GET'],
+  ['decide_purchase',{approvalId:'9007199254740993',decision:'APPROVE',expectedVersion:2,proposalHash:'a'.repeat(64),reason:'Reviewed',requestKey:'manager-once'},'/approvals/9007199254740993/decision','POST'],
+  ['answer_attention',{attentionRequestId:1,answer:'Friday',expectedVersion:2,scope:'THIS_ACTION',requestKey:'answer-once'},'/attention/1/answer','POST'],
+]) {
+  test(`${name} preserves exact business evidence and uses only human role authority`, async () => {
+    let body='';
+    const apiServer=http.createServer((req,res)=>{
+      assert.equal(req.url,'/api/v1'+url);assert.equal(req.method,method);
+      assert.equal(req.headers['x-mulino-local-role'],'MANAGER');
+      assert.equal(req.headers.authorization,undefined);
+      assert.equal(req.headers['x-mulino-local-service'],undefined);
+      assert.equal(req.headers['x-mulino-run-capability'],undefined);
+      req.on('data',chunk=>body+=chunk);req.on('end',()=>{
+        if(method==='POST') {const actual=JSON.parse(body);assert.equal(actual.expectedVersion,2);assert.equal(actual.proposalHash,args.proposalHash);assert.equal(req.headers['idempotency-key'],args.requestKey);}
+        res.writeHead(200,{'Content-Type':'application/json'});res.end('{"id":9007199254740993,"totalKrw":9999999999999.99,"status":"APPROVED"}');
+      });
+    });
+    const apiBase=await listen(apiServer);resources.push(()=>closeServer(apiServer));
+    const client=await connectClient({MULINO_API_BASE:apiBase+'/api/v1',MULINO_LOCAL_ROLE:'MANAGER'});
+    const result=await client.callTool({name,arguments:args});
+    assert.equal(result.isError,undefined);assert.equal(result.structuredContent.id,'9007199254740993');
+    assert.equal(result.structuredContent.totalKrw,'9999999999999.99');
+    assert.equal(result.structuredContent.capabilityToken,undefined);assert.equal(result.structuredContent.leaseToken,undefined);
+  });
+}
+
+test('purchase decision requires version and hash before any API call', async ()=>{
+  const client=await connectClient({MULINO_API_BASE:'http://127.0.0.1:1/api/v1'});
+  const listed=await client.listTools();
+  assert.equal(listed.tools.find(t=>t.name==='decide_purchase').annotations.readOnlyHint,false);
+  for(const omitted of ['expectedVersion','proposalHash']) {
+    const args={approvalId:1,decision:'APPROVE',expectedVersion:1,proposalHash:'a'.repeat(64),reason:'Reviewed'};delete args[omitted];
+    assert.equal((await client.callTool({name:'decide_purchase',arguments:args})).isError,true);
+  }
+});
