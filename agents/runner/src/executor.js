@@ -68,6 +68,8 @@ export class ProcessExecutor {
         if (event.type === 'result') {
           if (event.is_error || event.subtype !== 'success') fail('MODEL_PROCESS_FAILED');
           else finalText = event.structured_output === undefined ? event.result : JSON.stringify(event.structured_output);
+          const resolved = Object.keys(event.modelUsage ?? {});
+          if (resolved.length === 1 && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(resolved[0])) usage.resolvedModel = resolved[0];
           const tokens = event.usage ?? {};
           for (const [key, value] of [['costUsd', event.total_cost_usd], ['inputTokens', tokens.input_tokens],
             ['outputTokens', tokens.output_tokens], ['cacheReadTokens', tokens.cache_read_input_tokens],

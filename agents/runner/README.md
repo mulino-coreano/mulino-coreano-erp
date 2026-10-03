@@ -45,3 +45,10 @@ Docker CLI에는 `MULINO_TOKEN`을 환경변수 이름으로 전달하므로 cap
 - `DockerExecutor.start(claim, {secrets})`: `{result, cancel, pid}` 반환. `ProcessExecutor`의 command builder는 테스트에서 실제 Node fixture를 실행하기 위한 주입 경계입니다.
 
 테스트는 idle·중복 claim 방지·확정 종료·heartbeat 갱신·인증 거부·실행 상한·취소·잘못된 JSON·과대 출력·lease 충돌·네트워크 만료·완료 receipt 보존·환경 격리·자격증명 가림을 검사합니다. 대기 16/17개 경계·엄격한 시각 형식·안전한 오류 코드·완료 근거 부족의 FAILED 전환·복구 중 lease 상실 및 완료 경쟁도 포함합니다.
+
+백엔드가 COMPLETED DONE/WAITING을 이미 확정한 경우 최대 60초의
+종료 유예를 전체 실행 상한 안에서 적용해 final JSON과 사용량을
+수집한다. capability·lease를 갱신하거나 다시 finish하지 않는다.
+FAILED/ABORTED는 즉시 취소한다. 유예 만료·shutdown·결과 불일치는
+안전한 model_finished 실패 코드로 기록하고 확정된 업무 결과를
+유지한다. 보고되지 않은 비용·토큰은 알 수 없는 값이다.
