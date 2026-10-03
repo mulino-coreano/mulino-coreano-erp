@@ -31,6 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 class HumanPlanningIntegrationTest {
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
     @Autowired MockMvc mvc;
     @Autowired JdbcClient jdbc;
     @Autowired Flyway flyway;
@@ -71,6 +72,24 @@ class HumanPlanningIntegrationTest {
                 .andExpect(status().isOk());
     }
     @Test
+    void replayRetainsExactSixDecimalPlanEvidenceAndLegacyRequestHash() throws Exception {
+        var idempotency=new com.mulinocoreano.backend.idempotency.RequestIdempotency(jdbc,mapper);
+        var transaction=new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        record Input(long warehouseId,int horizonDays) {}
+        var input=new Input(warehouse,30);
+        var quantity=new java.math.BigDecimal("123456789012.123456");
+        var requestText=mapper.writeValueAsString(input);
+        var expectedHash=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(requestText.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        var first=transaction.execute(status -> idempotency.executeJson("plans:precision:human:1","exact-replay",input,
+            () -> Map.of("ref","PLAN-EXACT","result",Map.of("purchaseQuantity",quantity))));
+        var replay=transaction.execute(status -> idempotency.executeJson("plans:precision:human:1","exact-replay",input,
+            () -> { throw new AssertionError("A replay cannot calculate another plan"); }));
+        assertThat(first.path("result").path("purchaseQuantity").decimalValue()).isEqualByComparingTo(quantity);
+        assertThat(replay.path("result").path("purchaseQuantity").decimalValue()).isEqualByComparingTo(quantity);
+        assertThat(replay).isEqualTo(first);
+        assertThat(jdbc.sql("SELECT request_hash FROM request_idempotency WHERE scope='plans:precision:human:1' AND request_key='exact-replay'").query(String.class).single()).isEqualTo(expectedHash);
+    }
+    @Test
     void rejectsViewerAndReusedKeyWithDifferentScope() throws Exception {
         calculate("VIEWER","denied",403);
         assertThat(jdbc.sql("SELECT count(*) FROM replenishment_plans").query(Long.class).single()).isZero();
@@ -109,7 +128,7 @@ class HumanPlanningIntegrationTest {
         jdbc.sql("INSERT INTO work_items(work_item_ref,case_id,title,assigned_agent_id) SELECT 'WI-SUPPLY',:id,'supply',agent_id FROM agents WHERE agent_key='SUPPLY_CHAIN'").param("id",caseId).update();
         runs.createRun(new com.mulinocoreano.backend.interfacepackage.CreateRunRequest("SUPPLY_CHAIN",caseRef,"WI-SUPPLY","CODEX"),null);
         var claimResult=mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret")
-                .contentType("application/json").content("{\"workerId\":\"supply-worker\"}"))
+                .contentType("application/json").content("{\"workerId\":\"supply-worker\",\"runtime\":\"CODEX\"}"))
                 .andExpect(status().isOk()).andReturn();
         var claim=mapper.readTree(claimResult.getResponse().getContentAsString());
         var finish=Map.of("runRef",claim.path("runRef").asString(),"workerId","supply-worker",

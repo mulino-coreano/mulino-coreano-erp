@@ -86,6 +86,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object",
         properties: {
+          requestKey: { type: "string", minLength: 1, maxLength: 200 },
+          replenishment: { type: "object", additionalProperties: false,
+            properties: { productSkus: { type: "array", minItems: 1, maxItems: 100, items: { type: "string", minLength: 1, maxLength: 50 } },
+              warehouseId: { type: "integer", minimum: 1 }, targetDate: { type: "string", format: "date" } },
+            required: ["productSkus", "warehouseId"] },
           objective: { type: "string", description: "Business objective, e.g. '10월 이전 Amaretti 품절 방지'" },
           channel: {
             type: "string",
@@ -168,8 +173,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const data = await api("/cases", {
           method: "POST",
           headers: { "Content-Type": "application/json",
-            "X-Mulino-Local-Role": process.env.MULINO_LOCAL_ROLE ?? "OPERATOR" },
-          body: JSON.stringify({ objective: args.objective, channel: args.channel ?? "CHAT" }),
+            "X-Mulino-Local-Role": process.env.MULINO_LOCAL_ROLE ?? "OPERATOR",
+            ...(args.requestKey ? { "Idempotency-Key": args.requestKey } : {}) },
+          body: JSON.stringify({ objective: args.objective, channel: args.channel ?? "CHAT", ...(args.replenishment ? { replenishment: args.replenishment } : {}) }),
         });
         return {
           content: [

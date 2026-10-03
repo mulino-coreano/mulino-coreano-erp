@@ -113,7 +113,7 @@ class DispatcherIntegrationTest {
                 throw new IllegalStateException("context source unavailable");
             }
         };
-        RunService failingRunService = new RunService(scheduling, objectMapper, failingContext);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingContext, "CODEX");
         DispatcherService failingDispatcher = new DispatcherService(
                 jdbc, objectMapper, new WaitingConditionMatcher(), failingRunService, org.mockito.Mockito.mock(com.mulinocoreano.backend.followup.ReplenishmentFollowupService.class));
 
