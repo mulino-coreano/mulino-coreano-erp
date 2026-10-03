@@ -122,8 +122,17 @@ public class CaseIntakeService {
         if (target != null) {
             jdbc.sql("UPDATE cases SET metadata=cast(:metadata AS jsonb) WHERE case_id=:id")
                 .param("metadata", mapper.writeValueAsString(Map.of("replenishment", target))).param("id", caseId).update();
-            jdbc.sql("INSERT INTO planning_cases(case_id,warehouse_id) VALUES (:id,:warehouse)")
+            // The partial unique index arbitrates competing intakes without aborting SQL.
+            int bound = jdbc.sql("""
+                    INSERT INTO planning_cases(case_id,warehouse_id) VALUES (:id,:warehouse)
+                    ON CONFLICT (warehouse_id) WHERE status='ACTIVE' DO NOTHING
+                    """)
                 .param("id", caseId).param("warehouse", target.get("warehouseId")).update();
+            if (bound == 0) {
+                // Roll back this entire intake, including its Case, Work and receipt.
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "An ACTIVE planning Case already exists for this warehouse");
+            }
             var queued = runs.createRun(new CreateRunRequest("ORCHESTRATOR", caseRef, wiRef, runs.defaultRuntime()), null);
             if (!"QUEUED".equals(queued.status())) throw unavailable("Initial Run could not be queued");
         }
