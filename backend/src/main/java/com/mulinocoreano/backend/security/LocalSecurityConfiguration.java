@@ -23,7 +23,9 @@ public class LocalSecurityConfiguration {
         return InterfaceSecurityConfiguration.stateless(http)
                 .securityMatchers(matchers -> matchers
                         .requestMatchers(paths.matcher(HttpMethod.GET, "/api/v1/me"),
-                                paths.matcher(HttpMethod.POST, "/api/v1/cases")))
+                                paths.matcher(HttpMethod.POST, "/api/v1/cases"),
+                                paths.matcher(HttpMethod.POST, "/api/v1/cases/*/plans"),
+                                paths.matcher(HttpMethod.GET, "/api/v1/plans/*")))
                 .addFilterBefore(new LocalActorFilter(directory), AnonymousAuthenticationFilter.class)
                 .authorizeHttpRequests(requests -> requests.anyRequest().access((authentication, context) -> {
                     var actor = authentication.get().getPrincipal();

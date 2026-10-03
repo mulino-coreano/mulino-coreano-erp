@@ -35,3 +35,7 @@ npm start   # Mulino Coreano backend (localhost:8080) 기본 상대
 이 헤더는 로컬 PoC 전용이며 외부 인증을 대체하지 않는다.
 MCP의 키 지정 재시도는 아직 제공하지 않는다. REST 호출에서만
 선택적인 `Idempotency-Key`를 사용할 수 있다.
+
+#48은 인간 조회 도구 `whoami`, `get_case(caseRef)`, `get_plan(planRef)`을
+추가한다. 이 도구는 로컬 역할 헤더만 전달한다. `get_plan`은 local
+프로필에서만 사용 가능하다. 후속 승인·답변 도구는 #52에 남는다.
