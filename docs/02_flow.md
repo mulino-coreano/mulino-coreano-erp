@@ -288,3 +288,15 @@ Run 예약(QUEUED) → service claim → lease가 있는 RUNNING →
 해당 Case capability로 실행 → 결과와 업무 상태를 함께 기록한다.
 만료는 1회 재시도하며 두 번째 실패는 인간 attention으로 넘긴다.
 SUPPLY_CHAIN은 최근 계획 READY 증거가 있어야 DONE으로 종료한다.
+
+
+## #45·#50·#51·#52 이후의 로컬 계약
+
+일반 Attention 답변과 구매 승인은 서로 다른 API·권한 경계다.
+구매 제안은 발주를 만들지 않으며 활성 MANAGER의 결정이 발주·audit·
+재개 Event를 원자적으로 기록한다. 승인 transaction에서 구매를 DONE으로 끝내고 가장 이른 납기의
+WAITING 후속 책임을 남기며 입고·생산을 만들어 Case를 끝내지 않는다.
+위 foundation 검토의 미구현 설명은 당시 범위를 가리킨다. 현재 API,
+15,2 base 가격과 정확한 구매 금액, version/idempotency, V24~V26과
+독립 DDL 16~18 계약은 [인간 답변·구매 결정](14_human_purchase_api.md)을
+따른다. #33의 나머지 ERP gate와 #34의 실제 데모 DB 검증은 남아 있다.

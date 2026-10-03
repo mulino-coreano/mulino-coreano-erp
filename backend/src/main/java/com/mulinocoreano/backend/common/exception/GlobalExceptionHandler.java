@@ -59,6 +59,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleException(Exception e) {
+        if (e instanceof org.springframework.security.access.AccessDeniedException denied) throw denied;
+        if (e instanceof org.springframework.security.core.AuthenticationException unauthenticated) throw unauthenticated;
         ResponseStatus declared = AnnotatedElementUtils.findMergedAnnotation(
                 e.getClass(), ResponseStatus.class);
         if (declared != null && declared.code() != HttpStatus.INTERNAL_SERVER_ERROR) {

@@ -40,4 +40,13 @@ class DefaultProfileIntegrationTest {
                 .content("{}" )).andExpect(status().isForbidden());
         mvc.perform(get("/unlisted")).andExpect(status().isForbidden());
     }
+    @Test
+    void purchasingAndHumanAnswersAreDeniedOutsideLocal() throws Exception {
+        for (String path : new String[]{"/api/v1/approvals/1", "/api/v1/purchase-orders/1"})
+            mvc.perform(get(path).header("X-Mulino-Local-Role","MANAGER")).andExpect(status().isForbidden());
+        for (String path : new String[]{"/api/v1/approvals/1/decision", "/api/v1/attention/1/answer", "/api/v1/plans/PLAN-x/purchase-proposal"})
+            mvc.perform(post(path).header("X-Mulino-Local-Role","MANAGER").contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden());
+        assertThat(jdbc.sql("SELECT count(*) FROM purchase_applications").query(Long.class).single()).isZero();
+    }
+
 }

@@ -55,7 +55,7 @@ class DispatcherConcurrencyIntegrationTest {
                 scheduling, objectMapper, contextSnapshotService,
                 schedulingReached, continueScheduling);
         DispatcherService dispatcher = new DispatcherService(
-                jdbc, objectMapper, new WaitingConditionMatcher(), pausingRunService);
+                jdbc, objectMapper, new WaitingConditionMatcher(), pausingRunService, org.mockito.Mockito.mock(com.mulinocoreano.backend.followup.ReplenishmentFollowupService.class));
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {

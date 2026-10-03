@@ -1,6 +1,7 @@
 package com.mulinocoreano.backend.interfacepackage;
 
 import static com.mulinocoreano.backend.generated.Tables.AGENTS;
+import static com.mulinocoreano.backend.generated.Tables.REPLENISHMENT_FOLLOWUPS;
 import static com.mulinocoreano.backend.generated.Tables.CASES;
 import static com.mulinocoreano.backend.generated.Tables.RUNS;
 import static com.mulinocoreano.backend.generated.Tables.WORK_ITEMS;
@@ -27,6 +28,12 @@ public class RunSchedulingRepository {
 
     public RunSchedulingRepository(DSLContext dsl) {
         this.dsl = dsl;
+    }
+
+    public boolean isManagedWork(long workId) {
+        return dsl.fetchExists(
+                selectOne().from(REPLENISHMENT_FOLLOWUPS)
+                        .where(REPLENISHMENT_FOLLOWUPS.WORK_ITEM_ID.eq(workId)));
     }
 
     public Optional<Long> enqueue(

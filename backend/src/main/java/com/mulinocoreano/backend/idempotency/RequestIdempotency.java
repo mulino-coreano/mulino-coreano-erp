@@ -19,29 +19,38 @@ import tools.jackson.databind.ObjectMapper;
 public class RequestIdempotency {
     private final JdbcClient jdbc;
     private final ObjectMapper mapper;
-    public RequestIdempotency(JdbcClient jdbc, ObjectMapper mapper) { this.jdbc = jdbc; this.mapper = mapper; }
+    private final com.mulinocoreano.backend.planning.CanonicalJson canonical;
+    public RequestIdempotency(JdbcClient jdbc, ObjectMapper mapper) { this.jdbc = jdbc; this.mapper = mapper; this.canonical = new com.mulinocoreano.backend.planning.CanonicalJson(mapper); }
 
     public CaseDto execute(String scope, String key, Object request, Supplier<CaseDto> action) {
         return mapper.treeToValue(executeJson(scope, key, request, action), CaseDto.class);
     }
 
+    /** New operation namespaces use canonical hashes; legacy Case and plan receipts keep their hash. */
+    public tools.jackson.databind.JsonNode executeCanonicalJson(String scope, String key, Object request, Supplier<?> action) {
+        return executeHashed(scope, key, canonical.sha256(request), action, true);
+    }
+
     public tools.jackson.databind.JsonNode executeJson(String scope, String key, Object request, Supplier<?> action) {
+        return executeHashed(scope, key, hash(mapper.writeValueAsString(request)), action, false);
+    }
+
+    private tools.jackson.databind.JsonNode executeHashed(String scope, String key, String hash, Supplier<?> action, boolean exact) {
         if (key.isBlank() || key.length() > 200) throw new InvalidInterfaceRequestException("Invalid Idempotency-Key");
         if (!TransactionSynchronizationManager.isActualTransactionActive()) throw new IllegalStateException("Transaction required");
-        String hash = hash(mapper.writeValueAsString(request));
         coordinate(scope, key);
         var saved = jdbc.sql("SELECT request_hash,response::text FROM request_idempotency WHERE scope=:scope AND request_key=:key")
                 .param("scope", scope).param("key", key)
                 .query((rs, row) -> new Receipt(rs.getString(1), rs.getString(2))).optional();
         if (saved.isPresent()) {
             if (!saved.get().hash().equals(hash)) throw new ResponseStatusException(HttpStatus.CONFLICT, "Key already used for different input");
-            return mapper.readTree(saved.get().response());
+            return exact ? canonical.readTree(saved.get().response()) : mapper.readTree(saved.get().response());
         }
         Object result = action.get();
         jdbc.sql("INSERT INTO request_idempotency(scope,request_key,request_hash,response) VALUES (:scope,:key,:hash,CAST(:response AS jsonb))")
                 .param("scope", scope).param("key", key).param("hash", hash)
                 .param("response", mapper.writeValueAsString(result)).update();
-        return mapper.valueToTree(result);
+        return exact ? canonical.readTree(mapper.writeValueAsString(result)) : mapper.valueToTree(result);
     }
     public void coordinate(String scope, String key) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) throw new IllegalStateException("Transaction required");
