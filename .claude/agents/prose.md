@@ -1,7 +1,7 @@
 ---
 name: prose
 description: Use when the deliverable is Korean prose for this repository — a commit message, a PR body, an issue body, or documentation — rather than code. Give it the issue number, the branch, or nothing; it reads the diff itself. Returns the text only.
-model: claude-sonnet-4-6
+model: claude-sonnet-5-5
 tools: Read, Grep, Glob, Bash
 ---
 
