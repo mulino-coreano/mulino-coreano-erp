@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file is the operating guide for agent sessions working in this repository, and the only place this guidance is written. Pi (the default dev agent, model `CMP/dsv4s` pinned in `.pi/settings.json`) and Codex read it natively; Claude Code does not, so root `CLAUDE.md` is a symlink to it rather than a second copy. Directory-scoped guidance lives in a nested `AGENTS.md`.
+This file is the operating guide for agent sessions working in this repository, and the only place this guidance is written. Pi (the default dev agent; `.pi/settings.json` pins the session and `reviewer` to `LLMProxy/claude-opus-5-5`, and `worker` and the other subagents to `CMP/dsv4s`) and Codex read it natively; Claude Code does not, so root `CLAUDE.md` is a symlink to it rather than a second copy. Directory-scoped guidance lives in a nested `AGENTS.md`.
 
 ## Project Overview
 
