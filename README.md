@@ -14,8 +14,8 @@
 
 | 레이어 | 구성 | 역할 |
 |---|---|---|
-| L0 | PostgreSQL 18(30개 테이블) + Spring Boot + MCP Server | ERP 데이터 및 기능을 Tool로 노출 |
-| L1 | Governance Engine | 액션성 Tool Call 가로채기 → 승인/차단/보류 라우팅 + 불변 감사 로그 |
+| L0 | PostgreSQL 18(30개 테이블) + Spring Boot REST API | ERP 데이터·기능을 REST API로 노출 (CLI·대시보드 단일 진입점) |
+| L1 | Governance Engine | 액션성 API 호출 가로채기 (조회는 통과) → 승인/차단/보류 라우팅 + 불변 감사 로그 |
 | L2 | Multi-Agent (Claude Code / Codex) | Orchestrator / Supply Chain / Procurement / QC |
 | L3 | 자연어 대시보드 | Intent Parsing → 결재 큐/품질 알람/추적 차트 자동 생성 |
 
@@ -55,9 +55,10 @@
 
 - **DB**: PostgreSQL 18 (30개 테이블, 16종 ENUM, 46개 FK)
 - **Backend**: Spring Boot 4.1.x + Java 21 + Gradle
-- **Tool 노출**: Single Zig CLI (`mulino`) + MCP Server
+- **Tool 노출**: Single Zig CLI (`mulino`)
 - **Agent**: Claude Code / Codex Subagent Architecture (Orchestrator / Supply Chain / Procurement / QC)
 - **Frontend**: React 19 + Vite (자연어 대시보드)
+> **MCP Server는 deferred 상태** 아키텍처에서 배제한 것이 아니라 복잡도 관리를 위한 결정. REST API를 adapter-agnostic하게 설계했으므로, 필요 시 동일 엔드포인트에 MCP 어댑터를 부착할 수 있습니다.
 
 ---
 
