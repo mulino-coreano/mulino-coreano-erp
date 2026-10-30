@@ -24,6 +24,7 @@ node_modules/
 dist/
 .next/
 npm-debug.log*
+mcp-server/node_modules/
 yarn-debug.log*
 yarn-error.log*
 

@@ -8,6 +8,8 @@ public enum CommonErrorCode implements ErrorCode {
     MALFORMED_JSON(HttpStatus.BAD_REQUEST, "CMN002", "Malformed JSON request"),
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "CMN003", "Validation failed"),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "CMN004", "Resource not found"),
+    CONFLICT(HttpStatus.CONFLICT, "CMN009", "Conflict"),
+    SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "CMN503", "Service unavailable"),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "CMN500", "Internal server error");
 
     private final HttpStatus status;
