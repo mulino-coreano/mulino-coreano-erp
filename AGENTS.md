@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file is the operating guide for agent sessions working in this repository, and the only place this guidance is written. Codex reads it natively; Claude Code does not, so root `CLAUDE.md` is a symlink to it rather than a second copy. Directory-scoped guidance lives in a nested `AGENTS.md`.
+This file is the operating guide for agent sessions working in this repository, and the only place this guidance is written. Pi (the default dev agent; `.pi/settings.json` pins the session and `reviewer` to `LLMProxy/claude-opus-5-5`, and `worker` and the other subagents to `CMP/dsv4s`) and Codex read it natively; Claude Code does not, so root `CLAUDE.md` is a symlink to it rather than a second copy. Directory-scoped guidance lives in a nested `AGENTS.md`.
 
 ## Project Overview
 
@@ -91,14 +91,18 @@ Carrying out an issue is the `backlog` skill; changing what the goals are is the
 - The issue/PR label scheme is in `docs/06_labels.md` (category + `L0-db`~`L3-dashboard` layer labels)
 - Never commit secrets (`application-local.yml`, `.env`) — already in `.gitignore`
 - On schema changes, keep `docs/02_flow.md` consistent with the ERD (Phase 1 required "flow diagram–ERD 100% consistency" as an acceptance criterion)
-- Skills live in `.agents/skills/` — dev-workflow skills (`backlog` to carry out an issue, `goals` to change what the goals are) as real directories, ERP role skills as symlinks to `agents/skills/`, which stays their SSOT (the L2 product layer). Codex discovers that directory natively.
+- Skills live in `.agents/skills/` — dev-workflow skills (`backlog` to carry out an issue, `goals` to change what the goals are) as real directories, ERP role skills as symlinks to `agents/skills/`, which stays their SSOT (the L2 product layer). Pi and Codex discover that directory natively (Pi only after the project is trusted).
 - Claude Code does **not** read `.agents/skills/`, so `.claude/skills/` mirrors it with one symlink per skill. Add a skill in both places, and point the `.claude/skills/` link at the skill's real directory — never at another symlink.
 
 ## Prose (Korean text deliverables)
 
 Commit messages, PR bodies, issue bodies and `docs/` all hold to the same standard,
-and under Claude Code they are not written by the session doing the work.
+and under Pi and Claude Code they are not written by the session doing the work.
 
+- **Pi** — delegate to the `prose` agent (`.pi/agents/prose.md`, pinned to
+  `CMP/dsv4s:high`) through the `subagent` tool. Hand it the issue number or the
+  branch; it reads the diff itself. Do **not** pass a per-run `model` override —
+  that replaces the pin.
 - **Claude Code** — delegate to the `prose` subagent (`.claude/agents/prose.md`,
   pinned to `claude-sonnet-4-6`). Hand it the issue number or the branch; it reads
   the diff itself. Do **not** pass a `model` argument when invoking it — that
