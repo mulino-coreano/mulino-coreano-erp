@@ -100,7 +100,7 @@ Commit messages, PR bodies, issue bodies and `docs/` all hold to the same standa
 and under Claude Code they are not written by the session doing the work.
 
 - **Claude Code** — delegate to the `prose` subagent (`.claude/agents/prose.md`,
-  pinned to `claude-sonnet-4-6`). Hand it the issue number or the branch; it reads
+  pinned to `claude-sonnet-5-5`). Hand it the issue number or the branch; it reads
   the diff itself. Do **not** pass a `model` argument when invoking it — that
   overrides the pin and silently routes to a different model.
 - **Codex** — has no equivalent subagent pinning. Write the prose yourself, to the
