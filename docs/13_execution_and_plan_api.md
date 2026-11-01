@@ -70,13 +70,15 @@ MULINO_LOCAL_SERVICE_SECRET이며 빈 값은 어떤 실행기도 인증하지 �
 capability 없이는 401이며 실제 제안 구현은 #50에서 추가한다.
 기본 프로필의 기존 Event·Run 경로에는 service 헤더를 요구하지 않는다.
 
-에이전트의 계획 계산과 업무 전이 Idempotency-Key 영수증은 Run 단위다.
-같은 Run이 같은 키로 재시도하면 원래 응답을 받는다. 재개·재시도된 새
-Run은 같은 키를 보내도 현재 ERP 사실로 다시 계산해 attempt를 기록하고,
-전이는 호출한 Run을 종료한다. 다만 아래 DONE 규칙은 Work Item의 최근
-attempt를 보므로, 계획을 다시 계산하지 않은 새 Run은 이전 Run의 READY
-attempt로 DONE을 마칠 수 있다. DONE에 그 Run 자신의 attempt를 요구할지는
-후속 결정이다.
+에이전트의 계획 계산과 업무 전이 Idempotency-Key 영수증은 한 실행
+단위다. 한 실행은 Run과 그 Run의 lease 만료 재시도 사슬이다. 재시도는
+응답을 잃은 같은 시도이므로, 같은 Run이나 그 재시도가 같은 키를 보내면
+원래 응답을 받는다. WAITING 뒤 재개된 Run은 새 실행이다. 같은 키를
+보내도 현재 ERP 사실로 다시 계산해 attempt를 기록하고, 전이는 호출한
+Run을 종료한다. 재개된 Run의 lease 만료 재시도는 재개된 Run의 응답을
+받는다. 다만 아래 DONE 규칙은 Work Item의 최근 attempt를 보므로, 계획을
+다시 계산하지 않은 새 Run은 이전 Run의 READY attempt로 DONE을 마칠 수
+있다. DONE에 그 Run 자신의 attempt를 요구할지는 후속 결정이다.
 
 만료 lease는 한 번만 재시도한다. 두 번째 실패는 attention과 BLOCKED
 업무를 남긴다. SUPPLY_CHAIN의 DONE은 최근 계획 attempt가 READY이고

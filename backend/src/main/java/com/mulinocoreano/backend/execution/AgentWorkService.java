@@ -24,6 +24,7 @@ public class AgentWorkService {
     private final RunService runs;
     private final RunExecutionService execution;
     private final RequestIdempotency idempotency;
+    private final AgentReceiptScope receiptScope;
     private final AgentWorkRepository repository;
     private final ObjectMapper mapper;
 
@@ -32,12 +33,14 @@ public class AgentWorkService {
             RunService runs,
             RunExecutionService execution,
             RequestIdempotency idempotency,
+            AgentReceiptScope receiptScope,
             AgentWorkRepository repository,
             ObjectMapper mapper) {
         this.capabilities = capabilities;
         this.runs = runs;
         this.execution = execution;
         this.idempotency = idempotency;
+        this.receiptScope = receiptScope;
         this.repository = repository;
         this.mapper = mapper;
     }
@@ -131,9 +134,9 @@ public class AgentWorkService {
         if (!scope.workItemRef().equals(workRef))
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN, "Capability is bound to another Work Item");
-        // A receipt describes one Run's finish; a later Run of this Work Item must finish itself.
+        // A receipt describes one execution's finish; a Run resumed later must finish itself.
         return idempotency.executeJson(
-                "work.transition:" + scope.workItemRef() + ":run:" + scope.runId(),
+                receiptScope.namespace("work.transition:" + scope.workItemRef(), scope),
                 key,
                 request,
                 () ->
