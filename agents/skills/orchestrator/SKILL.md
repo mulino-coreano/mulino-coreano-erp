@@ -56,7 +56,7 @@ mulino work create --json '{"caseRef":"CASE-실제참조","agentKey":"SUPPLY_CHA
 
 수정 공급망 자식의 DONE을 확인한 뒤 새 `latestPlan.ref`와 버전·해시를 읽는다. 이전 계획/승인 기록을 수정하거나 이전 READY를 수정 결과로 대신하지 않는다. 단계 6의 `<workItemRef>:procurement:<새 planRef>` 키로 새 구매 자식을 배정하고, 새 승인안은 MANAGER가 정확한 새 내용·버전·해시를 다시 결정해야 한다. 재계산 답변을 구매 승인으로 사용하지 않는다.
 
-만료/차단 방침 Attention은 가능한 경우 원본 구매 업무의 같은 Case 안 미완료 Orchestrator 부모에 연결된다. 부모가 이미 이 질문을 기다리며 BLOCKED라면 답변 후 서버가 QUEUED를 반환할 수 있다. 작업에 연결된 다른 미해결 질문이나 대기를 답변 한 건으로 해결했다고 가정하지 않는다. 유효한 부모가 없는 경우 생성된 Case 수준 Attention에는 `work_item_ref`가 없을 수 있고 답변 API는 `resume.status=NO_WORK_ITEM`을 반환한다. 이를 새 Run 예약으로 설명하지 않는다. 취소된 의존성에 의해 이미 재개 대상인 부모는 다음 claim에서 저장된 인간 결정을 읽는다. 부모가 이미 BLOCKED이고 답변이 Case 수준에만 연결되었다면 자동 재개를 가정하지 말고 현재 저장된 실행/Attention 상태와 필요한 조치를 보고한다.
+만료/차단 방침 Attention은 가능한 경우 원본 구매 업무의 같은 Case 안 미완료 Orchestrator 부모에 연결된다. 부모가 이미 이 질문을 기다리며 BLOCKED라면 답변 후 서버가 QUEUED를 반환할 수 있다. 작업에 연결된 다른 미해결 질문이나 대기를 답변 한 건으로 해결했다고 가정하지 않는다. 유효한 부모가 없는 경우 생성된 Case 수준 Attention에는 `work_item_ref`가 없을 수 있고 답변 API는 `resume.status=NO_WORK_ITEM`을 반환한다. 이 값 자체를 새 Run 예약으로 설명하지 않는다. Case 수준 답변은 그 Case의 BLOCKED Work Item마다 자기 Attention 답변과 같은 재개 검사를 다시 하고, 결과를 `resume.workItems`의 `workItemRef`·`status`로 돌려준다. `status=QUEUED`이고 `runRef`가 있는 항목만 새 Run 예약으로 설명한다. 취소된 의존성에 의해 이미 재개 대상인 부모는 다음 claim에서 저장된 인간 결정을 읽는다. BLOCKED 부모가 `resume.workItems`에 QUEUED로 나오지 않으면 자동 재개를 가정하지 말고 현재 저장된 실행/Attention 상태와 필요한 조치를 보고한다.
 
 ## Mission
 

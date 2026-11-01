@@ -325,6 +325,9 @@ npm start
   `POST /api/v1/cases`에만 적용한다. 역할 헤더가 없으면 401,
   VIEWER·QC·ADMIN의 Case 생성은 403이다. OPERATOR·MANAGER는
   생성자로 기록되며 USER 참여자가 추가된다. 조회에는 역할을 요구하지 않는다.
+  역할별 로컬 사용자 행은 없을 때만 만들고, 기존 행의 활성 여부와 역할은
+  요청으로 바꾸지 않는다. 비활성화되었거나 저장된 역할이 헤더와 다른
+  사용자는 `/api/v1/me`와 Case 생성 모두 403이며 Case를 만들지 않는다.
 - `Idempotency-Key`는 선택 사항이다. 보내는 경우 인간별 scope에서
   검증·정규화한 요청을 비교한다. 같은 키와 내용은 같은 응답을 반환하고,
   다른 내용은 409다. 키가 없으면 새 Case를 만든다.
@@ -332,7 +335,10 @@ npm start
   추가한다. 인증된 서비스·에이전트·그 밖의 principal은 인간 접수로
   처리하지 않는다. Auth0, 외부 신원, Run lease는 포함하지 않는다.
 - 기존 `/api-docs`와 `/swagger-ui.html`을 유지하고 `/v3/api-docs`도
-  같은 OpenAPI 문서를 제공한다.
+  같은 OpenAPI 문서를 제공한다. `/v3/api-docs`는 Spring MVC handler가
+  아니라 servlet forward다. springdoc은 같은 접미사의 handler를 path
+  prefix로 읽기 때문이다. 따라서 문서의 `paths`에 나타나지 않고, 두 경로의
+  `servers`는 요청 서버 주소로 같으며 Swagger UI 설정은 `/api-docs`를 쓴다.
 
 로컬 실행은 기존 DB 환경 변수에 `SPRING_PROFILES_ACTIVE=local`을
 추가한다. 역할 헤더는 `X-Mulino-Local-Role: MANAGER`처럼 보내고,
@@ -352,6 +358,15 @@ npm start
 실제 stdio의 OPERATOR 생성·VIEWER 거부·조회 허용을 확인했다.
 새 빈 DB의 Flyway 및 독립 DDL에서 요청 테이블도 일치했다.
 전체 ERP 스키마의 기존 단가 정밀도 차이는 #48 범위로 남긴다.
+
+리뷰 수정 후 `./gradlew clean test bootJar --no-daemon`은 202건,
+실패·오류·스킵 0이다. 수정 전 jar를 기본 프로필로 6회 기동하면
+2회는 `/api-docs`의 `servers`가 `http://127.0.0.1:18`로 잘리고
+Swagger UI 설정 요청이 403이었으며, 6회 모두 `/v3/api-docs`가
+`paths`에 있었다. 수정 후 jar는 기본 8회·local 2회 기동에서 두
+문서가 같고 Swagger UI 설정이 200이었다. 실제 local HTTP에서
+비활성·강등 사용자는 `/api/v1/me`와 Case 생성 모두 403이고 Case가
+늘지 않았으며 DB 행도 비활성·강등 상태로 남았다.
 
 ### 13.2 인간 계획과 조회 도구 (#48, #52 일부)
 

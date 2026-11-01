@@ -22,8 +22,14 @@ sourceHash, hash, attention을 포함한다.
 
 같은 인간·Case·Idempotency-Key·입력은 원래 응답을 반환한다.
 다른 입력으로 같은 키를 쓰면 409다. 새 키는 새 계산 버전을 만든다.
+동시에 들어온 계산은 하나씩 차례로 처리한다. 같은 요청의 동시 재시도는
+모두 저장된 하나의 응답을 받고, 서로 다른 요청은 연속된 버전을 받는다.
+계산 중에 들어온 BOM·공급 조건 같은 계획 자료 변경은 계산이 끝난 뒤에
+커밋된다. 계산 전에 진행 중이던 변경은 커밋을 기다려 계산에 반영한다.
 계산은 ERP 재고·LOT·발주 수량을 바꾸지 않는다. 계획과 근거만 저장한다.
 자료 오류는 attention을 남기며 사용 가능한 계획으로 취급하지 않는다.
+계획을 저장하지 못한 계산은 Case를 창고에 묶지 않는다. 같은 Case가
+다른 창고로 다시 계산하거나 다른 Case가 그 창고를 계산할 수 있다.
 
 V19는 기존 ERP 단가 두 컬럼을 NUMERIC(15,2)로 일치시킨다.
 V20은 계획 테이블·수량 NUMERIC(18,6)·유한값 검사·계획의 선택적
@@ -63,6 +69,14 @@ MULINO_LOCAL_SERVICE_SECRET이며 빈 값은 어떤 실행기도 인증하지 �
 헤더가 없으면 #48의 인간 경로를 유지한다. purchase-proposal 경로는
 capability 없이는 401이며 실제 제안 구현은 #50에서 추가한다.
 기본 프로필의 기존 Event·Run 경로에는 service 헤더를 요구하지 않는다.
+
+에이전트의 계획 계산과 업무 전이 Idempotency-Key 영수증은 Run 단위다.
+같은 Run이 같은 키로 재시도하면 원래 응답을 받는다. 재개·재시도된 새
+Run은 같은 키를 보내도 현재 ERP 사실로 다시 계산해 attempt를 기록하고,
+전이는 호출한 Run을 종료한다. 다만 아래 DONE 규칙은 Work Item의 최근
+attempt를 보므로, 계획을 다시 계산하지 않은 새 Run은 이전 Run의 READY
+attempt로 DONE을 마칠 수 있다. DONE에 그 Run 자신의 attempt를 요구할지는
+후속 결정이다.
 
 만료 lease는 한 번만 재시도한다. 두 번째 실패는 attention과 BLOCKED
 업무를 남긴다. SUPPLY_CHAIN의 DONE은 최근 계획 attempt가 READY이고
