@@ -46,7 +46,10 @@ hash 방식은 유지한다.
 
 APPROVE는 현재 계획·현재 source를 잠금 아래 재계산한다. 가격·수량·
 공급처·납기·공급·BOM·정책 또는 계획 version이 달라지면 제안을
-EXPIRED로 남기고 409를 반환한다. 승인 성공은 공급처별 발주 묶음,
+EXPIRED로 남기고 409를 반환한다. 계획 source의 발주는 계획 창고의
+발주와 창고가 없는 기존 발주뿐이다. 다른 창고의 발주 승인은 이
+창고의 제안을 만료시키지 않고, 이 Case 에이전트의 발주 조회 범위에도
+들어가지 않는다. 승인 성공은 공급처별 발주 묶음,
 최종 Governance Decision, 불변 audit, application 검증 receipt와
 구매 Work Item의 DONE·후속 WAITING과 승인·의존 해소 Event를 함께 기록한다. 일부 실패는 모두
 rollback한다. 동일 승인 재전송은 이미 만든 같은 발주 묶음을 반환한다.

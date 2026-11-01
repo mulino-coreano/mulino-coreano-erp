@@ -63,6 +63,7 @@ class PurchaseWorkflowIntegrationTest {
     @MockitoSpyBean ReplenishmentCalculator calculator;
     @MockitoSpyBean PurchasePlanRepository purchasePlans;
     long managerId, operatorId, caseId, workId, warehouse;
+    List<Long> products;
     PlanDto plan;
     RunExecutionService.Claim claim;
     long originalOrders;
@@ -307,7 +308,7 @@ class PurchaseWorkflowIntegrationTest {
                 jdbc.sql("SELECT warehouse_id FROM warehouses WHERE plant_id='DEMO-KR-01'")
                         .query(Long.class)
                         .single();
-        var products =
+        products =
                 jdbc.sql(
                                 "SELECT product_id FROM products WHERE sku IN"
                                         + " ('DEMO-AMR','DEMO-BSC') ORDER BY product_id")
@@ -468,6 +469,81 @@ class PurchaseWorkflowIntegrationTest {
                 .isEqualTo("EXPIRED");
         assertThat(count("purchase_orders")).isEqualTo(originalOrders);
         assertThat(count("purchase_applications")).isZero();
+    }
+
+    @Test
+    void anotherWarehousePurchaseDoesNotExpireThisWarehousePendingApproval() throws Exception {
+        long otherWarehouse = secondWarehouse();
+        // The other plant's product LOTs are reconciliation evidence here; plan after they exist.
+        plan = recalculate("WI-SUPPLY-RECALC");
+        var other = otherWarehouseCase(otherWarehouse);
+        JsonNode proposal = propose();
+        JsonNode otherProposal = propose(other.plan().ref(), other.claim(), "proposal-other");
+        decide(
+                otherProposal.path("approvalId").asLong(),
+                decisionBody(otherProposal, "APPROVE"),
+                "approve-other",
+                managerId,
+                "MANAGER",
+                200);
+
+        decide(
+                proposal.path("approvalId").asLong(),
+                decisionBody(proposal, "APPROVE"),
+                "approve-this",
+                managerId,
+                "MANAGER",
+                200);
+
+        assertThat(
+                        jdbc.sql(
+                                        "SELECT status::text FROM governance_actions WHERE"
+                                                + " governance_action_id=:id")
+                                .param("id", proposal.path("approvalId").asLong())
+                                .query(String.class)
+                                .single())
+                .isEqualTo("APPROVED");
+        assertThat(
+                        jdbc.sql("SELECT count(*) FROM purchase_orders WHERE warehouse_id=:id")
+                                .param("id", warehouse)
+                                .query(Long.class)
+                                .single())
+                .isPositive();
+    }
+
+    @Test
+    void anotherWarehousePurchaseIsNotReadableThroughThisCasePlan() throws Exception {
+        var other = otherWarehouseCase(secondWarehouse());
+        JsonNode otherProposal = propose(other.plan().ref(), other.claim(), "proposal-other");
+        long otherOrder =
+                decide(
+                                otherProposal.path("approvalId").asLong(),
+                                decisionBody(otherProposal, "APPROVE"),
+                                "approve-other",
+                                managerId,
+                                "MANAGER",
+                                200)
+                        .path("purchaseOrderIds")
+                        .get(0)
+                        .asLong();
+
+        plan = recalculate("WI-SUPPLY-RECALC");
+
+        agentGet("purchase-orders", otherOrder, claim, 404);
+        long warehouseless =
+                java.util.stream.StreamSupport.stream(
+                                plan.sourceSnapshot().path("sourceFacts").spliterator(), false)
+                        .filter(
+                                f ->
+                                        f.path("sourceRef")
+                                                .asText()
+                                                .startsWith("purchase_order_items:"))
+                        .findFirst()
+                        .orElseThrow()
+                        .path("values")
+                        .path("purchase_order_id")
+                        .asLong();
+        agentGet("purchase-orders", warehouseless, claim, 200);
     }
 
     @Test
@@ -850,18 +926,107 @@ CREATE TRIGGER fail_second_purchase_line AFTER INSERT ON purchase_order_items
     }
 
     JsonNode propose() throws Exception {
+        return propose(plan.ref(), claim, "proposal-initial");
+    }
+
+    JsonNode propose(String planRef, RunExecutionService.Claim proposer, String key)
+            throws Exception {
         var result =
                 mvc.perform(
-                                post("/api/v1/plans/{ref}/purchase-proposal", plan.ref())
+                                post("/api/v1/plans/{ref}/purchase-proposal", planRef)
                                         .header(
                                                 "Authorization",
-                                                "Bearer " + claim.capabilityToken())
-                                        .header("Idempotency-Key", "proposal-initial")
+                                                "Bearer " + proposer.capabilityToken())
+                                        .header("Idempotency-Key", key)
                                         .contentType("application/json")
                                         .content("{}"))
                         .andExpect(status().isOk())
                         .andReturn();
         return mapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    /** Recalculates this Case's plan through a SUPPLY_CHAIN Run so it becomes the latest plan. */
+    PlanDto recalculate(String workRef) {
+        work(workRef, "SUPPLY_CHAIN");
+        runs.createRun(
+                new CreateRunRequest("SUPPLY_CHAIN", "CASE-PURCHASE", workRef, "CODEX"), null);
+        var supply = execution.claim("recalc-worker").orElseThrow();
+        var recalculated =
+                plans.calculateAgent(
+                        "CASE-PURCHASE",
+                        new PlanRequest(warehouse, products, 30),
+                        "plan-recalc",
+                        supply.capabilityToken());
+        execution.finish(
+                supply.runRef(), "recalc-worker", supply.leaseToken(), "DONE", "계획 갱신", null);
+        return recalculated;
+    }
+
+    /** A second plant whose product LOTs reconcile with its stock and that has no raw stock. */
+    long secondWarehouse() {
+        long other =
+                jdbc.sql(
+                                "INSERT INTO warehouses(plant_id,name,type)"
+                                    + " VALUES('DEMO-KR-02','제2공장','AMBIENT') RETURNING"
+                                    + " warehouse_id")
+                        .query(Long.class)
+                        .single();
+        jdbc.sql(
+                        "INSERT INTO"
+                            + " planning_policies(warehouse_id,history_start_date,horizon_days,safety_stock_days)"
+                            + " SELECT :other,history_start_date,horizon_days,safety_stock_days"
+                            + " FROM planning_policies WHERE warehouse_id=:warehouse")
+                .param("other", other)
+                .param("warehouse", warehouse)
+                .update();
+        jdbc.sql(
+                        "INSERT INTO"
+                            + " production_lots(product_id,warehouse_id,lot_number,production_date,expiry_date,quantity,status)"
+                            + " SELECT product_id,:other,sku||'-WH2','2026-09-01','2026-12-31',"
+                            + " CASE sku WHEN 'DEMO-AMR' THEN 30 WHEN 'DEMO-BSC' THEN 15 ELSE 4"
+                            + " END,'ACTIVE' FROM products WHERE sku IN"
+                            + " ('DEMO-AMR','DEMO-BSC','DEMO-DOUGH')")
+                .param("other", other)
+                .update();
+        jdbc.sql(
+                        "INSERT INTO stock(product_id,warehouse_id,quantity)"
+                                + " SELECT product_id,warehouse_id,quantity FROM production_lots"
+                                + " WHERE warehouse_id=:other")
+                .param("other", other)
+                .update();
+        return other;
+    }
+
+    record OtherCase(PlanDto plan, RunExecutionService.Claim claim) {}
+
+    /** Plans the other plant in its own Case and leaves its purchasing Run claimed. */
+    OtherCase otherWarehouseCase(long otherWarehouse) {
+        long otherCase =
+                jdbc.sql(
+                                "INSERT INTO"
+                                    + " cases(case_ref,title,objective,intent_type,opened_by_user_id)"
+                                    + " VALUES('CASE-WH-2','제2공장 재보충','제2공장 재보충','ACT',:user)"
+                                    + " RETURNING case_id")
+                        .param("user", operatorId)
+                        .query(Long.class)
+                        .single();
+        workIn(otherCase, "WI-SUPPLY-WH2", "SUPPLY_CHAIN");
+        runs.createRun(
+                new CreateRunRequest("SUPPLY_CHAIN", "CASE-WH-2", "WI-SUPPLY-WH2", "CODEX"), null);
+        var supply = execution.claim("supply-worker-wh2").orElseThrow();
+        var otherPlan =
+                plans.calculateAgent(
+                        "CASE-WH-2",
+                        new PlanRequest(otherWarehouse, products, 30),
+                        "plan-wh2",
+                        supply.capabilityToken());
+        execution.finish(
+                supply.runRef(), "supply-worker-wh2", supply.leaseToken(), "DONE", "계획 저장", null);
+        workIn(otherCase, "WI-PURCHASE-WH2", "PROCUREMENT");
+        runs.createRun(
+                new CreateRunRequest("PROCUREMENT", "CASE-WH-2", "WI-PURCHASE-WH2", "CODEX"),
+                null);
+        return new OtherCase(otherPlan, execution.claim("purchase-worker-wh2").orElseThrow());
     }
 
     String decisionBody(JsonNode proposal, String decision) throws Exception {
@@ -919,12 +1084,16 @@ CREATE TRIGGER fail_second_purchase_line AFTER INSERT ON purchase_order_items
     }
 
     long work(String ref, String role) {
+        return workIn(caseId, ref, role);
+    }
+
+    long workIn(long targetCase, String ref, String role) {
         return jdbc.sql(
                         "INSERT INTO work_items(work_item_ref,case_id,title,assigned_agent_id)"
                             + " SELECT :ref,:case,:ref,agent_id FROM agents WHERE agent_key=:role"
                             + " RETURNING work_item_id")
                 .param("ref", ref)
-                .param("case", caseId)
+                .param("case", targetCase)
                 .param("role", role)
                 .query(Long.class)
                 .single();
