@@ -228,3 +228,37 @@ Governance Engine은 모든 액션성 API 호출을 가로채고 불변 감사 �
 | `recalls`, `alert_rules`, `alert_events` | QM | 품질알림 및 검사관리 |
 | `users` | HCM | 사용자 관리 |
 | `governance_*`, `regulatory_submissions` | GRC | 거버넌스, 리스크, 컴플라이언스 |
+
+---
+
+## 인터페이스 운영 상태와 업무 흐름의 연결
+
+ERP 추적 체인 위의 목표·책임·판단은 별도 운영 상태로 저장한다. 추가된 13개 테이블과 FK는 `docs/03_erd.md` §6, 채널 원칙은 `docs/08_interface_overview.md`, 이벤트 전이 계약은 `docs/09_dispatcher_spec.md`를 따른다.
+
+```mermaid
+flowchart TD
+    Query[ASK 제품명·SKU 재고 조회] --> ERP[stock / products / warehouses]
+    Objective[ACT 목표] --> Case[cases / channels]
+    Case --> Participants[case_participants / agents / users]
+    Case --> Work[work_items: 명시적 담당]
+    Work --> Waiting[waiting_conditions: WAITING]
+    Input[이벤트 API / 수동·모니터 재판정] --> Event[events: 불변 사실]
+    Event --> Match[Dispatcher 조건 판정]
+    Waiting --> Match
+    Match --> Ready[모든 ACTIVE 조건 해소: READY]
+    Ready --> Run[runs: 실행 예약·현재 컨텍스트]
+    Ready --> Attention[담당 누락·실행 준비 실패: attention_requests]
+    Event --> Link[claims / claim_evidence / evidence]
+    Decision[decisions: 인간 결정과 적용 범위] --> Context[실행 컨텍스트]
+    Participants --> Context
+    Work --> Context
+    Link --> Context
+    Context --> Run
+```
+
+- ASK는 Case나 업무를 만들지 않는다. ACT는 활성 Orchestrator에 초기 의무를 배정하며, 담당 설정 오류를 성공으로 숨기지 않는다.
+- 공급사 회신·이메일 Send·외부 자료·승인·시간·의존 업무 종료는 명세에 맞는 대기만 해소한다. `DONE`/`CANCELLED` 업무는 변경하지 않는다.
+- `waiting_conditions.resolved_by_event_id`와 `runs.trigger_event_id`가 재개 원인을 보존한다. 증거와 Claim의 지지/반증 관계는 검증된 동일 Case 안에 기록한다.
+- `decisions`와 `attention_requests`가 Work Item을 참조하면 같은 Case여야 한다. 인간 답변의 `answer_scope`/결정의 `scope`는 컨텍스트에 보존하며 자동으로 전사 정책으로 확대하지 않는다.
+- Work Item의 `metadata.businessRef`는 ERP 행을 가리키는 인덱스다. 운영 Case의 생성이나 승인 Event 수신이 발주·입고·리콜 등 ERP 쓰기 권한을 대신하지 않는다. 해당 변경은 위 거버넌스 승인 매트릭스를 그대로 따른다.
+- 실제 LLM executor, 인간 답변/승인 채널, ERP 변경 capability는 후속 구현이다. 현재 디스패처는 실행 예약까지 기록한다.

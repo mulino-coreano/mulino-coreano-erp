@@ -1,14 +1,14 @@
 # MULINO COREANO — ERD
 
 > 본 문서는 `database/ddl/`의 PostgreSQL 스키마를 기준으로 작성된 엔터프라이즈 ERD입니다.  
-> 거버넌스(L1) 영속화, 품질 모니터링/알람, 식약처 규제 대응 및 비즈니스 확장성(다단계 BOM, 포장재/자재유형, 멀티플랜트)을 반영한 **30개 테이블, 46개 외래키 관계**를 정의합니다.  
+> 기존 ERP·거버넌스·품질·규제 모델 **30개 테이블, 46개 외래키 관계**에 인터페이스 운영 모델 **13개 테이블**을 추가한 스키마입니다. 기존 모델은 §1~5, Case·이벤트·컨텍스트 모델은 §6에서 설명합니다.
 > 스키마 변경 시 이 문서와 `docs/02_flow.md`를 함께 갱신해야 합니다.
 
 ---
 
 ## 1. 전체 ERD
 
-아래 다이어그램은 **30개 테이블**, **46개 외래키 관계**를 모두 포함합니다.
+아래 다이어그램은 기존 ERP 모델의 **30개 테이블**, **46개 외래키 관계**를 포함합니다. 추가된 인터페이스 관계는 §6의 별도 다이어그램에 있습니다.
 
 ```mermaid
 erDiagram
@@ -493,3 +493,81 @@ SELECT
 FROM v_retention_deadlines
 WHERE retention_status = 'ACTIVE_HOLD_REQUIRED';
 ```
+
+
+---
+
+## 6. 인터페이스 운영 ERD (추가 13개 테이블)
+
+`database/ddl/07_case_management.sql`의 운영 상태는 기존 ERP 행을 복제하지 않는다. `08_case_indexes.sql`과 `09_case_fks.sql`이 인덱스·FK를 연결하며, 백엔드에서는 Flyway 마이그레이션으로 같은 제약을 적용한다.
+
+| 테이블 | 역할·핵심 연결 |
+|---|---|
+| `channels` | CHAT/SLACK/EMAIL/DASHBOARD/API 유입 표면과 외부 참조 |
+| `agents` | Run과 독립된 논리 에이전트 정체성·활성 여부 |
+| `cases` | 목표·상태·원본 채널·생성 사용자 |
+| `case_participants` | Case의 참여 에이전트 또는 사용자와 역할 |
+| `work_items` | Case의 구체적 의무·담당·기한·ERP `businessRef` |
+| `waiting_conditions` | 의무의 대기 조건·해소 상태·원인 Event |
+| `events` | 외부 입력·재판정의 불변 사실·멱등 키·actor |
+| `runs` | 담당 에이전트의 실행 예약·trigger Event·컨텍스트 감사 스냅샷 |
+| `evidence` | 증거 참조·출처·관측 시각·원문 위치·해시 |
+| `claims` | Case의 주장·상태·주장 주체와 Run |
+| `claim_evidence` | 주장과 증거의 SUPPORTS/REFUTES 관계 |
+| `decisions` | 인간 결정·적용 범위·Case/Work Item·채널 |
+| `attention_requests` | 인간이 필요한 이유·질문·결과·답변 범위 |
+
+```mermaid
+erDiagram
+    channels o|--o{ cases : "origin_channel_id"
+    users o|--o{ cases : "opened_by_user_id"
+    cases ||--o{ case_participants : "case_id"
+    agents o|--o{ case_participants : "agent_id"
+    users o|--o{ case_participants : "user_id"
+    cases ||--o{ work_items : "case_id"
+    agents o|--o{ work_items : "assigned_agent_id"
+    users o|--o{ work_items : "assigned_user_id"
+    work_items ||--o{ waiting_conditions : "work_item_id"
+    cases o|--o{ events : "case_id"
+    work_items o|--o{ events : "work_item_id"
+    work_items o|--o{ events : "work_item_id,case_id"
+    channels o|--o{ events : "channel_id"
+    agents o|--o{ events : "agent_id"
+    users o|--o{ events : "user_id"
+    events o|--o{ waiting_conditions : "resolved_by_event_id"
+    agents ||--o{ runs : "agent_id"
+    cases ||--o{ runs : "case_id"
+    work_items o|--o{ runs : "work_item_id"
+    work_items o|--o{ runs : "work_item_id,case_id"
+    events o|--o{ runs : "trigger_event_id"
+    cases o|--o{ evidence : "case_id"
+    channels o|--o{ evidence : "channel_id"
+    runs o|--o{ evidence : "ingested_by_run_id"
+    cases ||--o{ claims : "case_id"
+    agents o|--o{ claims : "asserted_by_agent_id"
+    users o|--o{ claims : "asserted_by_user_id"
+    runs o|--o{ claims : "asserted_by_run_id"
+    claims ||--o{ claim_evidence : "claim_id"
+    evidence ||--o{ claim_evidence : "evidence_id"
+    cases ||--o{ decisions : "case_id"
+    work_items o|--o{ decisions : "work_item_id"
+    work_items o|--o{ decisions : "work_item_id,case_id"
+    users ||--o{ decisions : "decided_by_user_id"
+    channels o|--o{ decisions : "source_channel_id"
+    cases ||--o{ attention_requests : "case_id"
+    work_items o|--o{ attention_requests : "work_item_id"
+    work_items o|--o{ attention_requests : "work_item_id,case_id"
+    agents o|--o{ attention_requests : "requested_by_agent_id"
+    users o|--o{ attention_requests : "resolved_by_user_id"
+```
+
+### 인터페이스 불변식
+
+- Work Item 담당은 에이전트와 사용자 중 최대 한 명이다. Case 참여자는 같은 actor를 중복 등록하지 않는다.
+- Event, Run, Decision, Attention의 Work Item 참조는 해당 Case 소속이어야 한다. 복합 FK가 `(work_item_id, case_id)`를 검증한다.
+- Event는 UPDATE/DELETE/TRUNCATE 불가이며 `(event_type, external_ref)`가 중복 입력을 차단한다. 정정은 새 Event로 기록한다.
+- Work Item별 `RUNNING` Run은 최대 하나다. `trigger_event_id`와 `resolved_by_event_id`가 실행·대기 해소의 근거를 연결한다.
+- Claim의 상태와 지지/반증 링크, 인간 결정의 범위를 실행 컨텍스트에 보존한다. 증거 참조가 있다는 사실만으로 주장을 검증 완료로 취급하지 않는다.
+- 기존 발주·입고·리콜 승인 매트릭스와 양방향 LOT 추적 경로는 그대로 유지한다.
+
+추가 ENUM 13종은 `channel_type`, `actor_type`, `intent_type`, `case_status`, `case_priority`, `work_item_status`, `waiting_condition_type`, `waiting_status`, `run_status`, `claim_status`, `attention_reason_type`, `decision_scope`, `attention_request_status`이다. 전체 타입 정의는 `database/ddl/00_types.sql`을 따른다.
