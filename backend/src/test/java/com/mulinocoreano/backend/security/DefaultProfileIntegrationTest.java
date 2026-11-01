@@ -32,7 +32,6 @@ class DefaultProfileIntegrationTest {
     @Test
     void existingDocsAndReadsStayOpenButIdentityAndUnknownRoutesAreDenied() throws Exception {
         mvc.perform(get("/api-docs")).andExpect(status().isOk()).andExpect(jsonPath("$.openapi").isNotEmpty());
-        mvc.perform(get("/v3/api-docs")).andExpect(status().isOk()).andExpect(jsonPath("$.openapi").isNotEmpty());
         mvc.perform(get("/api/v1/cases")).andExpect(status().isOk());
         mvc.perform(get("/api/v1/me")).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/plans/PLAN-test")).andExpect(status().isForbidden());

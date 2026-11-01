@@ -131,8 +131,9 @@ public class AgentWorkService {
         if (!scope.workItemRef().equals(workRef))
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN, "Capability is bound to another Work Item");
+        // A receipt describes one Run's finish; a later Run of this Work Item must finish itself.
         return idempotency.executeJson(
-                "work.transition:" + scope.workItemRef(),
+                "work.transition:" + scope.workItemRef() + ":run:" + scope.runId(),
                 key,
                 request,
                 () ->

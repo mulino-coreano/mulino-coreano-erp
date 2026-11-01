@@ -14,12 +14,19 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.function.IntFunction;
+import javax.sql.DataSource;
 import static org.assertj.core.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -36,6 +43,7 @@ class HumanPlanningIntegrationTest {
     @Autowired Flyway flyway;
     @Autowired com.mulinocoreano.backend.interfacepackage.RunService runs;
     @Autowired ObjectMapper mapper;
+    @Autowired DataSource dataSource;
     long warehouse;
     List<Long> products;
     String caseRef;
@@ -51,10 +59,7 @@ class HumanPlanningIntegrationTest {
         ReplenishmentDemoFixture.load(jdbc);
         warehouse=jdbc.sql("SELECT warehouse_id FROM warehouses WHERE plant_id='DEMO-KR-01'").query(Long.class).single();
         products=jdbc.sql("SELECT product_id FROM products WHERE sku IN ('DEMO-AMR','DEMO-BSC') ORDER BY product_id").query(Long.class).list();
-        var r=mvc.perform(post("/api/v1/cases").header("X-Mulino-Local-Role","MANAGER")
-                .contentType("application/json").content("{\"objective\":\"replenish\"}"))
-                .andExpect(status().isOk()).andReturn();
-        caseRef=mapper.readTree(r.getResponse().getContentAsString()).get("caseRef").asString();
+        caseRef=createCase("replenish");
     }
     @Test
     void humanCalculatesSharedBomMoqAndVersionsWithoutWritingErp() throws Exception {
@@ -129,7 +134,123 @@ class HumanPlanningIntegrationTest {
                 .contentType("application/json").content(mapper.writeValueAsString(finish))).andExpect(status().isOk());
         assertThat(jdbc.sql("SELECT status::text FROM work_items WHERE work_item_ref='WI-SUPPLY'").query(String.class).single()).isEqualTo("DONE");
     }
-
+    @Test
+    void concurrentRetriesOfOneRequestAllReturnTheStoredPlan() throws Exception {
+        var replies=burst(8,i->"same-request");
+        assertThat(replies).extracting(Reply::status).containsOnly(200);
+        assertThat(replies).extracting(Reply::body).containsOnly(replies.getFirst().body());
+        assertThat(replies.getFirst().body().path("result").path("totalAmount").decimalValue()).isEqualByComparingTo("16500");
+        assertThat(jdbc.sql("SELECT count(*) FROM replenishment_plans").query(Long.class).single()).isEqualTo(1);
+    }
+    @Test
+    void concurrentNewRequestsEachStoreTheNextVersion() throws Exception {
+        var replies=burst(6,i->"request-"+i);
+        assertThat(replies).extracting(Reply::status).containsOnly(200);
+        assertThat(replies).extracting(reply->reply.body().path("version").asInt()).containsExactlyInAnyOrder(1,2,3,4,5,6);
+        assertThat(replies).allSatisfy(reply->assertThat(reply.body().path("result").path("totalAmount").decimalValue())
+                .isEqualByComparingTo("16500"));
+    }
+    @Test
+    void calculationWaitingOnPlanningDataChangeUsesTheCommittedChange() throws Exception {
+        try(var pool=Executors.newSingleThreadExecutor(); var writer=dataSource.getConnection()) {
+            writer.setAutoCommit(false);
+            writer.createStatement().executeUpdate(DOUBLE_SUPPLIER_PRICES);
+            var plan=pool.submit(()->calculate("MANAGER","after-change",200));
+            awaitBlockedBy(writer);
+            writer.commit();
+            assertThat(plan.get().path("result").path("totalAmount").decimalValue()).isEqualByComparingTo("33000");
+        }
+    }
+    @Test
+    void planningDataChangeCannotCommitWhileCalculationRuns() throws Exception {
+        try(var pool=Executors.newSingleThreadExecutor(); var caseEditor=dataSource.getConnection()) {
+            // Another Case writer pauses the calculation after it has started reading planning data.
+            caseEditor.setAutoCommit(false);
+            var lockCase=caseEditor.prepareStatement("SELECT case_id FROM cases WHERE case_ref=? FOR UPDATE");
+            lockCase.setString(1,caseRef);
+            lockCase.execute();
+            var plan=pool.submit(()->calculate("MANAGER","before-change",200));
+            awaitBlockedBy(caseEditor);
+            try(var writer=dataSource.getConnection()) {
+                writer.setAutoCommit(false);
+                writer.createStatement().execute("SET LOCAL lock_timeout='500ms'");
+                assertThatThrownBy(()->writer.createStatement().executeUpdate(DOUBLE_SUPPLIER_PRICES))
+                        .isInstanceOf(SQLException.class);
+                writer.rollback();
+            }
+            caseEditor.rollback();
+            assertThat(plan.get().path("result").path("totalAmount").decimalValue()).isEqualByComparingTo("16500");
+        }
+        jdbc.sql(DOUBLE_SUPPLIER_PRICES).update();
+        assertThat(calculate("MANAGER","after-change",200).path("result").path("totalAmount").decimalValue())
+                .isEqualByComparingTo("33000");
+    }
+    @Test
+    void rejectedCalculationDoesNotBindCaseToRequestedWarehouse() throws Exception {
+        long unconfigured=jdbc.sql("INSERT INTO warehouses(name,type) VALUES ('정책 없는 창고','AMBIENT') RETURNING warehouse_id")
+                .query(Long.class).single();
+        var wrongWarehouse=Map.<String,Object>of("warehouseId",unconfigured,"productIds",products);
+        var rejected=request(caseRef,"MANAGER","wrong-warehouse",wrongWarehouse);
+        assertThat(rejected.status()).isEqualTo(409);
+        assertThat(request(caseRef,"MANAGER","wrong-warehouse",wrongWarehouse)).isEqualTo(rejected);
+        assertThat(openAttentions()).isEqualTo(1);
+        assertThat(request(caseRef,"MANAGER","right-warehouse",Map.of("warehouseId",warehouse,"productIds",products)).status())
+                .isEqualTo(200);
+    }
+    @Test
+    void rejectedCalculationLeavesWarehouseFreeForAnotherCase() throws Exception {
+        long dough=jdbc.sql("SELECT product_id FROM products WHERE sku='DEMO-DOUGH'").query(Long.class).single();
+        assertThat(request(caseRef,"MANAGER","semi-finished",Map.of("warehouseId",warehouse,"productIds",List.of(dough))).status())
+                .isEqualTo(409);
+        assertThat(openAttentions()).isEqualTo(1);
+        String otherCase=createCase("replenish other");
+        assertThat(request(otherCase,"MANAGER","finished",Map.of("warehouseId",warehouse,"productIds",products)).status())
+                .isEqualTo(200);
+    }
+    private static final String DOUBLE_SUPPLIER_PRICES="UPDATE supplier_material_terms SET unit_price=unit_price*2";
+    record Reply(int status,JsonNode body) {}
+    private Reply request(String ref,String role,String key,Map<String,Object> body) throws Exception {
+        var r=mvc.perform(post("/api/v1/cases/"+ref+"/plans").header("X-Mulino-Local-Role",role)
+                .header("Idempotency-Key",key).contentType("application/json")
+                .content(mapper.writeValueAsString(body))).andReturn();
+        String text=r.getResponse().getContentAsString();
+        return new Reply(r.getResponse().getStatus(),text.isEmpty()?null:mapper.readTree(text));
+    }
+    private List<Reply> burst(int size,IntFunction<String> key) throws Exception {
+        var start=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(size)) {
+            var futures=new ArrayList<Future<Reply>>();
+            for(int i=0;i<size;i++) {
+                String requestKey=key.apply(i);
+                futures.add(pool.submit(()->{start.await();
+                    return request(caseRef,"MANAGER",requestKey,Map.of("warehouseId",warehouse,"productIds",products));}));
+            }
+            start.countDown();
+            var replies=new ArrayList<Reply>();
+            for(var future:futures) replies.add(future.get());
+            return replies;
+        }
+    }
+    private void awaitBlockedBy(Connection holder) throws Exception {
+        var pidQuery=holder.createStatement().executeQuery("SELECT pg_backend_pid()");
+        pidQuery.next();
+        int pid=pidQuery.getInt(1);
+        for(int i=0;i<200;i++) {
+            if(jdbc.sql("SELECT count(*) FROM pg_stat_activity WHERE :pid = ANY(pg_blocking_pids(pid))")
+                    .param("pid",pid).query(Long.class).single()>0) return;
+            Thread.sleep(50);
+        }
+        fail("calculation did not wait for the open transaction");
+    }
+    private long openAttentions() {
+        return jdbc.sql("SELECT count(*) FROM attention_requests WHERE status='OPEN'").query(Long.class).single();
+    }
+    private String createCase(String objective) throws Exception {
+        var r=mvc.perform(post("/api/v1/cases").header("X-Mulino-Local-Role","MANAGER")
+                .contentType("application/json").content(mapper.writeValueAsString(Map.of("objective",objective))))
+                .andExpect(status().isOk()).andReturn();
+        return mapper.readTree(r.getResponse().getContentAsString()).get("caseRef").asString();
+    }
     private JsonNode calculate(String role,String key,int status) throws Exception {
         var r=mvc.perform(post("/api/v1/cases/"+caseRef+"/plans").header("X-Mulino-Local-Role",role)
                 .header("Idempotency-Key",key).contentType("application/json")
