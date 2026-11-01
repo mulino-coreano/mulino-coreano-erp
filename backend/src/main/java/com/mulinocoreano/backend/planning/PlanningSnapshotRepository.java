@@ -521,7 +521,20 @@ public class PlanningSnapshotRepository {
                                 .on(
                                         PURCHASE_ORDERS.PURCHASE_ORDER_ID.eq(
                                                 PURCHASE_ORDER_ITEMS.PURCHASE_ORDER_ID))
-                                .where(PURCHASE_ORDER_ITEMS.RAW_MATERIAL_ID.in(rawIds)));
+                                // Another warehouse's order is neither supply nor plan evidence
+                                // here; legacy orders without a warehouse remain shared supply.
+                                .where(
+                                        PURCHASE_ORDER_ITEMS
+                                                .RAW_MATERIAL_ID
+                                                .in(rawIds)
+                                                .and(
+                                                        PURCHASE_ORDERS
+                                                                .WAREHOUSE_ID
+                                                                .isNull()
+                                                                .or(
+                                                                        PURCHASE_ORDERS
+                                                                                .WAREHOUSE_ID
+                                                                                .eq(warehouse)))));
         if (items.isEmpty()) return;
         var receipts =
                 rows(
@@ -576,8 +589,6 @@ public class PlanningSnapshotRepository {
                     && due != null
                     && !due.isBefore(start)
                     && !due.isAfter(end)) {
-                if (item.get("purchase_warehouse_id") != null
-                        && id(item, "purchase_warehouse_id") != warehouse) continue;
                 supply.add(
                         new BomPlanner.StockLot(
                                 "purchase_order_items:" + itemId,

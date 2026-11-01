@@ -24,7 +24,7 @@ node --env-file=.env src/main.js
 
 실행기는 읽기 전용 root filesystem, `/work`·`/tmp` tmpfs, 일반 사용자, 모든 Linux capability 제거, `no-new-privileges`, PID·메모리·CPU 제한을 적용합니다. 유일한 mount는 `MULINO_AUTH_VOLUME` named volume입니다. 사용자 홈·저장소·Docker socket을 mount하지 않습니다. 전용 볼륨에는 해당 런타임의 로그인을 준비합니다. `--strict-config`, `--ignore-user-config`, `--ignore-rules`, `mcp_servers={}`와 고정 역할 지침을 적용합니다. 중첩 bwrap의 namespace 권한 오류를 실제 확인하여 Docker를 격리 경계로 삼고 내부 Codex는 `--sandbox=danger-full-access`로 실행합니다. 호스트에서 이 설정을 직접 실행하거나 Docker를 privileged로 바꾸는 경로는 없습니다. Codex는 `codex exec --ephemeral --json --output-schema ... -`로, Claude Code는 `claude -p --output-format json --json-schema ... --permission-mode dontAsk`로 실행합니다.
 
-Docker CLI에는 `MULINO_TOKEN`을 환경변수 이름으로 전달하므로 capability가 명령행 인수에 나타나지 않습니다. 이미지의 Linux `mulino`는 기존 CLI 계약대로 `MULINO_API_URL`과 `MULINO_TOKEN`을 읽습니다. 호스트 설정 `MULINO_AGENT_API_URL`은 이 컨테이너의 `MULINO_API_URL`로 매핑되며, 나머지 전달 환경변수는 필요한 HOME/CODEX_HOME 설정뿐입니다. 호스트 서비스 secret·worker lease token은 전달하지 않습니다. Docker client 종료만으로 컨테이너 종료를 가정하지 않고, 취소 시 `docker rm --force`도 별도로 호출합니다. Docker 데몬 접근 장애까지 포함한 실제 컨테이너 종료 검증은 이미지 준비 후 필요합니다.
+Docker CLI에는 `MULINO_TOKEN`을 환경변수 이름으로 전달하므로 capability가 명령행 인수에 나타나지 않습니다. 이미지의 Linux `mulino`는 기존 CLI 계약대로 `MULINO_API_URL`과 `MULINO_TOKEN`을 읽습니다. 호스트 설정 `MULINO_AGENT_API_URL`은 이 컨테이너의 `MULINO_API_URL`로 매핑되며, 나머지 전달 환경변수는 필요한 HOME/CODEX_HOME 설정뿐입니다. 호스트 서비스 secret·worker lease token·백엔드의 `MULINO_LOCAL_HUMAN_SECRET`은 전달하지 않습니다. 컨테이너도 백엔드에 닿으므로 인간 secret을 가지면 로컬 MANAGER로 행동할 수 있습니다. 이 값은 실행기 `.env`에 두지 않습니다. Docker client 종료만으로 컨테이너 종료를 가정하지 않고, 취소 시 `docker rm --force`도 별도로 호출합니다. Docker 데몬 접근 장애까지 포함한 실제 컨테이너 종료 검증은 이미지 준비 후 필요합니다.
 
 ## 제어 프로토콜
 
@@ -36,7 +36,7 @@ Docker CLI에는 `MULINO_TOKEN`을 환경변수 이름으로 전달하므로 cap
 
 백엔드가 `409 COMPLETION_NOT_VERIFIED` 또는 `400 INVALID_RESULT`를 반환하면 실행기는 heartbeat로 lease를 재확인합니다. 아직 RUNNING이면 새 논리 요청 키로 FAILED 종료를 한 번 시도하여 서버가 실패와 Attention을 기록할 수 있게 합니다. 이 실패 종료의 네트워크 재시도는 같은 새 키·본문을 유지합니다. 반복된 검증 거부에는 다시 실패 종료를 생성하지 않고 `FINISH_REJECTED`로 끝냅니다. 재확인 중 terminal receipt를 받으면 그 결과를 유지하며, `STALE_LEASE`나 권한 상실이면 추가 finish를 보내지 않습니다. 오류 본문의 `.error`에서 허용한 코드만 사용하고 자유 형식의 `.message`나 다른 별칭은 해석하거나 로그에 노출하지 않습니다.
 
-출력은 전체 1 MiB, JSONL 한 줄 64 KiB, 맥락은 256 KiB로 제한합니다. ERP 소수·지수·큰 정수는 원문 문자열로 보존합니다. stdout/stderr 원문을 로그에 출력하지 않으며 최종 결과에는 알려진 자격증명을 가립니다. 로그에는 실행 시작·종료와 오류 유형만 남습니다.
+출력은 stdout·stderr 합계 1 MiB, 맥락은 256 KiB로 제한합니다. JSONL 한 줄에는 별도 상한을 두지 않습니다. `codex exec --json`은 명령의 전체 출력(`aggregated_output`)을 한 줄의 `item.completed`에 담고 계획 조회 하나가 64 KiB를 넘기 때문입니다. 한 줄도 전체 1 MiB 상한에 포함되며 초과하면 `MODEL_OUTPUT_TOO_LARGE`로 실패합니다. ERP 소수·지수·큰 정수는 원문 문자열로 보존합니다. stdout/stderr 원문을 로그에 출력하지 않으며 최종 결과에는 알려진 자격증명을 가립니다. 로그에는 실행 시작·종료와 오류 유형만 남습니다.
 
 ## 테스트와 모듈 API
 

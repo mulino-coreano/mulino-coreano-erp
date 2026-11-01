@@ -34,8 +34,10 @@ export class ExecutionError extends Error {
 
 /** Injectable command builder for real subprocess tests. Production uses DockerExecutor. */
 export class ProcessExecutor {
-  constructor({ invocation, maxOutputBytes = 1_048_576, maxLineBytes = 65536 }) {
-    Object.assign(this, { invocation, maxOutputBytes, maxLineBytes });
+  // No separate per-line cap: codex exec --json carries a command's whole aggregated_output on one
+  // item.completed line, so a single JSONL line is bounded only by the total output cap.
+  constructor({ invocation, maxOutputBytes = 1_048_576 }) {
+    Object.assign(this, { invocation, maxOutputBytes });
   }
 
   start(claim, { secrets = [] } = {}) {
@@ -68,7 +70,6 @@ export class ProcessExecutor {
     const fail = code => { failure ??= new ExecutionError(code); void cancel(); };
     const line = text => {
       if (!text.trim()) return;
-      if (Buffer.byteLength(text) > this.maxLineBytes) { fail('MODEL_OUTPUT_TOO_LARGE'); return; }
       try {
         const event = JSON.parse(text);
         if (!event || typeof event !== 'object' || typeof event.type !== 'string') throw new Error();
@@ -110,7 +111,6 @@ export class ProcessExecutor {
       while ((offset = pending.indexOf('\n')) >= 0) {
         line(pending.slice(0, offset)); pending = pending.slice(offset + 1);
       }
-      if (Buffer.byteLength(pending) > this.maxLineBytes) fail('MODEL_OUTPUT_TOO_LARGE');
     });
     child.stderr.on('data', count); // Count and discard diagnostics; never forward child logs.
     child.stdin.on('error', () => {}); // A child may exit before consuming all input.

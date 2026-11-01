@@ -17,9 +17,12 @@ import org.springframework.test.context.DynamicPropertySource;
         "spring.flyway.schemas=scenario", "spring.flyway.clean-disabled=false",
         "spring.flyway.init-sqls=CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public",
         "spring.datasource.hikari.schema=scenario", "spring.main.allow-bean-definition-overriding=true",
-        "mulino.local-auth.service-secret=" + ScenarioContext.SERVICE_SECRET})
+        "mulino.local-auth.service-secret=" + ScenarioContext.SERVICE_SECRET,
+        "mulino.local-auth.human-secret=" + ScenarioContext.HUMAN_SECRET})
 public class ScenarioContext {
     public static final String SERVICE_SECRET = "scenario-service-secret";
+    /** 호스트 인간 MCP만 받는다. 실행기·모델 컨테이너 환경에는 넣지 않는다. */
+    public static final String HUMAN_SECRET = "scenario-human-secret";
     public static final Instant BUSINESS_NOW = Instant.parse("2026-09-05T00:00:00Z");
 
     static boolean live() { return "live".equals(System.getProperty("mulino.scenario.agent")); }

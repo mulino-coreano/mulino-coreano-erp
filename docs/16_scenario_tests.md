@@ -40,8 +40,11 @@ SIT/UAT 서버는 local profile이며 planningClock을
 `2026-09-05T00:00:00Z`, Asia/Seoul로 고정한다. 실제 벽시계에 따른
 lease는 고정하지 않는다. fixture 적재는 테스트 코드에서만 수행한다.
 
-인간 행동은 실제 역할별 stdio MCP로 전달한다. 보충 접수는
-`create_case`의 `replenishment`와 `requestKey`를 사용한다.
+인간 행동은 실제 역할별 stdio MCP로 전달한다. 테스트 서버는
+`mulino.local-auth.human-secret`을 설정하고, 사람 driver
+(`HumanChannel` → `human.mjs`)는 같은 값을 `MULINO_LOCAL_HUMAN_SECRET`으로
+MCP 자식에만 넘긴다. 실행기와 모델 컨테이너에는 이 값을 넣지 않는다.
+보충 접수는 `create_case`의 `replenishment`와 `requestKey`를 사용한다.
 승인 ID와 일반 질문은 `list_attention`에서 현재 Case의 기록을
 찾고 `get_approval` 또는 `answer_attention`으로 처리한다.
 일반 `get_case` 응답에 없는 승인 collection을 가정하지 않는다.

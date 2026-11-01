@@ -256,6 +256,69 @@ class AttentionAnswerIntegrationTest {
     }
 
     @Test
+    void caseLevelAnswerGivenLastResumesWorkItsOwnAnswerCouldNotResume() {
+        long caseAttention =
+                jdbc.sql(
+                                "INSERT INTO"
+                                    + " attention_requests(case_id,work_item_id,reason_type,title,question)"
+                                    + " VALUES(:case,NULL,'JUDGMENT_REQUIRED','Policy','Which"
+                                    + " policy?') RETURNING attention_request_id")
+                        .param("case", caseId)
+                        .query(Long.class)
+                        .single();
+        long stillAsking =
+                jdbc.sql(
+                                "INSERT INTO"
+                                    + " work_items(work_item_ref,case_id,title,status,assigned_agent_id)"
+                                    + " SELECT 'WI-STILL-ASKING',:case,'context','BLOCKED',agent_id"
+                                    + " FROM agents WHERE agent_key='ORCHESTRATOR' RETURNING"
+                                    + " work_item_id")
+                        .param("case", caseId)
+                        .query(Long.class)
+                        .single();
+        jdbc.sql(
+                        "INSERT INTO"
+                            + " attention_requests(case_id,work_item_id,reason_type,title,question)"
+                            + " VALUES(:case,:work,'MISSING_HUMAN_CONTEXT','Context','Which"
+                            + " lot?')")
+                .param("case", caseId)
+                .param("work", stillAsking)
+                .update();
+
+        answer("work-first");
+        assertThat(workStatus(work)).isEqualTo("BLOCKED");
+        assertThat(count("runs")).isZero();
+
+        service.answer(
+                caseAttention,
+                new AttentionAnswerRequest("Keep policy", 1, AttentionAnswerRequest.Scope.THIS_CASE),
+                actor(),
+                "case-last");
+
+        assertThat(workStatus(work)).isEqualTo("READY");
+        assertThat(
+                        jdbc.sql(
+                                        "SELECT r.status::text FROM runs r JOIN events e ON"
+                                            + " e.event_id=r.trigger_event_id WHERE"
+                                            + " r.work_item_id=:work AND"
+                                            + " e.payload->>'attentionRequestId'=:attention")
+                                .param("work", work)
+                                .param("attention", Long.toString(caseAttention))
+                                .query(String.class)
+                                .list())
+                .containsExactly("QUEUED");
+        assertThat(workStatus(stillAsking)).isEqualTo("BLOCKED");
+        assertThat(count("runs")).isEqualTo(1);
+    }
+
+    String workStatus(long id) {
+        return jdbc.sql("SELECT status::text FROM work_items WHERE work_item_id=:id")
+                .param("id", id)
+                .query(String.class)
+                .single();
+    }
+
+    @Test
     void generalContextAnswerCannotBecomeAnApprovalThroughEventIngestion() {
         jdbc.sql("UPDATE work_items SET status='WAITING' WHERE work_item_id=:id")
                 .param("id", work).update();

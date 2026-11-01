@@ -29,9 +29,15 @@ npm start   # Mulino Coreano backend (localhost:8080) 기본 상대
 ## 로컬 인간 역할과 결정 (#47·#48·#52)
 
 백엔드는 `SPRING_PROFILES_ACTIVE=local`로 기동한다. 인간 도구는
-`MULINO_LOCAL_ROLE` (기본 OPERATOR)을 `X-Mulino-Local-Role`로 보낸다.
-service/capability/Authorization 헤더와 internal/agent API는 쓰지 않는다.
-역할 헤더는 로컬 PoC 전용이며 외부 인증을 대체하지 않는다.
+`MULINO_LOCAL_ROLE` (기본 OPERATOR)을 `X-Mulino-Local-Role`로,
+`MULINO_LOCAL_HUMAN_SECRET`을 `X-Mulino-Local-Human`으로 보낸다.
+이 secret은 백엔드의 `MULINO_LOCAL_HUMAN_SECRET`과 같은 값이어야 하며,
+없거나 틀리면 백엔드가 역할 헤더를 401로 거부한다. 모델 컨테이너도
+같은 백엔드에 닿으므로 이 값은 호스트의 인간 클라이언트에만 두고
+runner `.env`에는 두지 않는다. `claude_desktop_config.example.json`의
+`env`에 자리표시자가 있다. service/capability/Authorization 헤더와
+internal/agent API는 쓰지 않는다. 역할 헤더는 로컬 PoC 전용이며 외부
+인증을 대체하지 않는다.
 
 | 도구 | 입력과 행동 |
 |---|---|
@@ -55,6 +61,7 @@ service/capability/Authorization 헤더와 internal/agent API는 쓰지 않는�
 `node scripts/local-human-flow.mjs`는 이미 준비된 local 구매 제안을
 실제 HTTP API로 승인하고 같은 발주 묶음과 답변을 재조회한다.
 `MULINO_API_BASE`, `MULINO_TEST_APPROVAL_ID`, `MULINO_TEST_PLAN_REF`,
-`MULINO_TEST_CASE_REF`, `MULINO_TEST_ATTENTION_ID`를 지정해야 한다.
+`MULINO_TEST_CASE_REF`, `MULINO_TEST_ATTENTION_ID`와 백엔드의
+`MULINO_LOCAL_HUMAN_SECRET`을 지정해야 한다.
 이 script는 실제 ERP 발주를 생성하므로 폐기용 fixture DB에서만 실행한다.
 worker secret·capability를 받지 않으며 모델 실행·UAT를 뜻하지 않는다.

@@ -24,6 +24,7 @@ public final class HumanChannel {
             var pb = new ProcessBuilder("node", ROOT.resolve("mcp-server/scripts/scenario/human.mjs").toString(),
                     apiBase, role, tool, mapper.writeValueAsString(args)).redirectErrorStream(false);
             pb.environment().keySet().retainAll(java.util.Set.of("PATH", "HOME"));
+            pb.environment().put("MULINO_LOCAL_HUMAN_SECRET", ScenarioContext.HUMAN_SECRET);
             Process p = pb.start();
             // human.mjs's StdioClientTransport inherits stderr from the spawned mcp-server child
             // (its "mulino-erp stdio MCP server running" log and any diagnostics). Left unread,

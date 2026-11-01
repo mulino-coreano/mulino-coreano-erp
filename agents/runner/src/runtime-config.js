@@ -31,7 +31,8 @@ export function codexConfiguration(agentKey) {
 /** Claude Code headless flags: only the mulino CLI and file reads, no MCP, no user/project settings. */
 export function claudeArguments(agentKey, resultSchema) {
   return [
-    // One final result object only: stream-json would echo whole tool outputs (plans are >64 KiB per line).
+    // One final result object only: stream-json would echo every whole tool output (one plan alone
+    // exceeds 64 KiB) into the runner's 1 MiB total output cap.
     '-p', '--output-format', 'json', '--no-session-persistence',
     '--strict-mcp-config', '--setting-sources', '',
     '--permission-mode', 'dontAsk', '--allowedTools', 'Bash(mulino:*)', 'Read',

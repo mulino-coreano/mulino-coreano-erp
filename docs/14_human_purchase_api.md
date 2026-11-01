@@ -19,6 +19,13 @@ metadata와 함께 기록한다. 답변·판단·참여자·감사 Event·재개
 한 transaction에 속한다. 재개 snapshot에도 판단 metadata가 남는다.
 같은 인간의 같은 key와 입력은 원본 결과를 반환한다.
 
+Work Item이 없는 Case 수준 Attention은 그 Case의 모든 Work Item
+재개를 막는다. 그래서 Case 수준 답변은 Case의 BLOCKED Work Item마다
+자기 Attention 답변과 같은 재개 검사를 다시 한다. 남은 OPEN Attention·
+대기 조건·진행 중 Run이 없으면 그 답변 Event로 Run을 예약한다.
+응답 `resume.status`는 기존처럼 `NO_WORK_ITEM`이고, Work Item별
+재개 결과는 `resume.workItems`에 담는다.
+
 모든 Attention UPDATE는 version을 증가시킨다. stale version,
 EXPIRED·CANCELLED·ANSWERED 요청, terminal Case/Work Item,
 다른 Case의 Work Item, 무권한·비활성 인간은 답변할 수 없다.
@@ -46,7 +53,10 @@ hash 방식은 유지한다.
 
 APPROVE는 현재 계획·현재 source를 잠금 아래 재계산한다. 가격·수량·
 공급처·납기·공급·BOM·정책 또는 계획 version이 달라지면 제안을
-EXPIRED로 남기고 409를 반환한다. 승인 성공은 공급처별 발주 묶음,
+EXPIRED로 남기고 409를 반환한다. 계획 source의 발주는 계획 창고의
+발주와 창고가 없는 기존 발주뿐이다. 다른 창고의 발주 승인은 이
+창고의 제안을 만료시키지 않고, 이 Case 에이전트의 발주 조회 범위에도
+들어가지 않는다. 승인 성공은 공급처별 발주 묶음,
 최종 Governance Decision, 불변 audit, application 검증 receipt와
 구매 Work Item의 DONE·후속 WAITING과 승인·의존 해소 Event를 함께 기록한다. 일부 실패는 모두
 rollback한다. 동일 승인 재전송은 이미 만든 같은 발주 묶음을 반환한다.
@@ -81,7 +91,9 @@ ACT intake의 초기 Run 예약·재보충 scope 생성과 실제 runtime 연결
 MCP는 `whoami`, `get_case`, `get_plan`, `get_approval`,
 `decide_purchase`, `answer_attention`, `get_purchase_order`를 제공한다.
 인간 도구는 `MULINO_LOCAL_ROLE` (기본 OPERATOR)을
-`X-Mulino-Local-Role`로만 전달한다. service secret, run capability,
+`X-Mulino-Local-Role`로, `MULINO_LOCAL_HUMAN_SECRET`을
+`X-Mulino-Local-Human`으로만 전달한다. 백엔드는 human secret이 없거나
+틀린 역할 헤더를 401로 거부한다. service secret, run capability,
 `Authorization`, `/internal/runs`, `/agent/**`를 쓰지 않는다.
 결정 도구는 read-only가 아니며 version/hash와 인간의 선택이 필요하다.
 requestKey를 생략하면 UUID를 생성하고 오류에도 반환한다.

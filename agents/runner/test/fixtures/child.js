@@ -33,5 +33,12 @@ else if (mode === 'codex-usage') {
   send({ outcome: 'DONE', summary: 'Finished', resultRef: 'PLAN-1' });
   process.stdout.write(JSON.stringify({type:'turn.completed',usage:{input_tokens:41,cached_input_tokens:7,output_tokens:13}})+'\n');
 }
+// codex exec --json puts a command's whole aggregated_output on one item.completed line.
+else if (mode === 'codex-large-tool-output') {
+  const plan = JSON.stringify({ ref: 'PLAN-DEMO', snapshot: 'x'.repeat(100_000) });
+  process.stdout.write(JSON.stringify({ type: 'item.completed', item: { type: 'command_execution',
+    command: 'mulino plan show PLAN-DEMO', aggregated_output: plan, exit_code: 0 } }) + '\n');
+  send({ outcome: 'DONE', summary: 'Plan verified', resultRef: 'PLAN-DEMO' });
+}
 else if (mode === 'claude-error') process.stdout.write(JSON.stringify({ type: 'result', subtype: 'error_max_turns', is_error: true }) + '\n');
 else send({ outcome: 'DONE', summary: 'Finished', resultRef: 'PLAN-1' });
