@@ -13,6 +13,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Repository
 public class AttentionAnswerRepository {
@@ -57,6 +58,17 @@ public class AttentionAnswerRepository {
                         .where(WORK_ITEMS.WORK_ITEM_ID.eq(id))
                         .forUpdate()
                         .fetchSingle();
+    }
+
+    /** A Case-level Attention blocks every Work Item of its Case; lock them in id order. */
+    public List<Record> lockBlockedWork(long caseId) {
+        return List.copyOf(
+                dsl.selectFrom(WORK_ITEMS)
+                        .where(WORK_ITEMS.CASE_ID.eq(caseId))
+                        .and(WORK_ITEMS.STATUS.eq(WorkItemStatus.BLOCKED))
+                        .orderBy(WORK_ITEMS.WORK_ITEM_ID)
+                        .forUpdate()
+                        .fetch());
     }
 
     public Record lockCase(long id) {

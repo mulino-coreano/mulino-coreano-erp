@@ -19,6 +19,13 @@ metadata와 함께 기록한다. 답변·판단·참여자·감사 Event·재개
 한 transaction에 속한다. 재개 snapshot에도 판단 metadata가 남는다.
 같은 인간의 같은 key와 입력은 원본 결과를 반환한다.
 
+Work Item이 없는 Case 수준 Attention은 그 Case의 모든 Work Item
+재개를 막는다. 그래서 Case 수준 답변은 Case의 BLOCKED Work Item마다
+자기 Attention 답변과 같은 재개 검사를 다시 한다. 남은 OPEN Attention·
+대기 조건·진행 중 Run이 없으면 그 답변 Event로 Run을 예약한다.
+응답 `resume.status`는 기존처럼 `NO_WORK_ITEM`이고, Work Item별
+재개 결과는 `resume.workItems`에 담는다.
+
 모든 Attention UPDATE는 version을 증가시킨다. stale version,
 EXPIRED·CANCELLED·ANSWERED 요청, terminal Case/Work Item,
 다른 Case의 Work Item, 무권한·비활성 인간은 답변할 수 없다.

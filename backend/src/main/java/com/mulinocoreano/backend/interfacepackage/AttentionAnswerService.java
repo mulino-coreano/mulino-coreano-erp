@@ -70,6 +70,11 @@ public class AttentionAnswerService {
     private Object apply(long id, AttentionAnswerRequest request, long user) {
         var initial = repository.attention(id, false);
         var work = repository.lockWork(initial.get(ATTENTION_REQUESTS.WORK_ITEM_ID));
+        // Same lock order as a Work-Item-level answer: Work Items before their Case.
+        var caseWork =
+                work == null
+                        ? repository.lockBlockedWork(initial.get(ATTENTION_REQUESTS.CASE_ID))
+                        : List.<Record>of();
         var caseRow = repository.lockCase(initial.get(ATTENTION_REQUESTS.CASE_ID));
         var a = repository.attention(id, true);
         if (!Objects.equals(
@@ -130,12 +135,32 @@ public class AttentionAnswerService {
         result.put(
                 "resolvedAt",
                 resolved.get(ATTENTION_REQUESTS.RESOLVED_AT).toInstant(ZoneOffset.UTC));
-        result.put("resume", resume(a, work, caseRow.get(CASES.CASE_REF), event));
+        result.put(
+                "resume",
+                work == null
+                        ? resumeCase(a, caseWork, caseRow.get(CASES.CASE_REF), event)
+                        : resume(a, work, caseRow.get(CASES.CASE_REF), event));
         return result;
     }
 
-    private Object resume(Record a, Record work, String caseRef, long event) {
-        if (work == null) return Map.of("status", "NO_WORK_ITEM");
+    /**
+     * A Case-level Attention blocks every Work Item in its Case, so answering it gives each
+     * BLOCKED Work Item the same resume checks its own answer would. NO_WORK_ITEM still names the
+     * answered Attention's own target; workItems carries each Work Item's resume outcome.
+     */
+    private Map<String, Object> resumeCase(
+            Record a, List<Record> blocked, String caseRef, long event) {
+        var workItems = new ArrayList<Map<String, Object>>();
+        for (var work : blocked) {
+            var outcome = new LinkedHashMap<String, Object>();
+            outcome.put("workItemRef", work.get(WORK_ITEMS.WORK_ITEM_REF));
+            outcome.putAll(resume(a, work, caseRef, event));
+            workItems.add(outcome);
+        }
+        return Map.of("status", "NO_WORK_ITEM", "workItems", workItems);
+    }
+
+    private Map<String, Object> resume(Record a, Record work, String caseRef, long event) {
         if (repository.isManagedWork(work.get(WORK_ITEMS.WORK_ITEM_ID)))
             return Map.of("status", "SERVER_MANAGED");
         if (work.get(WORK_ITEMS.STATUS) != WorkItemStatus.BLOCKED)
