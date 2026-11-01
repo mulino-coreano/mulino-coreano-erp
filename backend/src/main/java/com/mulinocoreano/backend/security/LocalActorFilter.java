@@ -29,7 +29,12 @@ public class LocalActorFilter extends OncePerRequestFilter {
         }
         HumanActor actor;
         try {
-            actor = directory.humanForRole(role);
+            var stored = directory.humanForRole(role);
+            if (stored.isEmpty()) {
+                response.setStatus(403);
+                return;
+            }
+            actor = stored.get();
         } catch (IllegalArgumentException invalidRole) {
             response.setStatus(400);
             return;
