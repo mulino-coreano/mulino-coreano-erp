@@ -3,6 +3,7 @@
 > 본 문서는 "챗봇이 붙은 ERP"가 아니라, **인간과 AI 에이전트가 동일한 Case·Work Item·증거·결정·ERP 상태 위에서 여러 표면(채널)으로 상호작용하는 지속성 있는 비즈니스 조직**을 정의한다.
 > 스키마 구현: `database/ddl/07_case_management.sql` ~ `09_case_fks.sql`, `database/seed/interface.sql` (Flyway V8~V17)
 > 업무 흐름과의 관계: `docs/02_flow.md` (SSOT), 스키마 상세: `docs/03_erd.md`
+> 테이블별 책임·수명·FK 관계 및 구현 경계: [Case 테이블 계약](10_case_table_contract.md)
 
 ---
 
@@ -262,6 +263,12 @@ Event 요청은 알 수 없는 Case/Work Item, 서로 다른 Case의 조합, 해
 | MONITOR 운영 통제면 | 상태 집계·열린 Attention·기한/의존 대기 재판정 | 실제 대시보드, 능동 감시·알림 정책 |
 
 `RUNNING`은 실행 예약 레코드다. 이 PR만으로 LLM이 호출되거나 업무가 자율 종결되지는 않는다. 외부 executor가 Run을 소비하고 종료할 때까지 동일 Work Item의 추가 Run은 차단된다. Attention 목록을 읽는 행위도 인간의 답변이나 승인을 기록하지 않는다.
+
+증거·Claim의 생성과 검증 이력은 [#44](https://github.com/mulino-coreano/mulino-coreano-erp/issues/44),
+인간 답변·업무 결정 기록의 연결은 [#45](https://github.com/mulino-coreano/mulino-coreano-erp/issues/45)에서 추적한다.
+테이블이 존재하거나 컨텍스트에서 조회된다는 사실은 해당 쓰기 흐름의 완료를 뜻하지 않는다.
+ERP 쓰기 게이트는 기존 [#33](https://github.com/mulino-coreano/mulino-coreano-erp/issues/33),
+실제 다중 채널 승인 UX 검증은 [#35](https://github.com/mulino-coreano/mulino-coreano-erp/issues/35)의 범위다.
 
 ### 로컬 실행
 
