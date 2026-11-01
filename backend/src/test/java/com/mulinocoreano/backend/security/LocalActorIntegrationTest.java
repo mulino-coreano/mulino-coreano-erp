@@ -115,6 +115,35 @@ class LocalActorIntegrationTest {
     }
 
     @Test
+    void deactivatedLocalHumanStaysInactiveAndCannotOpenCases() throws Exception {
+        mvc.perform(get("/api/v1/me").header("X-Mulino-Local-Role", "MANAGER")).andExpect(status().isOk());
+        jdbc.sql("UPDATE users SET is_active=false WHERE email='local-manager@mulino.local'").update();
+        long before = count();
+        mvc.perform(get("/api/v1/me").header("X-Mulino-Local-Role", "MANAGER")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/cases").header("X-Mulino-Local-Role", "MANAGER")
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON).content(body("deactivated")))
+                .andExpect(status().isForbidden());
+        assertThat(count()).isEqualTo(before);
+        assertThat(jdbc.sql("SELECT is_active FROM users WHERE email='local-manager@mulino.local'")
+                .query(Boolean.class).single()).isFalse();
+    }
+
+    @Test
+    void demotedLocalHumanKeepsStoredRoleAndCannotOpenCases() throws Exception {
+        mvc.perform(get("/api/v1/me").header("X-Mulino-Local-Role", "MANAGER")).andExpect(status().isOk());
+        jdbc.sql("UPDATE users SET role='VIEWER' WHERE email='local-manager@mulino.local'").update();
+        long before = count();
+        mvc.perform(get("/api/v1/me").header("X-Mulino-Local-Role", "MANAGER")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/cases").header("X-Mulino-Local-Role", "MANAGER")
+                .contentType(MediaType.APPLICATION_JSON).content(body("demoted")))
+                .andExpect(status().isForbidden());
+        assertThat(count()).isEqualTo(before);
+        assertThat(jdbc.sql("SELECT role::text FROM users WHERE email='local-manager@mulino.local'")
+                .query(String.class).single()).isEqualTo("VIEWER");
+    }
+
+    @Test
     void invalidCredentialsCannotFallBackToRole() throws Exception {
         long before = count();
         mvc.perform(post("/api/v1/cases").header("X-Mulino-Local-Role","MANAGER")
