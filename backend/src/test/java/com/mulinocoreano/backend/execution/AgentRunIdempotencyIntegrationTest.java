@@ -34,8 +34,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 목표 4·5: 재개·재시도된 Run은 같은 Work Item의 이전 Run이 남긴 멱등성 영수증을 받지 않는다.
- * 같은 키를 다시 보내도 현재 ERP 사실로 계획을 계산하고, 전이는 호출한 Run을 종료한다.
+ * 목표 4·5: 에이전트 멱등성 영수증은 한 실행(Run과 그 lease 만료 재시도)에만 속한다. 재시도는
+ * 응답을 잃은 같은 시도이므로 영수증을 다시 받고, WAITING 뒤 재개된 Run은 같은 키를 보내도
+ * 현재 ERP 사실로 계획을 계산하며 전이는 호출한 Run을 종료한다.
  */
 @SpringBootTest(
         properties = {
@@ -131,40 +132,47 @@ class AgentRunIdempotencyIntegrationTest {
     }
 
     @Test
-    void retriedRunReusingPlanKeyAfterNewerCasePlanNeedsAttentionCannotCompleteOnStaleReadyPlan()
+    void leaseExpiryRetryReusingPlanKeyReplaysTheCrashedAttemptsPlanAndCompletes()
             throws Exception {
         queue("SUPPLY_CHAIN", "WI-SUPPLY");
         JsonNode first = claim("worker-1");
         JsonNode firstPlan = readJson(plan(first, "plan"));
         assertThat(firstPlan.path("result").path("status").asString()).isEqualTo("READY");
+        // The worker dies before its response is used; the lease expires and the Run is retried.
         expireLease(first.path("runRef").asString());
 
-        // Order history is now too short, so the human's newer Case plan needs attention.
-        jdbc.sql("UPDATE planning_policies SET history_start_date='2026-08-25'").update();
-        var human =
-                mvc.perform(
-                                post("/api/v1/cases/" + caseRef + "/plans")
-                                        .with(LocalHumanRequest.as("MANAGER"))
-                                        .header("Idempotency-Key", "human")
-                                        .contentType(MediaType.APPLICATION_JSON)
-                                        .content(planBody()))
-                        .andReturn()
-                        .getResponse();
-        assertThat(human.getStatus()).isEqualTo(200);
-        assertThat(readJson(human).path("result").path("status").asString())
-                .isEqualTo("NEEDS_ATTENTION");
-
         JsonNode retry = claim("worker-2");
-        assertThat(retry.path("runRef").asString())
-                .isNotEqualTo(first.path("runRef").asString());
-        JsonNode retryPlan = readJson(plan(retry, "plan"));
-        assertThat(retryPlan.path("ref").asString())
+        assertThat(retryOrigin(retry.path("runRef").asString()))
+                .isEqualTo(first.path("runRef").asString());
+        assertThat(readJson(plan(retry, "plan"))).isEqualTo(firstPlan);
+        assertThat(plans()).isEqualTo(1);
+        assertThat(planningAttempts("WI-SUPPLY")).isEqualTo(1);
+        assertThat(finish(retry, "worker-2", "DONE", null)).isEqualTo(200);
+        assertThat(workStatus("WI-SUPPLY")).isEqualTo("DONE");
+    }
+
+    @Test
+    void leaseExpiryRetryOfAResumedRunReplaysTheResumedRunsPlanNotTheOriginal()
+            throws Exception {
+        queue("SUPPLY_CHAIN", "WI-SUPPLY");
+        JsonNode first = claim("worker-1");
+        JsonNode firstPlan = readJson(plan(first, "plan"));
+        assertThat(finish(first, "worker-1", "WAITING", List.of(scheduledWait()))).isEqualTo(200);
+
+        makeScheduledWaitsDue();
+        JsonNode resumed = claim("worker-2");
+        assertThat(retryOrigin(resumed.path("runRef").asString())).isNull();
+        JsonNode resumedPlan = readJson(plan(resumed, "plan"));
+        assertThat(resumedPlan.path("ref").asString())
                 .isNotEqualTo(firstPlan.path("ref").asString());
-        assertThat(retryPlan.path("version").asInt()).isEqualTo(3);
-        assertThat(retryPlan.path("result").path("status").asString())
-                .isEqualTo("NEEDS_ATTENTION");
-        assertThat(finish(retry, "worker-2", "DONE", null)).isEqualTo(409);
-        assertThat(workStatus("WI-SUPPLY")).isEqualTo("IN_PROGRESS");
+        expireLease(resumed.path("runRef").asString());
+
+        JsonNode retry = claim("worker-3");
+        assertThat(retryOrigin(retry.path("runRef").asString()))
+                .isEqualTo(resumed.path("runRef").asString());
+        assertThat(readJson(plan(retry, "plan"))).isEqualTo(resumedPlan);
+        assertThat(plans()).isEqualTo(2);
+        assertThat(planningAttempts("WI-SUPPLY")).isEqualTo(2);
     }
 
     @Test
@@ -317,6 +325,20 @@ class AgentRunIdempotencyIntegrationTest {
                 .param("wi", workItemRef)
                 .query(Long.class)
                 .single();
+    }
+
+    private String retryOrigin(String runRef) {
+        return jdbc.sql(
+                        "SELECT o.run_ref FROM runs r LEFT JOIN runs o ON o.run_id=r.retry_of_run_id"
+                                + " WHERE r.run_ref=:run")
+                .param("run", runRef)
+                .query(String.class)
+                .optional()
+                .orElse(null);
+    }
+
+    private long plans() {
+        return jdbc.sql("SELECT count(*) FROM replenishment_plans").query(Long.class).single();
     }
 
     private long activeWaits(String workItemRef) {

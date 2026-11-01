@@ -1,6 +1,7 @@
 package com.mulinocoreano.backend.planning;
 
 import com.mulinocoreano.backend.security.HumanActor;
+import com.mulinocoreano.backend.execution.AgentReceiptScope;
 import com.mulinocoreano.backend.execution.RunCapabilityAccess;
 import com.mulinocoreano.backend.idempotency.RequestIdempotency;
 import com.mulinocoreano.backend.interfacepackage.AttentionDto;
@@ -41,6 +42,7 @@ public class PlanPersistenceService {
     private final PlanningSnapshotRepository snapshots;
     private final ReplenishmentCalculator calculator;
     private final RequestIdempotency idempotency;
+    private final AgentReceiptScope receiptScope;
     private final CanonicalJson json;
     private final ObjectMapper mapper;
     private final Clock clock;
@@ -54,6 +56,7 @@ public class PlanPersistenceService {
             PlanningSnapshotRepository snapshots,
             ReplenishmentCalculator calculator,
             RequestIdempotency idempotency,
+            AgentReceiptScope receiptScope,
             CanonicalJson json,
             ObjectMapper mapper,
             @Qualifier("planningClock") Clock clock,
@@ -65,6 +68,7 @@ public class PlanPersistenceService {
         this.snapshots = snapshots;
         this.calculator = calculator;
         this.idempotency = idempotency;
+        this.receiptScope = receiptScope;
         this.json = json;
         this.mapper = mapper;
         this.clock = clock;
@@ -131,15 +135,12 @@ public class PlanPersistenceService {
                                             capabilities.requireLocked(
                                                     capabilityToken, "SUPPLY_CHAIN", caseRef);
                                     JsonNode humanScope = requireCase(scope);
-                                    // A resumed or retried Run of the same Work Item must plan
-                                    // against current facts, so receipts replay only to their Run.
+                                    // A lease-expiry retry replays its crashed attempt; a Run
+                                    // resumed after WAITING plans against current facts.
                                     String namespace =
-                                            "plans:"
-                                                    + caseRef
-                                                    + ":"
-                                                    + scope.workItemRef()
-                                                    + ":run:"
-                                                    + scope.runId();
+                                            receiptScope.namespace(
+                                                    "plans:" + caseRef + ":" + scope.workItemRef(),
+                                                    scope);
                                     var stored =
                                             idempotency.executeJson(
                                                     namespace,
