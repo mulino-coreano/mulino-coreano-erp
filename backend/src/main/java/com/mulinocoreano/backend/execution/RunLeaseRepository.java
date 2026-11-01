@@ -42,6 +42,21 @@ public class RunLeaseRepository {
                 .fetchOptional(RUNS.RUN_ID);
     }
 
+    /** First Run of the lease-expiry retry chain that the Run belongs to. */
+    public long executionRoot(long runId) {
+        long root = runId;
+        for (Long origin = retryOrigin(root); origin != null; origin = retryOrigin(root))
+            root = origin;
+        return root;
+    }
+
+    private Long retryOrigin(long runId) {
+        return dsl.select(RUNS.RETRY_OF_RUN_ID)
+                .from(RUNS)
+                .where(RUNS.RUN_ID.eq(runId))
+                .fetchSingle(RUNS.RETRY_OF_RUN_ID);
+    }
+
     public RunRow lockByRef(String ref) {
         requireTransaction();
         long id =
