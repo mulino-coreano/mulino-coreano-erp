@@ -81,8 +81,21 @@ host runner에는 테스트 서버와 같은 서비스 secret을 넣고 내부 �
 실패 코드·비용·토큰과 최종 발주·Case 상태를 저장한다.
 inputTokens는 CLI의 native uncached input이며 cacheReadTokens와
 cacheWriteTokens를 별도로 보존한다. 누락된 지표는 null이다.
-사용량이 누락되면 usageComplete=false이고 전체 비용을 만들지 않으며
-보고된 비용 합계만 partialCostUsd에 남긴다.
+사용량 완전성(usageComplete)은 그 runtime이 실제로 보고하는 값으로
+판단한다. CLAUDE Run은 costUsd·inputTokens·outputTokens·
+cacheReadTokens·cacheWriteTokens와 resolvedModel이 모두 있어야
+완전하다. CODEX의 turn.completed는 inputTokens·outputTokens·
+cacheReadTokens만 보고하므로 이 세 값이 있으면 완전하다. Codex
+Run의 costUsd·cacheWriteTokens·resolvedModel은 완전해도 null이며
+비용을 가격표로 만들지 않는다.
+사용량이 누락되면 usageComplete=false이다. 전체 costUsd는 모든 Run이
+비용을 보고한 경우에만 만들고, 보고된 비용의 합계는 partialCostUsd에
+따로 남긴다.
+Claude의 modelUsage에는 native subagent처럼 세션이 쓴 모델마다
+key가 생긴다. resolvedModel은 요청한 `MULINO_AGENT_MODEL`이 그
+key에 있으면 그 모델, key가 하나면 그 모델, 그 밖에는 costUSD가
+유일하게 가장 큰 모델이다. 이 규칙으로 정할 수 없으면 null로 남고
+그 Run은 usageComplete=false이다.
 `beforeHumanDecision`에는 실제 승인 전 PENDING·발주 0건과 그 시점의
 Run 사용량을 별도로 저장한다. 사용량 로그가 없는 Run은
 `usageReported=false`로 구분한다. model_finished 이벤트만 있고

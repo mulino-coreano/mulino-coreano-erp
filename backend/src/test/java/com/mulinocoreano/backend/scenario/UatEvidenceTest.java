@@ -87,4 +87,22 @@ class UatEvidenceTest {
         assertThat(UatEvidence.completeUsage(m.readTree("{\"failure\":\"TERMINAL_FINALIZATION_TIMEOUT\"}"))).isFalse();
     }
 
+    /** Codex turn.completed는 input·output·cache read 토큰만 보고하고 USD 비용·실제 모델은 보고하지 않는다.
+     * Codex Run도 보고 가능한 사용량을 모두 남기면 UAT를 끝낼 수 있어야 하고, 비용은 만들어 내지 않는다. */
+    @Test
+    void codexRunIsCompleteWithTheUsageCodexReportsWhileItsCostStaysUnknown() throws Exception {
+        var codex=m.readTree("{\"runRef\":\"RUN-1\",\"runtime\":\"CODEX\",\"model\":\"gpt-5-codex\",\"inputTokens\":41,\"outputTokens\":13,\"cacheReadTokens\":7}");
+        var summary=UatEvidence.summarize(List.of(new BusinessState.RunRecord("PROCUREMENT","RUN-1","COMPLETED","WAITING")),List.of(codex));
+
+        assertThat(UatEvidence.completeUsage(codex)).isTrue();
+        assertThat(summary.get("usageComplete")).isEqualTo(true);
+        assertThat(summary.get("inputTokens")).isEqualTo(41L);
+        assertThat(summary.get("cacheReadTokens")).isEqualTo(7L);
+        assertThat(summary.get("costUsd")).isNull();
+        assertThat(summary.get("partialCostUsd")).isNull();
+        assertThat(summary.get("cacheWriteTokens")).isNull();
+        assertThat(UatEvidence.completeUsage(m.readTree("{\"runtime\":\"CODEX\",\"model\":\"gpt-5-codex\",\"inputTokens\":41,\"outputTokens\":13}"))).isFalse();
+        assertThat(UatEvidence.completeUsage(m.readTree("{\"runtime\":\"CLAUDE\",\"model\":\"claude-sonnet-5\",\"resolvedModel\":\"claude-sonnet-5\",\"inputTokens\":41,\"outputTokens\":13,\"cacheReadTokens\":7,\"cacheWriteTokens\":0}"))).isFalse();
+    }
+
 }

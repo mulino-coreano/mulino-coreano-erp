@@ -10,6 +10,24 @@ import { claudeArguments, codexConfiguration } from './runtime-config.js';
 const { $schema, ...resultSchemaBody } = JSON.parse(readFileSync(new URL('../result.schema.json', import.meta.url), 'utf8'));
 const resultSchema = JSON.stringify(resultSchemaBody);
 
+// Claude Code's modelUsage has one key per model the session used, so native subagents add keys.
+// resolvedModel is the requested model when the session used it, otherwise the single model, otherwise
+// the model with the uniquely largest costUSD. Anything less certain stays unknown, never guessed.
+const modelName = /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/;
+const resolveClaudeModel = (modelUsage, requested) => {
+  if (!modelUsage || typeof modelUsage !== 'object' || Array.isArray(modelUsage)) return undefined;
+  const used = Object.entries(modelUsage);
+  let resolved;
+  if (typeof requested === 'string' && Object.hasOwn(modelUsage, requested)) resolved = requested;
+  else if (used.length === 1) resolved = used[0][0];
+  else {
+    const costs = used.map(([, entry]) => entry?.costUSD);
+    const top = Math.max(...costs);
+    if (costs.every(Number.isFinite) && costs.filter(cost => cost === top).length === 1) resolved = used[costs.indexOf(top)][0];
+  }
+  return modelName.test(resolved ?? '') ? resolved : undefined;
+};
+
 export class ExecutionError extends Error {
   constructor(code) { super(code); this.code = code; }
 }
@@ -68,8 +86,8 @@ export class ProcessExecutor {
         if (event.type === 'result') {
           if (event.is_error || event.subtype !== 'success') fail('MODEL_PROCESS_FAILED');
           else finalText = event.structured_output === undefined ? event.result : JSON.stringify(event.structured_output);
-          const resolved = Object.keys(event.modelUsage ?? {});
-          if (resolved.length === 1 && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(resolved[0])) usage.resolvedModel = resolved[0];
+          const resolvedModel = resolveClaudeModel(event.modelUsage, this.model);
+          if (resolvedModel) usage.resolvedModel = resolvedModel;
           const tokens = event.usage ?? {};
           for (const [key, value] of [['costUsd', event.total_cost_usd], ['inputTokens', tokens.input_tokens],
             ['outputTokens', tokens.output_tokens], ['cacheReadTokens', tokens.cache_read_input_tokens],

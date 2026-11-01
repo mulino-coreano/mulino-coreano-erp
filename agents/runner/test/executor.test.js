@@ -75,6 +75,18 @@ test('Claude Code error result fails the Run', async () => {
   await assert.rejects(executor('claude-error').start(claim).result, error => error.code === 'MODEL_PROCESS_FAILED');
 });
 
+test('Claude Code result with native subagent models resolves the requested model, otherwise the costliest one', async () => {
+  for (const [requested, resolved] of [['claude-sonnet-5', 'claude-sonnet-5'], ['sonnet', 'claude-opus-5'], [undefined, 'claude-opus-5']]) {
+    const handle = Object.assign(executor('claude-subagents'), { model: requested }).start(claim);
+    assert.equal((await handle.result).outcome, 'DONE');
+    assert.equal(handle.usage.resolvedModel, resolved);
+    assert.equal(handle.usage.costUsd, 0.25);
+  }
+  const unpriced = executor('claude-unpriced-subagents').start(claim);
+  await unpriced.result;
+  assert.equal(unpriced.usage.resolvedModel, undefined);
+});
+
  test('Codex turn usage is recorded exactly without inventing cost', async () => {
   const handle = executor('codex-usage').start(claim);
   assert.equal((await handle.result).outcome,'DONE');

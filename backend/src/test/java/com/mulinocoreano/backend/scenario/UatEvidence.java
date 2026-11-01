@@ -61,12 +61,21 @@ public final class UatEvidence {
      * 이전 시도의 model_finished도 로그에 남기 때문에 -- 그래서 비용·토큰은 합산하고, 실패 코드는
      * 가장 마지막 것을 남긴다. */
     private static final List<String> METRICS = List.of("costUsd","inputTokens","outputTokens","cacheReadTokens","cacheWriteTokens","turns");
-    private static final List<String> REQUIRED_USAGE = List.of("costUsd","inputTokens","outputTokens","cacheReadTokens","cacheWriteTokens");
+
+    /** UAT를 끝낼 수 있는 사용량은 그 runtime의 CLI가 실제로 보고하는 값으로 판단한다.
+     * Claude Code result는 USD 비용, cache 생성 토큰과 실제 모델(resolvedModel)을 보고한다.
+     * Codex turn.completed는 input·output·cache read 토큰만 보고하고 비용과 실제 모델은
+     * 보고하지 않는다. 보고하지 않는 값은 완전해도 null로 남고 합계에 더하지 않는다. */
+    private record ReportedUsage(List<String> metrics, boolean resolvedModel) {}
+    private static final Map<String, ReportedUsage> REPORTED_USAGE = Map.of(
+            "CLAUDE", new ReportedUsage(List.of("costUsd","inputTokens","outputTokens","cacheReadTokens","cacheWriteTokens"), true),
+            "CODEX", new ReportedUsage(List.of("inputTokens","outputTokens","cacheReadTokens"), false));
 
     static boolean completeUsage(JsonNode event) {
-        return event != null && !event.hasNonNull("failure")
-                && event.hasNonNull("runtime") && event.hasNonNull("model") && event.hasNonNull("resolvedModel")
-                && REQUIRED_USAGE.stream().allMatch(k -> event.hasNonNull(k) && event.get(k).isNumber());
+        if (event == null || event.hasNonNull("failure") || !event.hasNonNull("model")) return false;
+        var reported = REPORTED_USAGE.get(event.path("runtime").asText(""));
+        return reported != null && (!reported.resolvedModel() || event.hasNonNull("resolvedModel"))
+                && reported.metrics().stream().allMatch(k -> event.hasNonNull(k) && event.get(k).isNumber());
     }
 
     static Map<String, Object> summarize(List<BusinessState.RunRecord> dbRuns, List<JsonNode> modelFinished) {

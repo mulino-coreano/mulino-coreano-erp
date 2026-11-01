@@ -52,3 +52,10 @@ Docker CLI에는 `MULINO_TOKEN`을 환경변수 이름으로 전달하므로 cap
 FAILED/ABORTED는 즉시 취소한다. 유예 만료·shutdown·결과 불일치는
 안전한 model_finished 실패 코드로 기록하고 확정된 업무 결과를
 유지한다. 보고되지 않은 비용·토큰은 알 수 없는 값이다.
+
+Claude Code result의 modelUsage에는 native subagent처럼 세션이 쓴
+모델마다 key가 생긴다. usage.resolvedModel은 요청한 모델이 그 key에
+있으면 그 모델, key가 하나면 그 모델, 그 밖에는 costUSD가 유일하게
+가장 큰 모델이다. 이 규칙으로 정할 수 없으면 기록하지 않는다.
+Codex는 turn.completed의 input·output·cache read 토큰만 기록하며
+보고되지 않는 비용·cache 생성 토큰·실제 모델은 기록하지 않는다.
