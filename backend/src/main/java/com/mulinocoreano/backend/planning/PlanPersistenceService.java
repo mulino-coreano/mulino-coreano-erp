@@ -131,8 +131,15 @@ public class PlanPersistenceService {
                                             capabilities.requireLocked(
                                                     capabilityToken, "SUPPLY_CHAIN", caseRef);
                                     JsonNode humanScope = requireCase(scope);
+                                    // A resumed or retried Run of the same Work Item must plan
+                                    // against current facts, so receipts replay only to their Run.
                                     String namespace =
-                                            "plans:" + caseRef + ":" + scope.workItemRef();
+                                            "plans:"
+                                                    + caseRef
+                                                    + ":"
+                                                    + scope.workItemRef()
+                                                    + ":run:"
+                                                    + scope.runId();
                                     var stored =
                                             idempotency.executeJson(
                                                     namespace,
