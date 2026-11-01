@@ -8,7 +8,10 @@
 | POST /api/v1/cases/{caseRef}/plans | work:write 인간 | 불변 계획 또는 자료 확인 attention |
 | GET /api/v1/plans/{planRef} | erp:read 인간 | 저장된 계획과 계산 근거 |
 
-호출자는 X-Mulino-Local-Role 헤더와 POST의 Idempotency-Key를 보낸다.
+호출자는 X-Mulino-Local-Role 헤더, MULINO_LOCAL_HUMAN_SECRET과 같은
+값의 X-Mulino-Local-Human 헤더, POST의 Idempotency-Key를 보낸다.
+human secret이 없거나 틀리거나 백엔드에 설정되지 않았으면 역할 헤더를
+인정하지 않고 401이다.
 MANAGER·OPERATOR가 계산할 수 있고 VIEWER는 조회만 가능하다.
 기본 프로필에서는 이 경로를 403으로 거부한다. 에이전트 토큰은 아직 없다.
 
@@ -27,9 +30,9 @@ V20은 계획 테이블·수량 NUMERIC(18,6)·유한값 검사·계획의 선�
 created_by_work_item_id FK를 추가한다. 인간 계산의 해당 FK는 NULL이다.
 planning_attempt_sequence와 latest_planning_outcome은 #49 범위다.
 
-MCP는 whoami, get_case, get_plan을 제공한다. 인간 역할 헤더만 보내며
-service·capability 헤더를 만들지 않는다. 쓰기·승인 도구는 해당 API와
-함께 #52의 다음 단계에서 추가한다.
+MCP는 whoami, get_case, get_plan을 제공한다. 인간 역할·human secret
+헤더만 보내며 service·capability 헤더를 만들지 않는다. 쓰기·승인
+도구는 해당 API와 함께 #52의 다음 단계에서 추가한다.
 
 현재 미입고 예정량은 기존 purchase_orders의 납기일을 사용한다.
 발주별 목적 창고와 품목별 납기일은 #50의 구매 데이터 이식 후 적용한다.

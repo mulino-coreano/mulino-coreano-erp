@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
+import com.mulinocoreano.backend.security.LocalHumanRequest;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -27,7 +28,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /** 목표 2·3·4: 인간이 계획을 계산하되 ERP 수량이나 발주를 변경하지 않는다. */
 @SpringBootTest(properties={"spring.flyway.schemas=human_planning_it", "spring.flyway.clean-disabled=false",
         "spring.flyway.init-sqls=CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public",
-        "spring.datasource.hikari.schema=human_planning_it", "spring.main.allow-bean-definition-overriding=true", "mulino.local-auth.service-secret=local-test-secret"})
+        "spring.datasource.hikari.schema=human_planning_it", "spring.main.allow-bean-definition-overriding=true", "mulino.local-auth.service-secret=local-test-secret",
+        LocalHumanRequest.SECRET_PROPERTY})
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 class HumanPlanningIntegrationTest {
@@ -52,7 +54,7 @@ class HumanPlanningIntegrationTest {
         ReplenishmentDemoFixture.load(jdbc);
         warehouse=jdbc.sql("SELECT warehouse_id FROM warehouses WHERE plant_id='DEMO-KR-01'").query(Long.class).single();
         products=jdbc.sql("SELECT product_id FROM products WHERE sku IN ('DEMO-AMR','DEMO-BSC') ORDER BY product_id").query(Long.class).list();
-        var r=mvc.perform(post("/api/v1/cases").header("X-Mulino-Local-Role","MANAGER")
+        var r=mvc.perform(post("/api/v1/cases").with(LocalHumanRequest.as("MANAGER"))
                 .contentType("application/json").content("{\"objective\":\"replenish\"}"))
                 .andExpect(status().isOk()).andReturn();
         caseRef=mapper.readTree(r.getResponse().getContentAsString()).get("caseRef").asString();
@@ -68,7 +70,7 @@ class HumanPlanningIntegrationTest {
         assertThat(second.path("version").asInt()).isEqualTo(2);
         assertThat(erp()).isEqualTo(before);
         assertThat(jdbc.sql("SELECT count(*) FROM replenishment_plans WHERE created_by_work_item_id IS NOT NULL").query(Long.class).single()).isZero();
-        mvc.perform(get("/api/v1/plans/"+first.path("ref").asString()).header("X-Mulino-Local-Role","VIEWER"))
+        mvc.perform(get("/api/v1/plans/"+first.path("ref").asString()).with(LocalHumanRequest.as("VIEWER")))
                 .andExpect(status().isOk());
     }
     @Test
@@ -94,7 +96,7 @@ class HumanPlanningIntegrationTest {
         calculate("VIEWER","denied",403);
         assertThat(jdbc.sql("SELECT count(*) FROM replenishment_plans").query(Long.class).single()).isZero();
         calculate("MANAGER","fixed",200);
-        mvc.perform(post("/api/v1/cases/"+caseRef+"/plans").header("X-Mulino-Local-Role","MANAGER")
+        mvc.perform(post("/api/v1/cases/"+caseRef+"/plans").with(LocalHumanRequest.as("MANAGER"))
                 .header("Idempotency-Key","fixed").contentType("application/json")
                 .content(mapper.writeValueAsString(Map.of("warehouseId",warehouse,"productIds",products,"horizonDays",20))))
                 .andExpect(status().isConflict());
@@ -150,7 +152,7 @@ class HumanPlanningIntegrationTest {
     }
 
     private JsonNode calculate(String role,String key,int status) throws Exception {
-        var r=mvc.perform(post("/api/v1/cases/"+caseRef+"/plans").header("X-Mulino-Local-Role",role)
+        var r=mvc.perform(post("/api/v1/cases/"+caseRef+"/plans").with(LocalHumanRequest.as(role))
                 .header("Idempotency-Key",key).contentType("application/json")
                 .content(mapper.writeValueAsString(Map.of("warehouseId",warehouse,"productIds",products))))
                 .andExpect(status().is(status)).andReturn();

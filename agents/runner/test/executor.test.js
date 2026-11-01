@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { ProcessExecutor, DockerExecutor } from '../src/executor.js';
+import { readConfig } from '../src/protocol.js';
 
 const fixture = fileURLToPath(new URL('./fixtures/child.js', import.meta.url));
 const claim = { runRef: 'RUN-1', caseRef: 'CASE-1', workItemRef: 'WI-1', agentKey: 'SUPPLY_CHAIN',
@@ -70,6 +71,22 @@ test('Docker invocation isolates mounts, environment and immutable runtime confi
   assert.doesNotMatch(JSON.stringify(spec.args), /cap-secret|lease-secret|docker\.sock|\/Users\/|--privileged|--network=host/);
   assert.deepEqual(Object.keys(spec.env).sort(), ['MULINO_TOKEN', 'PATH']);
   assert.equal(spec.env.MULINO_TOKEN, 'cap-secret');
+});
+
+test('host human secret never reaches the model container of either runtime', t => {
+  // The local backend accepts a human role only with this secret; a container holding it could act as MANAGER.
+  const humanSecret = 'host-only-human-secret';
+  const previous = process.env.MULINO_LOCAL_HUMAN_SECRET;
+  process.env.MULINO_LOCAL_HUMAN_SECRET = humanSecret;
+  t.after(() => { if (previous === undefined) delete process.env.MULINO_LOCAL_HUMAN_SECRET; else process.env.MULINO_LOCAL_HUMAN_SECRET = previous; });
+  const config = readConfig({ MULINO_LOCAL_SERVICE_SECRET: 'worker-secret', MULINO_WORKER_ID: 'worker-1',
+    MULINO_RUNTIME_IMAGE: 'mulino-runtime:local', MULINO_AUTH_VOLUME: 'mulino-runtime-auth', MULINO_AGENT_MODEL: 'demo-model',
+    MULINO_LOCAL_HUMAN_SECRET: humanSecret });
+  for (const runtime of ['CODEX', 'CLAUDE']) {
+    const spec = new DockerExecutor({ ...config, runtime }).buildInvocation(claim);
+    assert.doesNotMatch(JSON.stringify({ args: spec.args, env: spec.env }),
+      /host-only-human-secret|MULINO_LOCAL_HUMAN_SECRET|X-Mulino-Local-Human/);
+  }
 });
 
 test('Claude Code result event is the final structured result and its usage is kept', async () => {

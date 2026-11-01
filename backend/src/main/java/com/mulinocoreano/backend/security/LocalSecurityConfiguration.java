@@ -18,7 +18,8 @@ import org.springframework.http.HttpMethod;
 public class LocalSecurityConfiguration {
     @Bean
     @Order(3)
-    SecurityFilterChain humanSecurity(HttpSecurity http, LocalActorDirectory directory) throws Exception {
+    SecurityFilterChain humanSecurity(HttpSecurity http, LocalActorDirectory directory,
+                                      LocalAuthProperties properties) throws Exception {
         var paths = PathPatternRequestMatcher.withDefaults();
         return InterfaceSecurityConfiguration.stateless(http)
                 .securityMatchers(matchers -> matchers
@@ -30,7 +31,7 @@ public class LocalSecurityConfiguration {
                                 paths.matcher(HttpMethod.GET, "/api/v1/purchase-orders/*"),
                                 paths.matcher(HttpMethod.POST, "/api/v1/approvals/*/decision"),
                                 paths.matcher(HttpMethod.POST, "/api/v1/attention/*/answer")))
-                .addFilterBefore(new LocalActorFilter(directory), AnonymousAuthenticationFilter.class)
+                .addFilterBefore(new LocalActorFilter(directory, properties), AnonymousAuthenticationFilter.class)
                 .authorizeHttpRequests(requests -> requests.anyRequest().access((authentication, context) -> {
                     var actor = authentication.get().getPrincipal();
                     return new AuthorizationDecision(actor instanceof HumanActor human

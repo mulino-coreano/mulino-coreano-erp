@@ -164,12 +164,13 @@ for (const role of [undefined, "MANAGER"]) {
     });
     const apiBase = await listen(apiServer);
     resources.push(() => closeServer(apiServer));
-    const env = { MULINO_API_BASE: `${apiBase}/api/v1` };
+    const env = { MULINO_API_BASE: `${apiBase}/api/v1`, MULINO_LOCAL_HUMAN_SECRET: "host-human-secret" };
     if (role) env.MULINO_LOCAL_ROLE = role;
     const client = await connectClient(env);
     const result = await client.callTool({ name: "create_case", arguments: { objective: "work", requestKey: "scope-key", replenishment: { warehouseId: 3, productSkus: ["SKU-A"], targetDate: "2026-09-05" } } });
     assert.equal(result.isError, undefined);
     assert.equal(headers["x-mulino-local-role"], role ?? "OPERATOR");
+    assert.equal(headers["x-mulino-local-human"], "host-human-secret");
     assert.equal(headers["idempotency-key"], "scope-key");
     assert.deepEqual(body.replenishment,{ warehouseId: 3, productSkus: ["SKU-A"], targetDate: "2026-09-05" });
     assert.equal(headers.authorization, undefined);
@@ -183,12 +184,13 @@ for (const [name,args,url] of [["whoami",{},"/me"],["get_case",{caseRef:"CASE-a"
       assert.equal(req.url,"/api/v1"+url);
       assert.equal(req.method,"GET");
       assert.equal(req.headers["x-mulino-local-role"],"VIEWER");
+      assert.equal(req.headers["x-mulino-local-human"],"host-human-secret");
       assert.equal(req.headers.authorization,undefined);
       assert.equal(req.headers["x-mulino-local-service"],undefined);
       res.writeHead(200,{"Content-Type":"application/json"});res.end('{"status":"OPEN"}');
     });
     const apiBase=await listen(apiServer);resources.push(()=>closeServer(apiServer));
-    const client=await connectClient({MULINO_API_BASE:apiBase+"/api/v1",MULINO_LOCAL_ROLE:"VIEWER"});
+    const client=await connectClient({MULINO_API_BASE:apiBase+"/api/v1",MULINO_LOCAL_ROLE:"VIEWER",MULINO_LOCAL_HUMAN_SECRET:"host-human-secret"});
     const result=await client.callTool({name,arguments:args});assert.equal(result.isError,undefined);
   });
 }
@@ -204,6 +206,7 @@ for (const [name,args,url,method] of [
     const apiServer=http.createServer((req,res)=>{
       assert.equal(req.url,'/api/v1'+url);assert.equal(req.method,method);
       assert.equal(req.headers['x-mulino-local-role'],'MANAGER');
+      assert.equal(req.headers['x-mulino-local-human'],'host-human-secret');
       assert.equal(req.headers.authorization,undefined);
       assert.equal(req.headers['x-mulino-local-service'],undefined);
       assert.equal(req.headers['x-mulino-run-capability'],undefined);
@@ -213,7 +216,7 @@ for (const [name,args,url,method] of [
       });
     });
     const apiBase=await listen(apiServer);resources.push(()=>closeServer(apiServer));
-    const client=await connectClient({MULINO_API_BASE:apiBase+'/api/v1',MULINO_LOCAL_ROLE:'MANAGER'});
+    const client=await connectClient({MULINO_API_BASE:apiBase+'/api/v1',MULINO_LOCAL_ROLE:'MANAGER',MULINO_LOCAL_HUMAN_SECRET:'host-human-secret'});
     const result=await client.callTool({name,arguments:args});
     assert.equal(result.isError,undefined);assert.equal(result.structuredContent.id,'9007199254740993');
     assert.equal(result.structuredContent.totalKrw,'9999999999999.99');

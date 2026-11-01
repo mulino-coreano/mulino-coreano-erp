@@ -26,6 +26,8 @@ springdoc:
 mulino:
   local-auth:
     service-secret: ${MULINO_LOCAL_SERVICE_SECRET:}
+    # Host human clients (mcp-server) only; never the runner or a model container.
+    human-secret: ${MULINO_LOCAL_HUMAN_SECRET:}
 
 agent:
   runtime:

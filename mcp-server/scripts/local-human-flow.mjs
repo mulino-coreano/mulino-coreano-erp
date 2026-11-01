@@ -11,11 +11,12 @@ const approvalId=process.env.MULINO_TEST_APPROVAL_ID;
 const planRef=process.env.MULINO_TEST_PLAN_REF;
 const caseRef=process.env.MULINO_TEST_CASE_REF;
 const attentionId=process.env.MULINO_TEST_ATTENTION_ID;
-assert.ok(base && approvalId && planRef && caseRef && attentionId,'Prepared local fixture references are required');
+const humanSecret=process.env.MULINO_LOCAL_HUMAN_SECRET; // host human secret, never a worker secret
+assert.ok(base && approvalId && planRef && caseRef && attentionId && humanSecret,'Prepared local fixture references and the host human secret are required');
 const clients=[];
 async function client(role) {
   const c=new Client({name:'local-human-sit',version:'1.0.0'});
-  await c.connect(new StdioClientTransport({command:process.execPath,args:['src/index.js'],cwd:path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),env:{PATH:process.env.PATH,MULINO_API_BASE:base,MULINO_LOCAL_ROLE:role}}));
+  await c.connect(new StdioClientTransport({command:process.execPath,args:['src/index.js'],cwd:path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),env:{PATH:process.env.PATH,MULINO_API_BASE:base,MULINO_LOCAL_ROLE:role,MULINO_LOCAL_HUMAN_SECRET:humanSecret}}));
   clients.push(c);return c;
 }
 async function tool(c,name,args={}) {

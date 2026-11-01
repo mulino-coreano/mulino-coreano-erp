@@ -265,8 +265,9 @@ flowchart TD
 
 ## 로컬 인간의 Case 접수 (#47)
 
-`local` 프로필의 `POST /api/v1/cases`는 역할 헤더로 확인한
-OPERATOR 또는 MANAGER만 호출한다. Case의 생성자와 USER 참여자를
+`local` 프로필의 `POST /api/v1/cases`는 역할 헤더와 호스트 전용
+human secret으로 확인한 OPERATOR 또는 MANAGER만 호출한다.
+Case의 생성자와 USER 참여자를
 같이 기록한다. `Idempotency-Key`를 보내면 인간별 scope에서 요청과
 응답을 `request_idempotency`에 저장하고, 같은 요청은 기존 응답을
 반환한다. 다른 본문으로 같은 키를 쓰면 409로 거부한다.

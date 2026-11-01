@@ -24,6 +24,11 @@ claim 본문에 runtime을 선언하며 서버는 해당 runtime의 QUEUED Run�
 같은 값이다. 내부 요청에는 `X-Mulino-Local-Service`만 전송한다.
 역할 헤더와 Bearer capability를 내부 요청에 섞지 않는다.
 컨테이너에는 이 secret과 lease token을 전달하지 않는다.
+local 인간 역할 헤더는 `MULINO_LOCAL_HUMAN_SECRET`과 같은 값의
+`X-Mulino-Local-Human` 헤더가 있을 때만 인정된다. 이 값은 호스트의
+인간 클라이언트(mcp-server)만 가진다. 모델 컨테이너도 백엔드에
+닿으므로 runner `.env`와 컨테이너 환경에 두지 않는다. 컨테이너가 역할
+헤더만 위조하면 401이다.
 컨테이너 CLI는 `MULINO_TOKEN`의 Run capability를
 `Authorization: Bearer`로 전달한다.
 
@@ -43,7 +48,8 @@ warehouse는 planning policy가 있어야 하고 SKU는 활성 완제품이어�
 생략하면 warehouse policy의 horizon을 쓴다. 서버가 확정한
 productIds/warehouseId/targetDate를 Case metadata에 저장한다.
 익명 요청에는 이 기능을 허용하지 않는다. MCP `create_case`도
-선택 replenishment와 requestKey를 전달하며 인간 역할 헤더만 쓴다.
+선택 replenishment와 requestKey를 전달하며 인간 역할·human secret
+헤더만 쓴다.
 동일 warehouse에 ACTIVE planning Case가 있으면 새 접수는 HTTP 409로
 거부한다. 거부된 요청의 Case, Work Item, Run, request receipt는
 저장하지 않는다. 성공한 요청과 같은 Idempotency-Key·입력의 재전송은
