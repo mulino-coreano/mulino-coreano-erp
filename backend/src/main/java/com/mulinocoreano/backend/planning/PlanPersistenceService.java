@@ -143,7 +143,7 @@ public class PlanPersistenceService {
             throw failure(HttpStatus.NOT_FOUND, "WAREHOUSE_NOT_FOUND");
         if (repository.productCount(request.productIds()) != request.productIds().size())
             throw failure(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND");
-        bindPlanningCase(scope, warehouse);
+        requirePlanningCaseAvailable(scope, warehouse);
         var policyHorizon = repository.policyHorizon(warehouse);
         if (policyHorizon.isEmpty()) return dataFailure(scope, "MISSING_PLANNING_POLICY");
         int horizon =
@@ -183,6 +183,8 @@ public class PlanPersistenceService {
             attention = createAttention(scope, code);
             result.set("attention", mapper.valueToTree(attention));
         }
+        // Only a stored plan binds the Case to the warehouse; data failures above leave none.
+        bindPlanningCase(scope, warehouse);
         int version = repository.nextVersion(scope.caseId());
         String sourceHash = json.sha256(snapshot);
         String planHash =
@@ -255,12 +257,36 @@ public class PlanPersistenceService {
                 LocalDate.parse(target.asString()));
     }
 
+    /** Rejects a warehouse this Case cannot plan for, without creating a binding. */
+    private void requirePlanningCaseAvailable(PlanningScope scope, long warehouse) {
+        var binding = repository.lockPlanningCase(scope.caseId());
+        if (binding.isPresent()) requireBoundTo(binding.get(), warehouse);
+        else rejectActiveWarehousePlan(warehouse);
+    }
+
     private void bindPlanningCase(PlanningScope scope, long warehouse) {
         repository.insertPlanningCase(scope.caseId(), warehouse);
         var binding = repository.lockPlanningCase(scope.caseId());
         if (binding.isEmpty()) {
-            var existing = repository.activeCaseRef(warehouse);
-            if (existing.isEmpty()) throw new FreshSnapshotRequired();
+            rejectActiveWarehousePlan(warehouse);
+            throw new FreshSnapshotRequired();
+        }
+        requireBoundTo(binding.get(), warehouse);
+        // A row lock alone does not refresh a repeatable-read snapshot. Touch the binding
+        // so concurrent calculations get 40001 and recompute max(version) in a fresh transaction.
+        repository.touchPlanningCase(scope.caseId());
+    }
+
+    private void requireBoundTo(PlanPersistenceRepository.PlanningCase binding, long warehouse) {
+        if (binding.warehouse() != warehouse)
+            throw failure(HttpStatus.CONFLICT, "CASE_WAREHOUSE_MISMATCH");
+        if (!"ACTIVE".equals(binding.status()))
+            throw failure(HttpStatus.CONFLICT, "PLANNING_CASE_NOT_ACTIVE");
+    }
+
+    private void rejectActiveWarehousePlan(long warehouse) {
+        var existing = repository.activeCaseRef(warehouse);
+        if (existing.isPresent())
             throw new Failure(
                     HttpStatus.CONFLICT,
                     mapper.valueToTree(
@@ -269,14 +295,6 @@ public class PlanPersistenceService {
                                     "ACTIVE_WAREHOUSE_PLAN_EXISTS",
                                     "existingCaseRef",
                                     existing.get())));
-        }
-        if (binding.get().warehouse() != warehouse)
-            throw failure(HttpStatus.CONFLICT, "CASE_WAREHOUSE_MISMATCH");
-        if (!"ACTIVE".equals(binding.get().status()))
-            throw failure(HttpStatus.CONFLICT, "PLANNING_CASE_NOT_ACTIVE");
-        // A row lock alone does not refresh a repeatable-read snapshot. Touch the binding
-        // so concurrent calculations get 40001 and recompute max(version) in a fresh transaction.
-        repository.touchPlanningCase(scope.caseId());
     }
 
     private Map<String, Object> dataFailure(PlanningScope scope, String code) {
