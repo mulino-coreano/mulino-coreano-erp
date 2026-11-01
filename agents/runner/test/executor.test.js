@@ -32,6 +32,13 @@ for (const [mode, code] of [['bad', 'INVALID_MODEL_JSON'], ['oversize', 'MODEL_O
   });
 }
 
+test('Codex tool output line larger than 64 KiB completes the Run while the total output cap still applies', async () => {
+  assert.deepEqual(await executor('codex-large-tool-output').start(claim).result,
+    { outcome: 'DONE', summary: 'Plan verified', resultRef: 'PLAN-DEMO' });
+  await assert.rejects(executor('codex-large-tool-output', { maxOutputBytes: 65536 }).start(claim).result,
+    error => error.code === 'MODEL_OUTPUT_TOO_LARGE');
+});
+
 test('cancel terminates actual process and rejects once', async () => {
   const handle = executor('hang').start(claim);
   assert.ok(handle);

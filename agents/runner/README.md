@@ -36,7 +36,7 @@ Docker CLI에는 `MULINO_TOKEN`을 환경변수 이름으로 전달하므로 cap
 
 백엔드가 `409 COMPLETION_NOT_VERIFIED` 또는 `400 INVALID_RESULT`를 반환하면 실행기는 heartbeat로 lease를 재확인합니다. 아직 RUNNING이면 새 논리 요청 키로 FAILED 종료를 한 번 시도하여 서버가 실패와 Attention을 기록할 수 있게 합니다. 이 실패 종료의 네트워크 재시도는 같은 새 키·본문을 유지합니다. 반복된 검증 거부에는 다시 실패 종료를 생성하지 않고 `FINISH_REJECTED`로 끝냅니다. 재확인 중 terminal receipt를 받으면 그 결과를 유지하며, `STALE_LEASE`나 권한 상실이면 추가 finish를 보내지 않습니다. 오류 본문의 `.error`에서 허용한 코드만 사용하고 자유 형식의 `.message`나 다른 별칭은 해석하거나 로그에 노출하지 않습니다.
 
-출력은 전체 1 MiB, JSONL 한 줄 64 KiB, 맥락은 256 KiB로 제한합니다. ERP 소수·지수·큰 정수는 원문 문자열로 보존합니다. stdout/stderr 원문을 로그에 출력하지 않으며 최종 결과에는 알려진 자격증명을 가립니다. 로그에는 실행 시작·종료와 오류 유형만 남습니다.
+출력은 stdout·stderr 합계 1 MiB, 맥락은 256 KiB로 제한합니다. JSONL 한 줄에는 별도 상한을 두지 않습니다. `codex exec --json`은 명령의 전체 출력(`aggregated_output`)을 한 줄의 `item.completed`에 담고 계획 조회 하나가 64 KiB를 넘기 때문입니다. 한 줄도 전체 1 MiB 상한에 포함되며 초과하면 `MODEL_OUTPUT_TOO_LARGE`로 실패합니다. ERP 소수·지수·큰 정수는 원문 문자열로 보존합니다. stdout/stderr 원문을 로그에 출력하지 않으며 최종 결과에는 알려진 자격증명을 가립니다. 로그에는 실행 시작·종료와 오류 유형만 남습니다.
 
 ## 테스트와 모듈 API
 
