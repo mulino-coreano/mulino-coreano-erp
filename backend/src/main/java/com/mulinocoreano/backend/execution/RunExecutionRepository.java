@@ -86,7 +86,7 @@ public class RunExecutionRepository {
         dsl.update(RUNS)
                 .set(RUNS.STATUS, RunStatus.FAILED)
                 .set(RUNS.OUTCOME, "FAILED")
-                .set(RUNS.FINISHED_AT, LOCAL_NOW)
+                .set(RUNS.FINISHED_AT, NOW)
                 .where(RUNS.RUN_ID.eq(id))
                 .execute();
     }
@@ -119,7 +119,6 @@ public class RunExecutionRepository {
                 .toInstant();
     }
 
-<<<<<<< HEAD
     public boolean lockPendingPurchaseApproval(long id, long caseId, long workId, long agentId) {
         var g = GOVERNANCE_ACTIONS;
         var w = WORK_ITEMS;
@@ -144,8 +143,6 @@ public class RunExecutionRepository {
                 .isPresent();
     }
 
-=======
->>>>>>> origin/main
     public Optional<String> findRetry(long id) {
         return dsl.select(RUNS.RUN_REF)
                 .from(RUNS)
@@ -157,7 +154,7 @@ public class RunExecutionRepository {
         dsl.update(RUNS)
                 .set(RUNS.STATUS, RunStatus.valueOf(status))
                 .set(RUNS.OUTCOME, outcome)
-                .set(RUNS.FINISHED_AT, LOCAL_NOW)
+                .set(RUNS.FINISHED_AT, NOW)
                 .setNull(RUNS.CAPABILITY_TOKEN_HASH)
                 .where(RUNS.RUN_ID.eq(id))
                 .execute();
@@ -178,14 +175,11 @@ public class RunExecutionRepository {
                 .execute();
     }
 
-<<<<<<< HEAD
     public boolean noPurchaseRequired(long workId) {
         return dsl.fetchExists(WORK_ITEMS, WORK_ITEMS.WORK_ITEM_ID.eq(workId)
                 .and(WORK_ITEMS.PROCUREMENT_OUTCOME.eq("NO_PURCHASE_REQUIRED")));
     }
 
-=======
->>>>>>> origin/main
     public void markDone(long id) {
         dsl.update(WORK_ITEMS)
                 .set(WORK_ITEMS.STATUS, WorkItemStatus.DONE)
@@ -238,11 +232,8 @@ public class RunExecutionRepository {
                         .from(WORK_ITEMS)
                         .where(WORK_ITEMS.CASE_ID.eq(caseId))
                         .and(WORK_ITEMS.WORK_ITEM_ID.ne(workId))
-<<<<<<< HEAD
                         .and(notExists(selectOne().from(REPLENISHMENT_FOLLOWUPS)
                                 .where(REPLENISHMENT_FOLLOWUPS.WORK_ITEM_ID.eq(WORK_ITEMS.WORK_ITEM_ID))))
-=======
->>>>>>> origin/main
                         .and(
                                 jsonbGetAttributeAsText(WORK_ITEMS.METADATA, "parentWorkItemRef")
                                         .eq(ref))
@@ -316,7 +307,7 @@ public class RunExecutionRepository {
         dsl.update(RUNS)
                 .set(RUNS.STATUS, RunStatus.ABORTED)
                 .set(RUNS.OUTCOME, "ABORTED")
-                .set(RUNS.FINISHED_AT, LOCAL_NOW)
+                .set(RUNS.FINISHED_AT, NOW)
                 .where(RUNS.RUN_ID.eq(id))
                 .execute();
     }

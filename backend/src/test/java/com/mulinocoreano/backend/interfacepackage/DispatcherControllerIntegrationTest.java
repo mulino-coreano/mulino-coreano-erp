@@ -333,20 +333,33 @@ class DispatcherControllerIntegrationTest {
     }
 
     @Test
-    void getMonitorSweepsDueScheduledWaitsBeforeReturningMonitorDto() throws Exception {
+    void monitorReadDoesNotResumeDueWaitingWorkOrCreateAuditAndAttention() throws Exception {
+        Fixture fixture=fixture("SCHEDULED_TIME","{\"due_at\":\""+Instant.now().minus(5,ChronoUnit.MINUTES)+"\"}");
+        long events=jdbc.sql("SELECT count(*) FROM events").query(Long.class).single();
+        long runs=jdbc.sql("SELECT count(*) FROM runs").query(Long.class).single();
+        long attention=jdbc.sql("SELECT count(*) FROM attention_requests").query(Long.class).single();
+        mockMvc.perform(get("/api/v1/monitor")).andExpect(status().isOk());
+        assertThat(workItemStatus(fixture.workItemRef())).isEqualTo("WAITING");
+        assertThat(waitingStatus(fixture.waitingId())).isEqualTo("ACTIVE");
+        assertThat(jdbc.sql("SELECT count(*) FROM events").query(Long.class).single()).isEqualTo(events);
+        assertThat(jdbc.sql("SELECT count(*) FROM runs").query(Long.class).single()).isEqualTo(runs);
+        assertThat(jdbc.sql("SELECT count(*) FROM attention_requests").query(Long.class).single()).isEqualTo(attention);
+    }
+
+    @Test
+    void postDispatchSweepsDueScheduledWaitsThroughTheWriteEndpoint() throws Exception {
         Fixture fixture = fixture("SCHEDULED_TIME",
                 "{\"due_at\":\"" + Instant.now().minus(5, ChronoUnit.MINUTES) + "\"}");
 
-        mockMvc.perform(get("/api/v1/monitor"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.workItemsReady").isNumber())
-                .andExpect(jsonPath("$.workItemsWaiting").isNumber());
+        mockMvc.perform(post("/api/v1/dispatch"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.scheduledRuns",hasSize(1)));
 
         assertThat(waitingStatus(fixture.waitingId())).isEqualTo("SATISFIED");
         assertThat(workItemStatus(fixture.workItemRef())).isEqualTo("READY");
         long eventId = waitingResolvedBy(fixture.waitingId());
-        assertThat(eventType(eventId)).isEqualTo("DISPATCH_SWEEP_TRIGGERED");
-        assertThat(eventPayloadValue(eventId, "source")).isEqualTo("MONITOR");
+        assertThat(eventType(eventId)).isEqualTo("DISPATCH_REQUESTED");
+        assertThat(eventPayloadValue(eventId, "source")).isEqualTo("MANUAL");
         assertThat(runCountForEventAndWorkItem(eventId, fixture.workItemRef())).isEqualTo(1);
     }
 

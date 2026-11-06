@@ -30,15 +30,16 @@ public class WaitingConditionMatcher {
     private boolean supplierReply(Map<String, Object> conditionPayload, DispatchEvent event) {
         String[] supplierKeys = { "supplier_id", "supplierId" };
         String[] purchaseOrderKeys = { "po_ref", "poRef" };
+        boolean namesSupplier = hasAnyKey(conditionPayload, supplierKeys);
+        boolean namesPurchaseOrder = hasAnyKey(conditionPayload, purchaseOrderKeys);
         return hasEventType(event, "SUPPLIER_EMAIL_RECEIVED")
+                && (namesSupplier || namesPurchaseOrder)
                 && aliasesAreCoherent(conditionPayload, supplierKeys)
                 && aliasesAreCoherent(event.payload(), supplierKeys)
                 && aliasesAreCoherent(conditionPayload, purchaseOrderKeys)
                 && aliasesAreCoherent(event.payload(), purchaseOrderKeys)
-                && (sameValue(conditionPayload, event.payload(),
-                        supplierKeys, supplierKeys)
-                || sameValue(conditionPayload, event.payload(),
-                        purchaseOrderKeys, purchaseOrderKeys));
+                && (!namesSupplier || sameValue(conditionPayload, event.payload(), supplierKeys, supplierKeys))
+                && (!namesPurchaseOrder || sameValue(conditionPayload, event.payload(), purchaseOrderKeys, purchaseOrderKeys));
     }
 
     private boolean emailSent(Map<String, Object> conditionPayload, DispatchEvent event) {

@@ -190,7 +190,6 @@ for (const [name,args,url] of [["whoami",{},"/me"],["get_case",{caseRef:"CASE-a"
     const result=await client.callTool({name,arguments:args});assert.equal(result.isError,undefined);
   });
 }
-<<<<<<< HEAD
 
 for (const [name,args,url,method] of [
   ['get_approval',{approvalId:'9007199254740993'},'/approvals/9007199254740993','GET'],
@@ -229,5 +228,3 @@ test('purchase decision requires version and hash before any API call', async ()
     assert.equal((await client.callTool({name:'decide_purchase',arguments:args})).isError,true);
   }
 });
-=======
->>>>>>> origin/main

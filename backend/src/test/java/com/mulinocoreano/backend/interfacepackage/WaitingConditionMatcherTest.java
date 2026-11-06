@@ -60,6 +60,10 @@ class WaitingConditionMatcherTest {
                         "SUPPLIER_EMAIL_RECEIVED", "{\"supplier_id\":43}", false),
                 Arguments.of("SUPPLIER_REPLY", "{\"supplier_id\":42}",
                         "EMAIL_SENT", "{\"supplier_id\":42}", false),
+                Arguments.of("SUPPLIER_REPLY", "{\"supplier_id\":3,\"po_ref\":\"PO-104\"}","SUPPLIER_EMAIL_RECEIVED","{\"supplierId\":3,\"poRef\":\"PO-200\"}",false),
+                Arguments.of("SUPPLIER_REPLY", "{\"supplier_id\":3,\"po_ref\":\"PO-104\"}","SUPPLIER_EMAIL_RECEIVED","{\"supplierId\":4,\"poRef\":\"PO-104\"}",false),
+                Arguments.of("SUPPLIER_REPLY", "{\"supplier_id\":3,\"po_ref\":\"PO-104\"}","SUPPLIER_EMAIL_RECEIVED","{\"supplierId\":3}",false),
+                Arguments.of("SUPPLIER_REPLY", "{\"supplier_id\":3,\"po_ref\":\"PO-104\"}","SUPPLIER_EMAIL_RECEIVED","{\"supplierId\":3,\"poRef\":\"PO-104\"}",true),
                 Arguments.of("SUPPLIER_REPLY", "{}",
                         "SUPPLIER_EMAIL_RECEIVED", "{\"supplier_id\":42}", false),
 

@@ -277,3 +277,14 @@ Dispatcher 판정은 **결정론적**이어야 하며, 같은 이벤트를 두 �
 - Claim은 직접 주장 actor뿐 아니라 `asserted_by_run_id`의 Run 참조를 포함한다. 직접 actor가 없고 Run으로만 출처가 기록된 Claim은 해당 Run의 에이전트로 책임을 해소한다.
 - V16은 중복 참여자와 교차 Case Decision/Attention을 차단한다. 기존 데이터에 모순이 있으면 명시적인 오류로 마이그레이션을 중단하며 이력을 자동 삭제하지 않는다. 운영자가 원인을 확인하고 정정한 후 다시 적용한다.
 - V17은 초기 Orchestrator와 채널 기본값을 등록한다. 기존 비활성 에이전트를 자동 재활성화하지 않는다. ACT 입력 검증과 참조번호 충돌 방지, 명시적 재고 검색, MCP 오류 처리는 인터페이스 계층에서 검증한다.
+
+
+## #54 이후의 Dispatcher·Run 계약
+
+SUPPLIER_REPLY는 지정한 식별자를 모두 검사한다. Case 없는 사실은
+claim/evidence 연결 뒤에도 글로벌로 남고 Attention 승인의 검색만 같은
+Case로 넓힌다. Governance 승인 범위는 원래 Work Item에 묶인다.
+Run의 시점은 V27·독립 DDL 19의 TIMESTAMPTZ로 통일하며 기존
+Asia/Seoul 벽시계 값을 명시적으로 복원한다. GET /monitor는 조회만
+하고 ASK는 완제품만 반환한다. 재현·전제·검증 범위는
+[Dispatcher 범위와 실행 시점](15_dispatcher_defects.md)을 따른다.

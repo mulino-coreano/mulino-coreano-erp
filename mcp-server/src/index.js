@@ -6,11 +6,8 @@
  * ChatGPT, Claude Desktop, or any MCP client can query ERP state, create
  * Cases, and inspect attention items over a single, durable business surface.
  */
-<<<<<<< HEAD
 import { randomUUID } from "node:crypto";
 import { conversationTools, callConversationTool } from "./human-tools.js";
-=======
->>>>>>> origin/main
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -33,15 +30,11 @@ async function api(path, opts = {}) {
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error("API " + res.status + ": " + (await res.text()));
-<<<<<<< HEAD
     return JSON.parse(await res.text(), (_key, value, context) => {
       if (typeof value !== "number") return value;
       if (typeof context?.source !== "string") throw new Error("Exact JSON numbers require Node 22 or newer");
       return /[.eE]/.test(context.source) || !Number.isSafeInteger(value) ? context.source : value;
     });
-=======
-    return await res.json();
->>>>>>> origin/main
   } catch (error) {
     if (error?.name === "TimeoutError" || error?.name === "AbortError") {
       const uncertain = !["GET", "HEAD", "OPTIONS"].includes(method)
@@ -67,10 +60,7 @@ const server = new Server(
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
-<<<<<<< HEAD
     ...conversationTools.map(({name, description, inputSchema, write}) => ({name, description, inputSchema, annotations: {readOnlyHint: !write, destructiveHint: !!write, openWorldHint: false}})),
-=======
->>>>>>> origin/main
     { name: "whoami", description: "현재 로컬 인간 역할을 조회한다.", inputSchema: {type: "object", properties: {}} },
     { name: "get_case", description: "Case 참조로 업무를 조회한다.", inputSchema: {type: "object", properties: {caseRef: {type: "string", minLength: 1}}, required: ["caseRef"]} },
     { name: "get_plan", description: "저장된 재보충 계획과 근거를 조회한다.", inputSchema: {type: "object", properties: {planRef: {type: "string", minLength: 1}}, required: ["planRef"]} },
@@ -132,7 +122,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: suppliedArguments } = request.params;
   const args = suppliedArguments ?? {};
-<<<<<<< HEAD
   let requestKey;
   try {
     const humanTool = conversationTools.find(tool => tool.name === name);
@@ -143,9 +132,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       return await callConversationTool(humanTool, args, (path, opts = {}) => api(path, {...opts, headers: {...opts.headers, "X-Mulino-Local-Role": process.env.MULINO_LOCAL_ROLE ?? "OPERATOR"}}), requestKey);
     }
-=======
-  try {
->>>>>>> origin/main
     switch (name) {
       case "whoami":
       case "get_case":
@@ -223,11 +209,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 ? data
                     .map(
                       (a) =>
-<<<<<<< HEAD
                         "요청 " + a.attentionRequestId + " / 버전 " + a.version + (a.governanceActionId == null ? " (answer_attention)" : " / 구매 승인 " + a.governanceActionId + " (get_approval → decide_purchase)") + "\n[" + a.reasonType + "] " + a.title + " (" + a.caseRef + ")\n  질문: " + a.question +
-=======
-                        "[" + a.reasonType + "] " + a.title + " (" + a.caseRef + ")\n  질문: " + a.question +
->>>>>>> origin/main
                         (a.consequence ? "\n  미조치 시: " + a.consequence : "")
                     )
                     .join("\n\n")
@@ -244,7 +226,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text:
-                "Case (열림/진행): " + data.casesOpen +
+                "Case (열림/진행/대기): " + data.casesOpen +
                 "\nCase (위험): " + data.casesAtRisk +
                 "\nWork Item (READY): " + data.workItemsReady +
                 "\nWork Item (WAITING): " + data.workItemsWaiting +
@@ -261,10 +243,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return {
       content: [{ type: "text", text: "오류: " + e.message }],
       isError: true,
-<<<<<<< HEAD
       ...(requestKey ? {structuredContent: {requestKey}} : {}),
-=======
->>>>>>> origin/main
     };
   }
 });

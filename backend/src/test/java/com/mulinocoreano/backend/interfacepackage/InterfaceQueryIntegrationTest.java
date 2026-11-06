@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -20,6 +21,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @Transactional
 class InterfaceQueryIntegrationTest {
+
+    @Autowired InterfaceService service;
 
     @Autowired
     MockMvc mockMvc;
@@ -106,6 +109,18 @@ class InterfaceQueryIntegrationTest {
                         org.hamcrest.Matchers.allOf(
                                 org.hamcrest.Matchers.containsString("21"),
                                 org.hamcrest.Matchers.containsString("20"))));
+    }
+
+    @Test
+    void finishedGoodsInventoryExcludesSemiFinishedStockForSearchAndAllInventory() {
+        String marker=shortId();long warehouse=warehouse("Separate product kinds");
+        stock("Finished "+marker,"FG-"+marker,warehouse,10);
+        stock("Semi "+marker,"SF-"+marker,warehouse,500);
+        jdbc.sql("UPDATE products SET product_type='SEMI_FINISHED' WHERE sku=:sku").param("sku","SF-"+marker).update();
+        for(String query:new String[]{marker,null}) {
+            var response=service.ask(query);
+            assertThat(response.inventory()).extracting(InventoryDto::sku).contains("FG-"+marker).doesNotContain("SF-"+marker);
+        }
     }
 
     private long warehouse(String name) {

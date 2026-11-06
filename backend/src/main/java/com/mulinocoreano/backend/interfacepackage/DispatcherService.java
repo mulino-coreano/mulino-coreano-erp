@@ -26,22 +26,15 @@ public class DispatcherService {
     private static final String MANUAL_DISPATCH_EVENT = "DISPATCH_REQUESTED";
     private static final String MONITOR_DISPATCH_EVENT = "DISPATCH_SWEEP_TRIGGERED";
 
-<<<<<<< HEAD
     private final com.mulinocoreano.backend.followup.ReplenishmentFollowupService followups;
-=======
->>>>>>> origin/main
     private final JdbcClient jdbc;
     private final ObjectMapper objectMapper;
     private final WaitingConditionMatcher matcher;
     private final RunService runService;
 
     public DispatcherService(JdbcClient jdbc, ObjectMapper objectMapper,
-<<<<<<< HEAD
                              WaitingConditionMatcher matcher, RunService runService, com.mulinocoreano.backend.followup.ReplenishmentFollowupService followups) {
         this.followups = followups;
-=======
-                             WaitingConditionMatcher matcher, RunService runService) {
->>>>>>> origin/main
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.matcher = matcher;
@@ -93,10 +86,7 @@ public class DispatcherService {
 
     @Transactional
     public EventDispatchResponse dispatchScheduled() {
-<<<<<<< HEAD
         followups.sweepDue();
-=======
->>>>>>> origin/main
         Instant requestedAt = Instant.now();
         Map<String, Object> payload = scheduledPayload(requestedAt, "MANUAL");
         return recordScheduledDispatch(MANUAL_DISPATCH_EVENT, "dispatch", payload);
@@ -104,10 +94,7 @@ public class DispatcherService {
 
     @Transactional
     public Optional<EventDispatchResponse> dispatchScheduledIfActionable() {
-<<<<<<< HEAD
         var followupEvents = followups.sweepDue();
-=======
->>>>>>> origin/main
         Instant requestedAt = Instant.now();
         Map<String, Object> payload = scheduledPayload(requestedAt, "MONITOR");
         EventScope allCases = new EventScope(null, null, null, null);
@@ -119,11 +106,7 @@ public class DispatcherService {
             return matcher.matches(condition, enrichManualDependencyState(condition, preview), requestedAt);
         });
         if (!actionable) {
-<<<<<<< HEAD
             return followupEvents.isEmpty() ? Optional.empty() : Optional.of(emptyResponse(followupEvents.getLast()));
-=======
-            return Optional.empty();
->>>>>>> origin/main
         }
         return Optional.of(recordScheduledDispatch(
                 MONITOR_DISPATCH_EVENT, "dispatch-sweep", payload));
@@ -414,10 +397,7 @@ public class DispatcherService {
                 WHERE wc.status='ACTIVE'
                   AND wc.resolved_by_event_id IS NULL
                   AND wi.status='WAITING'
-<<<<<<< HEAD
                   AND NOT EXISTS(SELECT 1 FROM replenishment_followups rf WHERE rf.work_item_id=wi.work_item_id)
-=======
->>>>>>> origin/main
                   AND c.status NOT IN ('RESOLVED','CLOSED')
                 """);
         boolean dependencyEvent = event != null
@@ -432,7 +412,11 @@ public class DispatcherService {
         } else if (scope.caseId() != null) {
             sql.append(" AND wi.case_id=:caseId\n");
         }
-        if (!dependencyEvent && scope.workItemId() != null) {
+        // Attention approval serves matching waits across the same Case. The Event remains
+        // attributed to the question's original Work Item; governance actions keep their scope.
+        boolean attentionApproval = event != null && "CHANGE_REQUEST_APPROVED".equals(event.eventType())
+                && event.payload().get("attention_request_id") != null;
+        if (!dependencyEvent && !attentionApproval && scope.workItemId() != null) {
             sql.append(" AND wi.work_item_id=:workItemId\n");
         }
         sql.append(" ORDER BY wc.waiting_condition_id");
@@ -446,7 +430,7 @@ public class DispatcherService {
         } else if (scope.caseId() != null) {
             query = query.param("caseId", scope.caseId());
         }
-        if (!dependencyEvent && scope.workItemId() != null) {
+        if (!dependencyEvent && !attentionApproval && scope.workItemId() != null) {
             query = query.param("workItemId", scope.workItemId());
         }
         return query.query((rs, rowNum) -> new WaitingCandidate(
@@ -640,11 +624,8 @@ public class DispatcherService {
                     WHERE ar.attention_request_id=:attentionId
                       AND ar.status='ANSWERED'
                       AND ar.resolved_by_user_id IS NOT NULL
-<<<<<<< HEAD
                       AND ar.reason_type='AUTHORITY_REQUIRED'
                       AND ar.governance_action_id IS NULL
-=======
->>>>>>> origin/main
                     FOR SHARE OF ar
                     """)
                     .param("attentionId", attentionId)
@@ -674,7 +655,6 @@ public class DispatcherService {
                     authoritative, new EventActor("USER", attention.userId()), false);
         }
 
-<<<<<<< HEAD
         boolean purchase = jdbc.sql("SELECT EXISTS(SELECT 1 FROM governance_actions WHERE governance_action_id=:id AND replenishment_plan_id IS NOT NULL)")
                 .param("id", governanceActionId).query(Boolean.class).single();
         if (purchase) {
@@ -707,8 +687,6 @@ public class DispatcherService {
             return approved;
         }
 
-=======
->>>>>>> origin/main
         ApprovedGovernanceAction approval = jdbc.sql("""
                 SELECT ga.resource_type, ga.resource_id, gd.decided_by
                 FROM governance_actions ga
@@ -832,13 +810,8 @@ public class DispatcherService {
         payload.put("evidenceRef", evidenceRef);
         payload.put("evidence_ref", evidenceRef);
         payload.put("relation", relation);
-        EventScope authoritativeScope = requestedScope.caseId() == null
-                ? new EventScope(
-                        target.claimCaseId(), target.caseRef(),
-                        requestedScope.workItemId(), requestedScope.workItemRef())
-                : requestedScope;
-        return new PreparedClaimEvidence(
-                authoritativeScope, claimId, target.evidenceId(), relation);
+        // Evidence attribution does not narrow a case-less business fact.
+        return new PreparedClaimEvidence(requestedScope, claimId, target.evidenceId(), relation);
     }
 
     private boolean containsClaimEvidenceSelector(Map<String, Object> payload) {

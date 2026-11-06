@@ -1,15 +1,12 @@
 package com.mulinocoreano.backend.interfacepackage;
 
 import static com.mulinocoreano.backend.generated.Tables.AGENTS;
-<<<<<<< HEAD
 import static com.mulinocoreano.backend.generated.Tables.REPLENISHMENT_FOLLOWUPS;
-=======
->>>>>>> origin/main
 import static com.mulinocoreano.backend.generated.Tables.CASES;
 import static com.mulinocoreano.backend.generated.Tables.RUNS;
 import static com.mulinocoreano.backend.generated.Tables.WORK_ITEMS;
 
-import static org.jooq.impl.DSL.currentLocalDateTime;
+import static org.jooq.impl.DSL.currentOffsetDateTime;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.jsonbGetAttributeAsText;
 import static org.jooq.impl.DSL.selectOne;
@@ -21,7 +18,6 @@ import org.jooq.DSLContext;
 import org.jooq.JSONB;
 import org.springframework.stereotype.Repository;
 
-import java.sql.Timestamp;
 import java.util.Optional;
 
 /** Run reservations and reconstruction savepoints; business validation stays in RunService. */
@@ -33,15 +29,12 @@ public class RunSchedulingRepository {
         this.dsl = dsl;
     }
 
-<<<<<<< HEAD
     public boolean isManagedWork(long workId) {
         return dsl.fetchExists(
                 selectOne().from(REPLENISHMENT_FOLLOWUPS)
                         .where(REPLENISHMENT_FOLLOWUPS.WORK_ITEM_ID.eq(workId)));
     }
 
-=======
->>>>>>> origin/main
     public Optional<Long> enqueue(
             String ref,
             long agentId,
@@ -157,7 +150,7 @@ public class RunSchedulingRepository {
         dsl.update(RUNS)
                 .set(RUNS.CONTEXT_SNAPSHOT, JSONB.valueOf(snapshot))
                 .set(RUNS.STATUS, RunStatus.FAILED)
-                .set(RUNS.FINISHED_AT, currentLocalDateTime())
+                .set(RUNS.FINISHED_AT, currentOffsetDateTime())
                 .where(RUNS.RUN_ID.eq(runId))
                 .execute();
     }
@@ -190,7 +183,7 @@ public class RunSchedulingRepository {
                                         row.value2(),
                                         row.value3(),
                                         row.value4().getLiteral(),
-                                        Timestamp.valueOf(row.value5()).toInstant()));
+                                        row.value5().toInstant()));
     }
 
     public record CaseTarget(long caseId, String caseRef) {}

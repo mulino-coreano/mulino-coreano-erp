@@ -131,6 +131,21 @@ class RunExecutionIntegrationTest {
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         return mapper.readValue(json,Map.class);
     }
+    @Test void runDurationAndQueuedInstantAgreeInUtcAndKst() throws Exception {
+        System.out.println("Run clock evidence: JVM="+java.time.ZoneId.systemDefault()+", JDBC="+jdbc.sql("SHOW TimeZone").query(String.class).single());
+        String ref=queue("SUPPLY_CHAIN");
+        var claim=claim();
+        execution.finish(ref,"worker-a",claim.get("leaseToken").toString(),"FAILED","Controlled duration fixture",null);
+        Double original=null;
+        for(String zone:java.util.List.of("UTC","Asia/Seoul")) {
+            jdbc.sql("SET LOCAL TIME ZONE '"+zone+"'").update();
+            double queuedGap=jdbc.sql("SELECT extract(epoch FROM claimed_at-started_at) FROM runs WHERE run_ref=:ref").param("ref",ref).query(Double.class).single();
+            double duration=jdbc.sql("SELECT extract(epoch FROM finished_at-claimed_at) FROM runs WHERE run_ref=:ref").param("ref",ref).query(Double.class).single();
+            assertThat(queuedGap).isBetween(0.0,60.0);assertThat(duration).isBetween(0.0,60.0);
+            if(original!=null)assertThat(duration).isEqualTo(original);original=duration;
+        }
+    }
+
     private String queue(String role) {
         String suffix=UUID.randomUUID().toString().substring(0,8), cr="CASE-"+suffix, wi="WI-"+suffix;
         jdbc.sql("INSERT INTO agents(agent_key,display_name) VALUES (:a,:a) ON CONFLICT(agent_key) DO NOTHING").param("a",role).update();

@@ -26,7 +26,6 @@ npm start   # Mulino Coreano backend (localhost:8080) 기본 상대
 - QUERY는 자동으로 업무가 되지 않습니다 — 사용자가 명시할 때만 ACT로 전환합니다.
 - 외부 대표 권한(이메일 발송 등)은 인간에게 있으며, 이 서버에는 포함하지 않았습니다.
 
-<<<<<<< HEAD
 ## 로컬 인간 역할과 결정 (#47·#48·#52)
 
 백엔드는 `SPRING_PROFILES_ACTIVE=local`로 기동한다. 인간 도구는
@@ -59,18 +58,3 @@ service/capability/Authorization 헤더와 internal/agent API는 쓰지 않는�
 `MULINO_TEST_CASE_REF`, `MULINO_TEST_ATTENTION_ID`를 지정해야 한다.
 이 script는 실제 ERP 발주를 생성하므로 폐기용 fixture DB에서만 실행한다.
 worker secret·capability를 받지 않으며 모델 실행·UAT를 뜻하지 않는다.
-=======
-## 로컬 인간 역할 (#47)
-
-`create_case`는 `MULINO_LOCAL_ROLE`을 `X-Mulino-Local-Role` 헤더로
-보낸다. 기본값은 OPERATOR다. local 백엔드는 OPERATOR·MANAGER의
-접수만 허용한다. 조회 도구에는 역할 헤더를 보내지 않는다.
-백엔드는 `SPRING_PROFILES_ACTIVE=local`로 기동한다.
-이 헤더는 로컬 PoC 전용이며 외부 인증을 대체하지 않는다.
-MCP의 키 지정 재시도는 아직 제공하지 않는다. REST 호출에서만
-선택적인 `Idempotency-Key`를 사용할 수 있다.
-
-#48은 인간 조회 도구 `whoami`, `get_case(caseRef)`, `get_plan(planRef)`을
-추가한다. 이 도구는 로컬 역할 헤더만 전달한다. `get_plan`은 local
-프로필에서만 사용 가능하다. 후속 승인·답변 도구는 #52에 남는다.
->>>>>>> origin/main

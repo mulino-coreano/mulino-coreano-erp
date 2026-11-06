@@ -39,7 +39,6 @@ class DefaultProfileIntegrationTest {
                 .content("{}" )).andExpect(status().isForbidden());
         mvc.perform(get("/unlisted")).andExpect(status().isForbidden());
     }
-<<<<<<< HEAD
     @Test
     void purchasingAndHumanAnswersAreDeniedOutsideLocal() throws Exception {
         for (String path : new String[]{"/api/v1/approvals/1", "/api/v1/purchase-orders/1"})
@@ -49,6 +48,4 @@ class DefaultProfileIntegrationTest {
         assertThat(jdbc.sql("SELECT count(*) FROM purchase_applications").query(Long.class).single()).isZero();
     }
 
-=======
->>>>>>> origin/main
 }
