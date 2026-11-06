@@ -1,7 +1,10 @@
 package com.mulinocoreano.backend.execution;
 
+<<<<<<< HEAD
 import com.mulinocoreano.backend.followup.ReplenishmentFollowupService;
 import com.mulinocoreano.backend.followup.ReplenishmentFollowupRepository;
+=======
+>>>>>>> origin/main
 import com.mulinocoreano.backend.interfacepackage.CreateEventRequest;
 import com.mulinocoreano.backend.interfacepackage.CreateRunRequest;
 import com.mulinocoreano.backend.interfacepackage.DispatcherService;
@@ -27,8 +30,11 @@ import java.util.UUID;
 
 @Service
 public class RunExecutionService {
+<<<<<<< HEAD
     private final ReplenishmentFollowupService followups;
     private final ReplenishmentFollowupRepository followupRepository;
+=======
+>>>>>>> origin/main
     private final RunExecutionRepository repository;
     private final RunWaitingPolicy waitingPolicy;
     private final RunLeaseRepository leases;
@@ -47,11 +53,15 @@ public class RunExecutionService {
             DispatcherService dispatcher,
             ObjectMapper mapper,
             PlatformTransactionManager transactionManager,
+<<<<<<< HEAD
             ObjectProvider<ProcurementCompletionVerifier> procurementCompletion,
             ReplenishmentFollowupService followups,
             ReplenishmentFollowupRepository followupRepository) {
         this.followups = followups;
         this.followupRepository = followupRepository;
+=======
+            ObjectProvider<ProcurementCompletionVerifier> procurementCompletion) {
+>>>>>>> origin/main
         this.repository = repository;
         this.waitingPolicy = new RunWaitingPolicy(repository);
         this.leases = leases;
@@ -60,7 +70,11 @@ public class RunExecutionService {
         this.dispatcher = dispatcher;
         this.mapper = mapper;
         this.completionPolicy =
+<<<<<<< HEAD
                 new RunCompletionPolicy(repository, followupRepository, procurementCompletion);
+=======
+                new RunCompletionPolicy(repository, procurementCompletion);
+>>>>>>> origin/main
         claimTransaction = new TransactionTemplate(transactionManager);
         claimTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         claimTransaction.setTimeout(30);
@@ -85,11 +99,14 @@ public class RunExecutionService {
         var candidates = repository.lockNextQueuedCandidates();
         if (candidates.isEmpty()) return Optional.empty();
         var row = leases.lock(candidates.getFirst());
+<<<<<<< HEAD
         if (followupRepository.isManagedWork(row.workId())) {
             repository.abortQueued(row.id());
             recordFinish(row, "ABORTED", "Server-managed follow-up cannot execute a model Run");
             return Optional.empty();
         }
+=======
+>>>>>>> origin/main
         if (!row.currentAssignment() || !"READY".equals(row.workStatus())) {
             abortQueued(row, "Run assignment is no longer active or current");
             return Optional.empty();
@@ -174,6 +191,7 @@ public class RunExecutionService {
         return finishLocked(row, outcome, summary, waiting);
     }
 
+<<<<<<< HEAD
     /** Trusted purchasing-service hook. No HTTP controller exposes this operation. */
     public Receipt awaitPurchaseApproval(long runId, long governanceActionId, String summary) {
         RunLeaseRepository.requireTransaction();
@@ -194,6 +212,8 @@ public class RunExecutionService {
         return finishLocked(row, "WAITING", summary, List.of(wait), true);
     }
 
+=======
+>>>>>>> origin/main
     @Transactional
     public Map<String, Object> retry(String runRef, String workerId, String token) {
         var row = workerLease(runRef, workerId, token);
@@ -232,8 +252,11 @@ public class RunExecutionService {
         else if (!"WAITING".equals(outcome) && !waits.isEmpty()) throw invalidResult();
         if ("DONE".equals(outcome)) {
             completionPolicy.validate(row);
+<<<<<<< HEAD
             if ("PROCUREMENT".equals(row.agentKey()))
                 followups.ensureForVerifiedCompletion(row.caseId(), row.workId());
+=======
+>>>>>>> origin/main
         }
         leases.requireLive(leases.lock(row.id()));
         String runStatus = Set.of("DONE", "WAITING").contains(outcome) ? "COMPLETED" : outcome;

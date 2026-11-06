@@ -1,6 +1,9 @@
 package com.mulinocoreano.backend.planning;
 
+<<<<<<< HEAD
 import com.zaxxer.hikari.HikariDataSource;
+=======
+>>>>>>> origin/main
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,9 +60,12 @@ class HumanPlanningIntegrationTest {
     void setup() throws Exception {
         assertThat(flyway.getConfiguration().getSchemas()).containsExactly("human_planning_it");
         flyway.clean(); flyway.migrate();
+<<<<<<< HEAD
         // Recreated enum types get new OIDs. A pooled connection that server-prepared a plan
         // query in an earlier test would fail it with "cached plan must not change result type".
         dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean().softEvictConnections();
+=======
+>>>>>>> origin/main
         ReplenishmentDemoFixture.load(jdbc);
         warehouse=jdbc.sql("SELECT warehouse_id FROM warehouses WHERE plant_id='DEMO-KR-01'").query(Long.class).single();
         products=jdbc.sql("SELECT product_id FROM products WHERE sku IN ('DEMO-AMR','DEMO-BSC') ORDER BY product_id").query(Long.class).list();

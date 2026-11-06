@@ -197,6 +197,7 @@ Attention이나 일반 Decision에는 그 결과의 참조를 둔다.
 - [#44 Case 증거·Claim 등록과 검증 이력 구현](https://github.com/mulino-coreano/mulino-coreano-erp/issues/44)은 `evidence`·`claims` 원본 등록과 검증 이력 구현을 다루는 Phase 6 목표다.
 - [#45 인간 답변·업무 결정 기록과 ERP 승인 경계 구현](https://github.com/mulino-coreano/mulino-coreano-erp/issues/45)은 인간 답변, 일반 업무 결정, ERP 승인 권한의 경계를 구현하는 Phase 5 목표다.
 - 기존 [#33 승인엔진](https://github.com/mulino-coreano/mulino-coreano-erp/issues/33)은 governance 승인 엔진의 별도 범위이고, [#35 실제 UX 검증](https://github.com/mulino-coreano/mulino-coreano-erp/issues/35)은 사용자 승인 경험과 실행 검증의 별도 범위다.
+<<<<<<< HEAD
 
 
 ## #45·#50·#51·#52 이후의 로컬 계약
@@ -209,3 +210,5 @@ WAITING 후속 책임을 남기며 입고·생산을 만들어 Case를 끝내지
 15,2 base 가격과 정확한 구매 금액, version/idempotency, V24~V26과
 독립 DDL 16~18 계약은 [인간 답변·구매 결정](14_human_purchase_api.md)을
 따른다. #33의 나머지 ERP gate와 #34의 실제 데모 DB 검증은 남아 있다.
+=======
+>>>>>>> origin/main

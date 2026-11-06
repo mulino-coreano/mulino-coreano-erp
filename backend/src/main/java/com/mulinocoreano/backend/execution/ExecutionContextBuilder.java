@@ -1,6 +1,9 @@
 package com.mulinocoreano.backend.execution;
 
+<<<<<<< HEAD
 import com.mulinocoreano.backend.followup.ReplenishmentFollowupRepository;
+=======
+>>>>>>> origin/main
 import com.mulinocoreano.backend.interfacepackage.ContextSnapshotService;
 import com.mulinocoreano.backend.planning.CanonicalJson;
 import com.mulinocoreano.backend.planning.PlanningSnapshotRepository;
@@ -16,7 +19,10 @@ import java.util.Map;
 /** Reconstructs current facts without replacing the original Run or plan audit snapshots. */
 @Component
 public class ExecutionContextBuilder {
+<<<<<<< HEAD
     private final ReplenishmentFollowupRepository followups;
+=======
+>>>>>>> origin/main
     private final ContextSnapshotService contexts;
     private final PlanningSnapshotRepository snapshots;
     private final ExecutionContextRepository repository;
@@ -28,9 +34,13 @@ public class ExecutionContextBuilder {
             PlanningSnapshotRepository snapshots,
             ExecutionContextRepository repository,
             CanonicalJson json,
+<<<<<<< HEAD
             @Qualifier("planningClock") Clock clock,
             ReplenishmentFollowupRepository followups) {
         this.followups = followups;
+=======
+            @Qualifier("planningClock") Clock clock) {
+>>>>>>> origin/main
         this.contexts = contexts;
         this.snapshots = snapshots;
         this.repository = repository;
@@ -41,11 +51,15 @@ public class ExecutionContextBuilder {
     public Map<String, Object> build(String caseRef, long caseId) {
         var context = new LinkedHashMap<String, Object>(contexts.build(caseRef));
         context.put("caseRef", caseRef);
+<<<<<<< HEAD
         context.put("followups", followups.forCase(caseId));
         context.put("caseMetadata", json.readTree(repository.caseMetadata(caseId)));
         context.put(
                 "purchasing",
                 json.readTree("[" + String.join(",", repository.recentPurchasing(caseId)) + "]"));
+=======
+        context.put("caseMetadata", json.readTree(repository.caseMetadata(caseId)));
+>>>>>>> origin/main
         repository
                 .latestPlan(caseId)
                 .ifPresent(

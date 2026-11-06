@@ -510,17 +510,22 @@ public class PlanningSnapshotRepository {
                                         PURCHASE_ORDER_ITEMS.UNIT_PRICE,
                                         PURCHASE_ORDERS.SUPPLIER_ID,
                                         PURCHASE_ORDERS.ORDER_DATE,
+<<<<<<< HEAD
                                         coalesce(
                                                         PURCHASE_ORDER_ITEMS.EXPECTED_DELIVERY_DATE,
                                                         PURCHASE_ORDERS.EXPECTED_DELIVERY_DATE)
                                                 .as("expected_delivery_date"),
                                         PURCHASE_ORDERS.WAREHOUSE_ID.as("purchase_warehouse_id"),
+=======
+                                        PURCHASE_ORDERS.EXPECTED_DELIVERY_DATE,
+>>>>>>> origin/main
                                         PURCHASE_ORDERS.STATUS)
                                 .from(PURCHASE_ORDER_ITEMS)
                                 .join(PURCHASE_ORDERS)
                                 .on(
                                         PURCHASE_ORDERS.PURCHASE_ORDER_ID.eq(
                                                 PURCHASE_ORDER_ITEMS.PURCHASE_ORDER_ID))
+<<<<<<< HEAD
                                 // Another warehouse's order is neither supply nor plan evidence
                                 // here; legacy orders without a warehouse remain shared supply.
                                 .where(
@@ -535,6 +540,9 @@ public class PlanningSnapshotRepository {
                                                                         PURCHASE_ORDERS
                                                                                 .WAREHOUSE_ID
                                                                                 .eq(warehouse)))));
+=======
+                                .where(PURCHASE_ORDER_ITEMS.RAW_MATERIAL_ID.in(rawIds)));
+>>>>>>> origin/main
         if (items.isEmpty()) return;
         var receipts =
                 rows(

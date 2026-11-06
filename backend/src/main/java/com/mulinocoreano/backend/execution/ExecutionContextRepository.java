@@ -29,6 +29,7 @@ public class ExecutionContextRepository {
                 .data();
     }
 
+<<<<<<< HEAD
     public List<String> recentPurchasing(long caseId) {
         var g = GOVERNANCE_ACTIONS;
         var p = REPLENISHMENT_PLANS;
@@ -79,6 +80,8 @@ public class ExecutionContextRepository {
                                         .and(PURCHASE_APPLICATIONS.CASE_ID.eq(caseId))));
     }
 
+=======
+>>>>>>> origin/main
     public Optional<PriorPlan> latestPlan(long caseId) {
         var p = REPLENISHMENT_PLANS;
         return dsl.select(

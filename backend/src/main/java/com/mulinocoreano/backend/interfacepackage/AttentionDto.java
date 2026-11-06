@@ -10,6 +10,7 @@ public record AttentionDto(
         String question,
         String consequence,
         String status,
+<<<<<<< HEAD
         Instant createdAt,
         int version,
         Long governanceActionId
@@ -19,3 +20,7 @@ public record AttentionDto(
         this(attentionRequestId, caseRef, reasonType, title, question, consequence, status, createdAt, 1, null);
     }
 }
+=======
+        Instant createdAt
+) {}
+>>>>>>> origin/main
