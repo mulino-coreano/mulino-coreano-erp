@@ -31,6 +31,9 @@ class DispatcherIntegrationTest {
     JdbcClient jdbc;
 
     @Autowired
+    RunSchedulingRepository scheduling;
+
+    @Autowired
     ObjectMapper objectMapper;
 
     @Test
@@ -110,7 +113,7 @@ class DispatcherIntegrationTest {
                 throw new IllegalStateException("context source unavailable");
             }
         };
-        RunService failingRunService = new RunService(jdbc, objectMapper, failingContext);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingContext);
         DispatcherService failingDispatcher = new DispatcherService(
                 jdbc, objectMapper, new WaitingConditionMatcher(), failingRunService);
 
@@ -832,7 +835,7 @@ class DispatcherIntegrationTest {
                 INSERT INTO runs
                     (run_ref, agent_id, case_id, work_item_id, runtime, status)
                 VALUES
-                    (:runRef, :agentId, :caseId, :workItemId, 'CODEX', 'RUNNING')
+                    (:runRef, :agentId, :caseId, :workItemId, 'CODEX', 'QUEUED')
                 """)
                 .param("runRef", unique("RUN"))
                 .param("agentId", fixture.agentId())

@@ -18,7 +18,7 @@ public class LocalActorFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        if (request.getHeader("Authorization") != null) {
+        if (request.getHeader("Authorization") != null || request.getHeader("X-Mulino-Local-Service") != null) {
             response.setStatus(401);
             return;
         }

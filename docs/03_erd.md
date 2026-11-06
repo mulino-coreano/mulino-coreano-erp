@@ -600,3 +600,11 @@ erDiagram
 속하며 선택적인 원본 Work Item FK를 둔다. 인간 계산에서는 이 FK가 NULL이다.
 BOM과 공급 조건은 ERP 원료·제품·공급처를 참조한다. 기존 LOT 사슬은 유지한다.
 정의는 `database/ddl/12_planning_data.sql`을 따른다.
+
+### 실행 lease와 계획 시도 (#49)
+
+V21~V23은 runs의 lease hash·만료·재시도 관계와 work_items의 최근
+계획 결과를 추가한다. `(latest_planning_plan_id, case_id, work_item_id)`는
+계획의 `(replenishment_plan_id, case_id, created_by_work_item_id)`를
+참조한다. attempt는 1 또는 2이며 업무별 활성 QUEUED/RUNNING은 하나다.
+새 테이블 없이 기존 Run·Work Item·계획의 실행 증거를 연결한다.

@@ -54,9 +54,9 @@ class RunServiceTransactionIntegrationTest {
 
             assertThat(contextSnapshotService.attempts()).isEqualTo(2);
             assertThat(contextSnapshotService.observedTransaction()).isTrue();
-            assertThat(run.status()).isEqualTo("RUNNING");
+            assertThat(run.status()).isEqualTo("QUEUED");
             assertThat(run.runRef()).startsWith("RUN-");
-            assertThat(persistedStatus(run.runId())).isEqualTo("RUNNING");
+            assertThat(persistedStatus(run.runId())).isEqualTo("QUEUED");
             assertThat(snapshot(run.runId()).path("objective").asString())
                     .isEqualTo("Committed run after savepoint recovery");
             assertThat(snapshot(run.runId()).path("stale").asBoolean()).isFalse();

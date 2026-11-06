@@ -39,3 +39,45 @@ service·capability 헤더를 만들지 않는다. 쓰기·승인 도구는 해�
 
 현재 미입고 예정량은 기존 purchase_orders의 납기일을 사용한다.
 발주별 목적 창고와 품목별 납기일은 #50의 구매 데이터 이식 후 적용한다.
+
+## Run lease와 에이전트 계획 (#49)
+
+예약은 QUEUED, 실행기가 청구한 상태는 RUNNING이다. 기존 RUNNING
+예약은 V22에서 ABORTED와 감사 Event로 보존한다. V21은 enum 추가만,
+V22는 lease·에이전트 seed, V23은 계획 attempt 기록을 담당한다.
+
+local 실행기는 X-Mulino-Local-Service를 보낸다. 설정값은
+MULINO_LOCAL_SERVICE_SECRET이며 빈 값은 어떤 실행기도 인증하지 않는다.
+인간 역할 헤더 또는 Authorization과 함께 보내면 401이다.
+
+| API | 호출자 |
+|---|---|
+| POST /api/v1/internal/runs/claim | local ServiceActor |
+| POST /api/v1/internal/runs/heartbeat | local ServiceActor + leaseToken |
+| POST /api/v1/internal/runs/finish | local ServiceActor + leaseToken |
+| POST /api/v1/internal/runs/retry | local ServiceActor + leaseToken |
+| POST /api/v1/events, /runs, /dispatch | local ServiceActor |
+| POST /api/v1/cases/{ref}/plans | 인간 또는 SUPPLY_CHAIN capability |
+| POST /api/v1/agent/work-items | ORCHESTRATOR capability |
+| POST /api/v1/agent/work-items/{ref}/transition | 해당 업무의 capability |
+
+에이전트는 Authorization: Bearer 헤더로 짧은 수명의 capability를
+보낸다. 계획 POST는 이 헤더가 있을 때만 agent 체인이 맡는다.
+헤더가 없으면 #48의 인간 경로를 유지한다. purchase-proposal 경로는
+capability 없이는 401이며 실제 제안 구현은 #50에서 추가한다.
+기본 프로필의 기존 Event·Run 경로에는 service 헤더를 요구하지 않는다.
+
+에이전트의 계획 계산과 업무 전이 Idempotency-Key 영수증은 한 실행
+단위다. 한 실행은 Run과 그 Run의 lease 만료 재시도 사슬이다. 재시도는
+응답을 잃은 같은 시도이므로, 같은 Run이나 그 재시도가 같은 키를 보내면
+원래 응답을 받는다. WAITING 뒤 재개된 Run은 새 실행이다. 같은 키를
+보내도 현재 ERP 사실로 다시 계산해 attempt를 기록하고, 전이는 호출한
+Run을 종료한다. 재개된 Run의 lease 만료 재시도는 재개된 Run의 응답을
+받는다. 다만 아래 DONE 규칙은 Work Item의 최근 attempt를 보므로, 계획을
+다시 계산하지 않은 새 Run은 이전 Run의 READY attempt로 DONE을 마칠 수
+있다. DONE에 그 Run 자신의 attempt를 요구할지는 후속 결정이다.
+
+만료 lease는 한 번만 재시도한다. 두 번째 실패는 attention과 BLOCKED
+업무를 남긴다. SUPPLY_CHAIN의 DONE은 최근 계획 attempt가 READY이고
+같은 Case·Work Item의 계획을 가리킬 때만 허용된다. 과거의 성공 계획만으로
+현재 실패를 덮지 않는다. 실행기 이미지·실제 모델 실행은 후속 범위다.

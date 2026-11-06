@@ -32,6 +32,9 @@ class RunServiceIntegrationTest {
     JdbcClient jdbc;
 
     @Autowired
+    RunSchedulingRepository scheduling;
+
+    @Autowired
     ObjectMapper objectMapper;
 
     @Test
@@ -44,7 +47,7 @@ class RunServiceIntegrationTest {
         RunDto run = runService.createRun(request(fixture), eventId);
 
         JsonNode snapshot = snapshot(run.runId());
-        assertThat(run.status()).isEqualTo("RUNNING");
+        assertThat(run.status()).isEqualTo("QUEUED");
         assertThat(triggerEventId(run.runId())).isEqualTo(eventId);
         assertThat(snapshot.path("objective").asString())
                 .isEqualTo("Investigate delayed purchase order");
@@ -114,7 +117,7 @@ class RunServiceIntegrationTest {
                 throw new IllegalStateException("forced reconstruction failure");
             }
         };
-        RunService failingRunService = new RunService(jdbc, objectMapper, failingBuilder);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingBuilder);
 
         RunDto failed = failingRunService.createRun(request(fixture), null);
 
@@ -238,7 +241,7 @@ class RunServiceIntegrationTest {
                 throw new IllegalArgumentException("context source unavailable");
             }
         };
-        RunService failingRunService = new RunService(jdbc, objectMapper, failingBuilder);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingBuilder);
 
         RunDto failed = failingRunService.createRun(request(fixture), null);
 
@@ -273,14 +276,14 @@ class RunServiceIntegrationTest {
                 return super.build(caseRef);
             }
         };
-        RunService retryingRunService = new RunService(jdbc, objectMapper, failsOnce);
+        RunService retryingRunService = new RunService(scheduling, objectMapper, failsOnce);
         AtomicReference<RunDto> result = new AtomicReference<>();
 
         assertThatCode(() -> result.set(retryingRunService.createRun(request(fixture), null)))
                 .doesNotThrowAnyException();
 
         assertThat(attempts).hasValue(2);
-        assertThat(result.get().status()).isEqualTo("RUNNING");
+        assertThat(result.get().status()).isEqualTo("QUEUED");
         assertThat(snapshot(result.get().runId()).path("objective").asString())
                 .isEqualTo("Uncommitted dispatcher-visible objective");
         assertThat(snapshot(result.get().runId()).path("stale").asBoolean()).isFalse();
@@ -309,7 +312,7 @@ class RunServiceIntegrationTest {
 
         RunDto run = interfaceService.createRun(request(fixture));
 
-        assertThat(run.status()).isEqualTo("RUNNING");
+        assertThat(run.status()).isEqualTo("QUEUED");
         assertThat(triggerEventIsNull(run.runId())).isTrue();
         assertThat(snapshot(run.runId()).path("objective").asString())
                 .isEqualTo("Interface delegation");
@@ -420,7 +423,7 @@ class RunServiceIntegrationTest {
                 throw new IllegalStateException(message);
             }
         };
-        return new RunService(jdbc, objectMapper, failingBuilder)
+        return new RunService(scheduling, objectMapper, failingBuilder)
                 .createRun(request(fixture), null);
     }
 
