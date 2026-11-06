@@ -149,14 +149,22 @@ public class InterfaceService {
     public List<AttentionDto> listAttention() {
         return jdbc.sql("""
                 SELECT ar.attention_request_id, c.case_ref, ar.reason_type::text, ar.title,
+<<<<<<< HEAD
+                       ar.question, ar.consequence, ar.status::text, ar.created_at, ar.version, ar.governance_action_id
+=======
                        ar.question, ar.consequence, ar.status::text, ar.created_at
+>>>>>>> origin/main
                 FROM attention_requests ar JOIN cases c ON c.case_id = ar.case_id
                 WHERE ar.status='OPEN'
                 ORDER BY ar.created_at DESC
                 """)
                 .query((rs, i) -> new AttentionDto(
                         rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4),
+<<<<<<< HEAD
+                        rs.getString(5), rs.getString(6), rs.getString(7), rs.getTimestamp(8).toInstant(), rs.getInt(9), rs.getObject(10,Long.class)))
+=======
                         rs.getString(5), rs.getString(6), rs.getString(7), rs.getTimestamp(8).toInstant()))
+>>>>>>> origin/main
                 .list();
     }
 

@@ -107,6 +107,11 @@ public class RunService {
         if (!workItem.caseRef().equals(request.caseRef())) {
             throw new InvalidInterfaceRequestException("workItemRef does not belong to caseRef");
         }
+<<<<<<< HEAD
+        if (repository.isManagedWork(workItem.workItemId()))
+            throw new InvalidInterfaceRequestException("SERVER_MANAGED_WORK_ITEM");
+=======
+>>>>>>> origin/main
         if (!"READY".equals(workItem.status())) {
             throw new InvalidInterfaceRequestException("workItemRef must be READY to create a Run");
         }
