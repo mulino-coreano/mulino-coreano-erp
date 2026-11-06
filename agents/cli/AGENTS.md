@@ -1,11 +1,12 @@
 # agents/cli/ — `mulino` CLI (Zig)
 
-Single static binary. Pattern: `mulino <noun> <verb>` where nouns mirror the traceability chain: `supplier`, `cert`, `material`, `po`, `inbound`, `lot`, `production`, `outbound`, `order`, `recall`. Example: `mulino lot trace RM-2026-001 --reverse`.
+Single static binary. Current commands: `case show`, `plan show/calculate`, `work create/transition`, `material show`, `po show/propose`. Exact arguments and DTOs are in [README.md](README.md). Other traceability-chain commands (`lot`, etc.) remain future work; never present them as installed capabilities.
 
 ## Contract (consumers are LLM agents, not humans)
 
 - **JSON on stdout, always.** Errors are JSON on stderr.
 - **Exit codes**: `0` = command executed — including governance verdicts (`{"status": "PENDING_APPROVAL", "approval_id": ...}` and `BLOCKED` are data, not failures); `1` = usage error; `2` = network/API failure.
+- `po propose PLAN_REF --json '{}' --request-key KEY` asks the server to select all plan purchase lines. The server enforces the empty-object contract. A successful proposal may finish the Run capability; `PENDING_APPROVAL` and no-purchase outcomes require no follow-up completion or retry. There are no CLI approval, decision, or apply commands.
 - **No retries** — the calling agent is the retry loop.
 - **Config via env only**: `MULINO_API_URL`, `MULINO_TOKEN`. The token carries role identity, which the L1 governance matrix evaluates on writes. No config files.
 

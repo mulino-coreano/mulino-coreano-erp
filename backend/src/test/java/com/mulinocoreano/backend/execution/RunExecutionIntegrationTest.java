@@ -31,6 +31,20 @@ class RunExecutionIntegrationTest {
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
     com.mulinocoreano.backend.interfacepackage.ContextSnapshotService contexts;
 
+    @Test void workersOnlyReceiveQueuedRunsForTheirDeclaredRuntime() {
+        String codex = queue("SUPPLY_CHAIN");
+        String claude = queue("SUPPLY_CHAIN");
+        jdbc.sql("UPDATE runs SET runtime='CLAUDE' WHERE run_ref=:r").param("r",claude).update();
+        assertThat(execution.claim("claude-worker", "CLAUDE").orElseThrow().runRef()).isEqualTo(claude);
+        assertThat(jdbc.sql("SELECT status::text FROM runs WHERE run_ref=:r").param("r",codex).query(String.class).single()).isEqualTo("QUEUED");
+        assertThat(execution.claim("codex-worker", "CODEX").orElseThrow().runRef()).isEqualTo(codex);
+    }
+    @Test void invalidRuntimeDoesNotAcquireOrMutateQueuedWork() {
+        String ref = queue("SUPPLY_CHAIN");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> execution.claim("bad", "GPT")).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        assertThat(jdbc.sql("SELECT status::text FROM runs WHERE run_ref=:r").param("r",ref).query(String.class).single()).isEqualTo("QUEUED");
+    }
+
     @Test void claimReturnsDistinctTokensAndPreservesQueuedSnapshot() throws Exception {
         String ref = queue("SUPPLY_CHAIN");
         Map<String,Object> claim = claim();
@@ -43,7 +57,7 @@ class RunExecutionIntegrationTest {
                 .doesNotContain(claim.get("leaseToken").toString(),claim.get("capabilityToken").toString());
         assertThat(jdbc.sql("SELECT status::text FROM runs WHERE run_ref=:r").param("r",ref).query(String.class).single()).isEqualTo("RUNNING");
         assertThat(jdbc.sql("SELECT context_snapshot IS NOT NULL AND execution_context IS NOT NULL FROM runs WHERE run_ref=:r").param("r",ref).query(Boolean.class).single()).isTrue();
-        mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret").contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"worker-b\"}"))
+        mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret").contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"worker-b\",\"runtime\":\"CODEX\"}"))
                 .andExpect(status().isNoContent());
     }
 
@@ -59,7 +73,7 @@ class RunExecutionIntegrationTest {
 
     @Test void alreadyLeasedWorkerReceivesSafeConflictCode() throws Exception {
         queue("SUPPLY_CHAIN");claim();
-        mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret").contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"worker-a\"}"))
+        mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret").contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"worker-a\",\"runtime\":\"CODEX\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.error").value("WORKER_ALREADY_LEASED"));
     }
@@ -93,7 +107,7 @@ class RunExecutionIntegrationTest {
         assertThat(second.get("runRef")).isNotEqualTo(original);
         assertThat(jdbc.sql("SELECT attempt FROM runs WHERE run_ref=:r").param("r",second.get("runRef")).query(Integer.class).single()).isEqualTo(2);
         expire(second.get("runRef").toString());
-        for (int i=0;i<2;i++) mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret").contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"worker-a\"}"))
+        for (int i=0;i<2;i++) mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret").contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"worker-a\",\"runtime\":\"CODEX\"}"))
                 .andExpect(status().isNoContent());
         assertThat(jdbc.sql("SELECT count(*) FROM attention_requests WHERE work_item_id=(SELECT work_item_id FROM runs WHERE run_ref=:r)").param("r",original).query(Long.class).single()).isEqualTo(1);
         assertThat(jdbc.sql("SELECT w.status::text FROM work_items w JOIN runs r ON w.work_item_id=r.work_item_id WHERE r.run_ref=:r").param("r",original).query(String.class).single()).isEqualTo("BLOCKED");
@@ -118,7 +132,7 @@ class RunExecutionIntegrationTest {
     @Test void capabilityIsRejectedByInternalWorkerRoute() throws Exception {
         queue("SUPPLY_CHAIN"); Map<String,Object> c=claim();
         mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret").header("Authorization","Bearer "+c.get("capabilityToken"))
-                .contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"worker-a\"}"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"worker-a\",\"runtime\":\"CODEX\"}"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -127,7 +141,7 @@ class RunExecutionIntegrationTest {
     }
 
     private Map<String,Object> claim() throws Exception {
-        String json=mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret").contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"worker-a\"}"))
+        String json=mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret").contentType(MediaType.APPLICATION_JSON).content("{\"workerId\":\"worker-a\",\"runtime\":\"CODEX\"}"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         return mapper.readValue(json,Map.class);
     }

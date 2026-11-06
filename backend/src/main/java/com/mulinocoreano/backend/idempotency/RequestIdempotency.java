@@ -28,14 +28,14 @@ public class RequestIdempotency {
 
     /** New operation namespaces use canonical hashes; legacy Case and plan receipts keep their hash. */
     public tools.jackson.databind.JsonNode executeCanonicalJson(String scope, String key, Object request, Supplier<?> action) {
-        return executeHashed(scope, key, canonical.sha256(request), action, true);
+        return executeHashed(scope, key, canonical.sha256(request), action);
     }
 
     public tools.jackson.databind.JsonNode executeJson(String scope, String key, Object request, Supplier<?> action) {
-        return executeHashed(scope, key, hash(mapper.writeValueAsString(request)), action, false);
+        return executeHashed(scope, key, hash(mapper.writeValueAsString(request)), action);
     }
 
-    private tools.jackson.databind.JsonNode executeHashed(String scope, String key, String hash, Supplier<?> action, boolean exact) {
+    private tools.jackson.databind.JsonNode executeHashed(String scope, String key, String hash, Supplier<?> action) {
         if (key.isBlank() || key.length() > 200) throw new InvalidInterfaceRequestException("Invalid Idempotency-Key");
         if (!TransactionSynchronizationManager.isActualTransactionActive()) throw new IllegalStateException("Transaction required");
         coordinate(scope, key);
@@ -44,13 +44,13 @@ public class RequestIdempotency {
                 .query((rs, row) -> new Receipt(rs.getString(1), rs.getString(2))).optional();
         if (saved.isPresent()) {
             if (!saved.get().hash().equals(hash)) throw new ResponseStatusException(HttpStatus.CONFLICT, "Key already used for different input");
-            return exact ? canonical.readTree(saved.get().response()) : mapper.readTree(saved.get().response());
+            return canonical.readTree(saved.get().response());
         }
         Object result = action.get();
         jdbc.sql("INSERT INTO request_idempotency(scope,request_key,request_hash,response) VALUES (:scope,:key,:hash,CAST(:response AS jsonb))")
                 .param("scope", scope).param("key", key).param("hash", hash)
                 .param("response", mapper.writeValueAsString(result)).update();
-        return exact ? canonical.readTree(mapper.writeValueAsString(result)) : mapper.valueToTree(result);
+        return canonical.readTree(mapper.writeValueAsString(result));
     }
     public void coordinate(String scope, String key) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) throw new IllegalStateException("Transaction required");

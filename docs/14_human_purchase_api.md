@@ -91,7 +91,9 @@ ACT intake의 초기 Run 예약·재보충 scope 생성과 실제 runtime 연결
 MCP는 `whoami`, `get_case`, `get_plan`, `get_approval`,
 `decide_purchase`, `answer_attention`, `get_purchase_order`를 제공한다.
 인간 도구는 `MULINO_LOCAL_ROLE` (기본 OPERATOR)을
-`X-Mulino-Local-Role`로만 전달한다. service secret, run capability,
+`X-Mulino-Local-Role`로, `MULINO_LOCAL_HUMAN_SECRET`을
+`X-Mulino-Local-Human`으로만 전달한다. 백엔드는 human secret이 없거나
+틀린 역할 헤더를 401로 거부한다. service secret, run capability,
 `Authorization`, `/internal/runs`, `/agent/**`를 쓰지 않는다.
 결정 도구는 read-only가 아니며 version/hash와 인간의 선택이 필요하다.
 requestKey를 생략하면 UUID를 생성하고 오류에도 반환한다.

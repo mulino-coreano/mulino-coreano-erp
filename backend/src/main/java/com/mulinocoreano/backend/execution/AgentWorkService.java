@@ -101,7 +101,7 @@ public class AgentWorkService {
                                                     request.agentKey(),
                                                     scope.caseRef(),
                                                     ref,
-                                                    "CODEX"),
+                                                    runs.defaultRuntime()),
                                             null);
                             if (!"QUEUED".equals(run.status()))
                                 throw new ResponseStatusException(

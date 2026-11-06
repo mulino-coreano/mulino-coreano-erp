@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
+import com.mulinocoreano.backend.security.LocalHumanRequest;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -35,10 +36,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /** 목표 2·3·4: 인간이 계획을 계산하되 ERP 수량이나 발주를 변경하지 않는다. */
 @SpringBootTest(properties={"spring.flyway.schemas=human_planning_it", "spring.flyway.clean-disabled=false",
         "spring.flyway.init-sqls=CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public",
-        "spring.datasource.hikari.schema=human_planning_it", "spring.main.allow-bean-definition-overriding=true", "mulino.local-auth.service-secret=local-test-secret"})
+        "spring.datasource.hikari.schema=human_planning_it", "spring.main.allow-bean-definition-overriding=true", "mulino.local-auth.service-secret=local-test-secret",
+        LocalHumanRequest.SECRET_PROPERTY})
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 class HumanPlanningIntegrationTest {
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
     @Autowired MockMvc mvc;
     @Autowired JdbcClient jdbc;
     @Autowired Flyway flyway;
@@ -76,15 +79,33 @@ class HumanPlanningIntegrationTest {
         assertThat(second.path("version").asInt()).isEqualTo(2);
         assertThat(erp()).isEqualTo(before);
         assertThat(jdbc.sql("SELECT count(*) FROM replenishment_plans WHERE created_by_work_item_id IS NOT NULL").query(Long.class).single()).isZero();
-        mvc.perform(get("/api/v1/plans/"+first.path("ref").asString()).header("X-Mulino-Local-Role","VIEWER"))
+        mvc.perform(get("/api/v1/plans/"+first.path("ref").asString()).with(LocalHumanRequest.as("VIEWER")))
                 .andExpect(status().isOk());
+    }
+    @Test
+    void replayRetainsExactSixDecimalPlanEvidenceAndLegacyRequestHash() throws Exception {
+        var idempotency=new com.mulinocoreano.backend.idempotency.RequestIdempotency(jdbc,mapper);
+        var transaction=new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        record Input(long warehouseId,int horizonDays) {}
+        var input=new Input(warehouse,30);
+        var quantity=new java.math.BigDecimal("123456789012.123456");
+        var requestText=mapper.writeValueAsString(input);
+        var expectedHash=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(requestText.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        var first=transaction.execute(status -> idempotency.executeJson("plans:precision:human:1","exact-replay",input,
+            () -> Map.of("ref","PLAN-EXACT","result",Map.of("purchaseQuantity",quantity))));
+        var replay=transaction.execute(status -> idempotency.executeJson("plans:precision:human:1","exact-replay",input,
+            () -> { throw new AssertionError("A replay cannot calculate another plan"); }));
+        assertThat(first.path("result").path("purchaseQuantity").decimalValue()).isEqualByComparingTo(quantity);
+        assertThat(replay.path("result").path("purchaseQuantity").decimalValue()).isEqualByComparingTo(quantity);
+        assertThat(replay).isEqualTo(first);
+        assertThat(jdbc.sql("SELECT request_hash FROM request_idempotency WHERE scope='plans:precision:human:1' AND request_key='exact-replay'").query(String.class).single()).isEqualTo(expectedHash);
     }
     @Test
     void rejectsViewerAndReusedKeyWithDifferentScope() throws Exception {
         calculate("VIEWER","denied",403);
         assertThat(jdbc.sql("SELECT count(*) FROM replenishment_plans").query(Long.class).single()).isZero();
         calculate("MANAGER","fixed",200);
-        mvc.perform(post("/api/v1/cases/"+caseRef+"/plans").header("X-Mulino-Local-Role","MANAGER")
+        mvc.perform(post("/api/v1/cases/"+caseRef+"/plans").with(LocalHumanRequest.as("MANAGER"))
                 .header("Idempotency-Key","fixed").contentType("application/json")
                 .content(mapper.writeValueAsString(Map.of("warehouseId",warehouse,"productIds",products,"horizonDays",20))))
                 .andExpect(status().isConflict());
@@ -118,7 +139,7 @@ class HumanPlanningIntegrationTest {
         jdbc.sql("INSERT INTO work_items(work_item_ref,case_id,title,assigned_agent_id) SELECT 'WI-SUPPLY',:id,'supply',agent_id FROM agents WHERE agent_key='SUPPLY_CHAIN'").param("id",caseId).update();
         runs.createRun(new com.mulinocoreano.backend.interfacepackage.CreateRunRequest("SUPPLY_CHAIN",caseRef,"WI-SUPPLY","CODEX"),null);
         var claimResult=mvc.perform(post("/api/v1/internal/runs/claim").header("X-Mulino-Local-Service","local-test-secret")
-                .contentType("application/json").content("{\"workerId\":\"supply-worker\"}"))
+                .contentType("application/json").content("{\"workerId\":\"supply-worker\",\"runtime\":\"CODEX\"}"))
                 .andExpect(status().isOk()).andReturn();
         var claim=mapper.readTree(claimResult.getResponse().getContentAsString());
         var finish=Map.of("runRef",claim.path("runRef").asString(),"workerId","supply-worker",
@@ -214,7 +235,7 @@ class HumanPlanningIntegrationTest {
     private static final String DOUBLE_SUPPLIER_PRICES="UPDATE supplier_material_terms SET unit_price=unit_price*2";
     record Reply(int status,JsonNode body) {}
     private Reply request(String ref,String role,String key,Map<String,Object> body) throws Exception {
-        var r=mvc.perform(post("/api/v1/cases/"+ref+"/plans").header("X-Mulino-Local-Role",role)
+        var r=mvc.perform(post("/api/v1/cases/"+ref+"/plans").with(LocalHumanRequest.as(role))
                 .header("Idempotency-Key",key).contentType("application/json")
                 .content(mapper.writeValueAsString(body))).andReturn();
         String text=r.getResponse().getContentAsString();
@@ -250,13 +271,13 @@ class HumanPlanningIntegrationTest {
         return jdbc.sql("SELECT count(*) FROM attention_requests WHERE status='OPEN'").query(Long.class).single();
     }
     private String createCase(String objective) throws Exception {
-        var r=mvc.perform(post("/api/v1/cases").header("X-Mulino-Local-Role","MANAGER")
+        var r=mvc.perform(post("/api/v1/cases").with(LocalHumanRequest.as("MANAGER"))
                 .contentType("application/json").content(mapper.writeValueAsString(Map.of("objective",objective))))
                 .andExpect(status().isOk()).andReturn();
         return mapper.readTree(r.getResponse().getContentAsString()).get("caseRef").asString();
     }
     private JsonNode calculate(String role,String key,int status) throws Exception {
-        var r=mvc.perform(post("/api/v1/cases/"+caseRef+"/plans").header("X-Mulino-Local-Role",role)
+        var r=mvc.perform(post("/api/v1/cases/"+caseRef+"/plans").with(LocalHumanRequest.as(role))
                 .header("Idempotency-Key",key).contentType("application/json")
                 .content(mapper.writeValueAsString(Map.of("warehouseId",warehouse,"productIds",products))))
                 .andExpect(status().is(status)).andReturn();

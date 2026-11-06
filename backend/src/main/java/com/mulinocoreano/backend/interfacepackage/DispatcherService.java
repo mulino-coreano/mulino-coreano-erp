@@ -248,7 +248,7 @@ public class DispatcherService {
                 continue;
             }
             runService.tryCreateRun(new CreateRunRequest(
-                            workItem.agentKey(), workItem.caseRef(), workItem.workItemRef(), "CODEX"),
+                            workItem.agentKey(), workItem.caseRef(), workItem.workItemRef(), runService.defaultRuntime()),
                     eventId).ifPresent(run -> {
                         if ("QUEUED".equals(run.status())) {
                             scheduledRuns.add(run.runRef());

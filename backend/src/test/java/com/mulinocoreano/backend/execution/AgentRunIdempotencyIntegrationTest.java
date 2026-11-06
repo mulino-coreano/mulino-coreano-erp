@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.mulinocoreano.backend.interfacepackage.CreateRunRequest;
 import com.mulinocoreano.backend.interfacepackage.RunService;
 import com.mulinocoreano.backend.planning.ReplenishmentDemoFixture;
+import com.mulinocoreano.backend.security.LocalHumanRequest;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,7 +45,8 @@ import java.util.Map;
             "spring.flyway.init-sqls=CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public",
             "spring.datasource.hikari.schema=agent_run_idempotency_it",
             "spring.main.allow-bean-definition-overriding=true",
-            "mulino.local-auth.service-secret=local-test-secret"
+            "mulino.local-auth.service-secret=local-test-secret",
+            LocalHumanRequest.SECRET_PROPERTY
         })
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
@@ -90,7 +92,7 @@ class AgentRunIdempotencyIntegrationTest {
         var created =
                 mvc.perform(
                                 post("/api/v1/cases")
-                                        .header("X-Mulino-Local-Role", "MANAGER")
+                                        .with(LocalHumanRequest.as("MANAGER"))
                                         .contentType(MediaType.APPLICATION_JSON)
                                         .content("{\"objective\":\"replenish\"}"))
                         .andReturn()
@@ -220,7 +222,11 @@ class AgentRunIdempotencyIntegrationTest {
                                         .contentType(MediaType.APPLICATION_JSON)
                                         .content(
                                                 mapper.writeValueAsString(
-                                                        Map.of("workerId", workerId))))
+                                                        Map.of(
+                                                                "workerId",
+                                                                workerId,
+                                                                "runtime",
+                                                                "CODEX"))))
                         .andReturn()
                         .getResponse();
         assertThat(response.getStatus()).isEqualTo(200);

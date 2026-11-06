@@ -66,23 +66,26 @@ public class RunExecutionService {
         claimTransaction.setTimeout(30);
     }
 
-    public Optional<Claim> claim(String workerId) {
+    public Optional<Claim> claim(String workerId) { return claim(workerId, runs.defaultRuntime()); }
+
+    public Optional<Claim> claim(String workerId, String runtime) {
+        if (!Set.of("CODEX", "CLAUDE").contains(runtime == null ? "" : runtime)) throw bad("Unsupported runtime");
         required(workerId, "workerId", 200);
         for (int attempt = 0; ; attempt++) {
             try {
-                return claimTransaction.execute(status -> claimLocked(workerId));
+                return claimTransaction.execute(status -> claimLocked(workerId, runtime));
             } catch (RuntimeException failure) {
                 if (attempt >= 3 || !retryable(failure)) throw failure;
             }
         }
     }
 
-    private Optional<Claim> claimLocked(String workerId) {
+    private Optional<Claim> claimLocked(String workerId, String runtime) {
         recoverExpired();
         dispatcher.dispatchScheduledIfActionable();
         repository.lockWorkerClaim(workerId);
         if (repository.hasRunningLease(workerId)) throw conflict("WORKER_ALREADY_LEASED");
-        var candidates = repository.lockNextQueuedCandidates();
+        var candidates = repository.lockNextQueuedCandidates(runtime);
         if (candidates.isEmpty()) return Optional.empty();
         var row = leases.lock(candidates.getFirst());
         if (followupRepository.isManagedWork(row.workId())) {
@@ -314,7 +317,7 @@ public class RunExecutionService {
         repository.markReady(row.workId());
         var retry =
                 runs.createRun(
-                        new CreateRunRequest(row.agentKey(), row.caseRef(), row.workRef(), "CODEX"),
+                        new CreateRunRequest(row.agentKey(), row.caseRef(), row.workRef(), runs.defaultRuntime()),
                         null);
         repository.markRetry(retry.runRef(), row.id());
         if (!"QUEUED".equals(retry.status())) {

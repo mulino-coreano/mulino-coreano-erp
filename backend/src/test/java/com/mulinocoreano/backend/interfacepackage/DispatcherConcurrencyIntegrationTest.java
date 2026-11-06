@@ -215,7 +215,7 @@ class DispatcherConcurrencyIntegrationTest {
                 RunSchedulingRepository scheduling, ObjectMapper objectMapper,
                 ContextSnapshotService contextSnapshotService,
                 CountDownLatch schedulingReached, CountDownLatch continueScheduling) {
-            super(scheduling, objectMapper, contextSnapshotService);
+            super(scheduling, objectMapper, contextSnapshotService, "CODEX");
             this.schedulingReached = schedulingReached;
             this.continueScheduling = continueScheduling;
         }

@@ -29,17 +29,23 @@ public class RunService {
     private static final Set<String> SUPPORTED_RUNTIMES = Set.of("CLAUDE", "CODEX");
 
     private final RunSchedulingRepository repository;
+    private final String defaultRuntime;
     private final ObjectMapper objectMapper;
     private final ContextSnapshotService contextSnapshotService;
 
     public RunService(
             RunSchedulingRepository repository,
             ObjectMapper objectMapper,
-            ContextSnapshotService contextSnapshotService) {
+            ContextSnapshotService contextSnapshotService,
+            @org.springframework.beans.factory.annotation.Value("${agent.runtime.default:CODEX}") String defaultRuntime) {
+        if (!SUPPORTED_RUNTIMES.contains(defaultRuntime)) throw new IllegalArgumentException("Unsupported agent runtime");
+        this.defaultRuntime = defaultRuntime;
         this.repository = repository;
         this.objectMapper = objectMapper;
         this.contextSnapshotService = contextSnapshotService;
     }
+
+    public String defaultRuntime() { return defaultRuntime; }
 
     @Transactional
     public RunDto createRun(CreateRunRequest request, Long triggerEventId) {

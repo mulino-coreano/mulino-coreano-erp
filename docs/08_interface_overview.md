@@ -341,8 +341,12 @@ npm start
   `servers`는 요청 서버 주소로 같으며 Swagger UI 설정은 `/api-docs`를 쓴다.
 
 로컬 실행은 기존 DB 환경 변수에 `SPRING_PROFILES_ACTIVE=local`을
-추가한다. 역할 헤더는 `X-Mulino-Local-Role: MANAGER`처럼 보낸다.
-이는 누구나 보낼 수 있는 PoC 신원이며 외부 사용자 인증이 아니다.
+추가한다. 역할 헤더는 `X-Mulino-Local-Role: MANAGER`처럼 보내고,
+백엔드의 `MULINO_LOCAL_HUMAN_SECRET`과 같은 값을
+`X-Mulino-Local-Human`에 함께 보낸다. secret이 설정되지 않았거나
+없거나 틀리면 역할 헤더를 인정하지 않고 401이다. 모델 컨테이너도
+백엔드에 닿으므로 이 secret은 호스트의 인간 클라이언트만 가진다.
+이는 PoC 신원이며 외부 사용자 인증이 아니다.
 기존 Event·Run 경로는 foundation 동작을 유지한다.
 
 검증 환경은 Java 21, PostgreSQL 18.6의 별도 폐기용 DB다.

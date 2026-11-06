@@ -22,6 +22,14 @@ const API_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout >
   : 10000;
 const CASE_STATUSES = new Set(["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"]);
 
+// The local backend accepts the role header only together with the host-only human secret,
+// so a model container that reaches the same backend cannot act as a human.
+function humanHeaders(headers = {}) {
+  const secret = process.env.MULINO_LOCAL_HUMAN_SECRET;
+  return { ...headers, "X-Mulino-Local-Role": process.env.MULINO_LOCAL_ROLE ?? "OPERATOR",
+    ...(secret ? { "X-Mulino-Local-Human": secret } : {}) };
+}
+
 async function api(path, opts = {}) {
   const method = (opts.method ?? "GET").toUpperCase();
   try {
@@ -86,6 +94,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object",
         properties: {
+          requestKey: { type: "string", minLength: 1, maxLength: 200 },
+          replenishment: { type: "object", additionalProperties: false,
+            properties: { productSkus: { type: "array", minItems: 1, maxItems: 100, items: { type: "string", minLength: 1, maxLength: 50 } },
+              warehouseId: { type: "integer", minimum: 1 }, targetDate: { type: "string", format: "date" } },
+            required: ["productSkus", "warehouseId"] },
           objective: { type: "string", description: "Business objective, e.g. '10월 이전 Amaretti 품절 방지'" },
           channel: {
             type: "string",
@@ -130,7 +143,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         requestKey = args.requestKey ?? randomUUID();
         if (typeof requestKey !== "string" || !requestKey.trim() || requestKey.length > 200) throw new Error("Invalid requestKey");
       }
-      return await callConversationTool(humanTool, args, (path, opts = {}) => api(path, {...opts, headers: {...opts.headers, "X-Mulino-Local-Role": process.env.MULINO_LOCAL_ROLE ?? "OPERATOR"}}), requestKey);
+      return await callConversationTool(humanTool, args, (path, opts = {}) => api(path, {...opts, headers: humanHeaders(opts.headers)}), requestKey);
     }
     switch (name) {
       case "whoami":
@@ -139,7 +152,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const ref = name === "get_case" ? args.caseRef : args.planRef;
         if (name !== "whoami" && (typeof ref !== "string" || !ref.trim())) throw new Error("참조가 필요합니다.");
         const path = name === "whoami" ? "/me" : (name === "get_case" ? "/cases/" : "/plans/") + encodeURIComponent(ref);
-        const data = await api(path, {headers: {"X-Mulino-Local-Role": process.env.MULINO_LOCAL_ROLE ?? "OPERATOR"}});
+        const data = await api(path, {headers: humanHeaders()});
         return {content: [{type: "text", text: JSON.stringify(data)}], structuredContent: data};
       }
       case "ask_inventory": {
@@ -167,9 +180,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "create_case": {
         const data = await api("/cases", {
           method: "POST",
-          headers: { "Content-Type": "application/json",
-            "X-Mulino-Local-Role": process.env.MULINO_LOCAL_ROLE ?? "OPERATOR" },
-          body: JSON.stringify({ objective: args.objective, channel: args.channel ?? "CHAT" }),
+          headers: humanHeaders({ "Content-Type": "application/json",
+            ...(args.requestKey ? { "Idempotency-Key": args.requestKey } : {}) }),
+          body: JSON.stringify({ objective: args.objective, channel: args.channel ?? "CHAT", ...(args.replenishment ? { replenishment: args.replenishment } : {}) }),
         });
         return {
           content: [

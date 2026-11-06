@@ -117,7 +117,7 @@ class RunServiceIntegrationTest {
                 throw new IllegalStateException("forced reconstruction failure");
             }
         };
-        RunService failingRunService = new RunService(scheduling, objectMapper, failingBuilder);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingBuilder, "CODEX");
 
         RunDto failed = failingRunService.createRun(request(fixture), null);
 
@@ -241,7 +241,7 @@ class RunServiceIntegrationTest {
                 throw new IllegalArgumentException("context source unavailable");
             }
         };
-        RunService failingRunService = new RunService(scheduling, objectMapper, failingBuilder);
+        RunService failingRunService = new RunService(scheduling, objectMapper, failingBuilder, "CODEX");
 
         RunDto failed = failingRunService.createRun(request(fixture), null);
 
@@ -276,7 +276,7 @@ class RunServiceIntegrationTest {
                 return super.build(caseRef);
             }
         };
-        RunService retryingRunService = new RunService(scheduling, objectMapper, failsOnce);
+        RunService retryingRunService = new RunService(scheduling, objectMapper, failsOnce, "CODEX");
         AtomicReference<RunDto> result = new AtomicReference<>();
 
         assertThatCode(() -> result.set(retryingRunService.createRun(request(fixture), null)))
@@ -423,7 +423,7 @@ class RunServiceIntegrationTest {
                 throw new IllegalStateException(message);
             }
         };
-        return new RunService(scheduling, objectMapper, failingBuilder)
+        return new RunService(scheduling, objectMapper, failingBuilder, "CODEX")
                 .createRun(request(fixture), null);
     }
 
