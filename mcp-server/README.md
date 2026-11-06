@@ -25,3 +25,13 @@ npm start   # Mulino Coreano backend (localhost:8080) 기본 상대
 - 대화는 인터페이스이고, Case가 업무의 영속 표면입니다.
 - QUERY는 자동으로 업무가 되지 않습니다 — 사용자가 명시할 때만 ACT로 전환합니다.
 - 외부 대표 권한(이메일 발송 등)은 인간에게 있으며, 이 서버에는 포함하지 않았습니다.
+
+## 로컬 인간 역할 (#47)
+
+`create_case`는 `MULINO_LOCAL_ROLE`을 `X-Mulino-Local-Role` 헤더로
+보낸다. 기본값은 OPERATOR다. local 백엔드는 OPERATOR·MANAGER의
+접수만 허용한다. 조회 도구에는 역할 헤더를 보내지 않는다.
+백엔드는 `SPRING_PROFILES_ACTIVE=local`로 기동한다.
+이 헤더는 로컬 PoC 전용이며 외부 인증을 대체하지 않는다.
+MCP의 키 지정 재시도는 아직 제공하지 않는다. REST 호출에서만
+선택적인 `Idempotency-Key`를 사용할 수 있다.

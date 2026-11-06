@@ -17,10 +17,12 @@ public class InterfaceController {
 
     private final InterfaceService service;
     private final DispatcherService dispatcher;
+    private final CaseIntakeService intake;
 
-    public InterfaceController(InterfaceService service, DispatcherService dispatcher) {
+    public InterfaceController(InterfaceService service, DispatcherService dispatcher, CaseIntakeService intake) {
         this.service = service;
         this.dispatcher = dispatcher;
+        this.intake = intake;
     }
 
     // ------------------------------------------------------------ ASK
@@ -31,8 +33,9 @@ public class InterfaceController {
 
     // ------------------------------------------------------------ ACT
     @PostMapping("/cases")
-    public CaseDto createCase(@Valid @RequestBody CreateCaseRequest req) {
-        return service.createCase(req);
+    public CaseDto createCase(@Valid @RequestBody CreateCaseRequest req,
+                              @RequestHeader(value = "Idempotency-Key", required = false) String key) {
+        return intake.createCase(req, key);
     }
 
     @GetMapping("/cases")

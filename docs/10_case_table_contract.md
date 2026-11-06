@@ -49,6 +49,13 @@ DONE/CANCELLED WI를 디스패처가 다시 실행하지 않는 보호도 별도
 
 `claims`와 `evidence`의 생성 API도 현재 없다. 다만 이미 존재하는 Event payload 처리 경로는 검증된 `claimId`와 `evidenceRef`를 같은 Case인지 확인한 뒤 `claim_evidence`를 INSERT한다. 이는 Claim/Evidence 원본 생성 API가 생겼다는 뜻이 아니며, 연결 관계를 보강하는 현재 동작이다.
 
+#47은 이 foundation 위에 `V18__request_idempotency.sql`을 추가한다.
+`request_idempotency`는 `(scope, request_key)`를 키로 요청 hash와 응답을
+보관하며 별도 Case FK는 없다. 인간별 요청 재전송을 같은 Case 응답으로
+돌려주기 위한 기록이다. Case 생성과 같은 트랜잭션에서 커밋한다.
+`local`에서 인간이 생성한 Case는 `opened_by_user_id`와 USER 참여자를
+기록하고, 기본 프로필의 무인증 Case는 기존처럼 opener가 NULL이다.
+
 ## 2. 13개 테이블 계약
 
 다음 표의 “생성/변경 코드”는 #18 기준 현재 repository에서 확인되는 경로다.
@@ -58,8 +65,8 @@ DONE/CANCELLED WI를 디스패처가 다시 실행하지 않는 보호도 별도
 |---|---|---|---|---|
 | `channels` | 외부 채널과 Case/Event/Evidence의 출처 식별 | `V17` 기본 채널 seed; Case 생성 시 기본 채널 조회 | 채널 thread와 Case가 별도 생명주기를 가짐 | 유지. 현재 Case origin은 nullable |
 | `agents` | 논리 에이전트 정체성과 활성 상태 | `V17` Orchestrator seed; Run/배정 조회 | 한 에이전트가 여러 Case/Run에 참여하며 Run과 분리됨 | 유지 |
-| `cases` | 영속적인 업무 목표와 종료 상태 | `InterfaceService.createCase()` INSERT; 조회만 별도 제공 | 여러 WI, Event, Run, 근거의 상위 업무 경계 | 유지 |
-| `case_participants` | Case의 Agent/User 참여자와 역할 | 현재 전용 API 없음; Case 생성 시 Orchestrator 1건 INSERT | 참여는 WI 담당·Run 실행과 다른 Case 단위 관계 | 유지. `AGENT`/`USER`만 허용 |
+| `cases` | 영속적인 업무 목표와 종료 상태 | `CaseIntakeService.createCase()` INSERT; 조회만 별도 제공 | 여러 WI, Event, Run, 근거의 상위 업무 경계 | 유지 |
+| `case_participants` | Case의 Agent/User 참여자와 역할 | 현재 전용 API 없음; Case 생성 시 Orchestrator 및 인증된 인간 참여자 INSERT | 참여는 WI 담당·Run 실행과 다른 Case 단위 관계 | 유지. `AGENT`/`USER`만 허용 |
 | `work_items` | Case 목표를 수행하는 구체적 의무 | Case 생성 시 초기 WI INSERT; Dispatcher가 WAITING→READY; Run 생성은 READY 검증 | 하나의 Case에 병렬 의무가 있고 담당·기한·대기가 독립적으로 변함 | 유지 |
 | `waiting_conditions` | WI가 실행을 멈추는 조건과 해소 Event | 생성 API 없음; Dispatcher가 조건을 SATISFIED로 변경 | 한 WI에 여러 조건이 있고 마지막 ACTIVE 조건까지 독립 해소됨 | 유지 |
 | `events` | 외부 사실·상태 변화를 append-only로 기록 | `DispatcherService.ingest()` 또는 내부 dispatch Event INSERT | 사실은 수정 대신 새 사실로 보정하며 여러 Case/WI에 영향 가능 | 유지. immutable 계약 필수 |

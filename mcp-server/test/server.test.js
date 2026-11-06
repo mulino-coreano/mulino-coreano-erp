@@ -152,3 +152,25 @@ function within(promise, timeoutMs, message) {
     new Promise((_, reject) => setTimeout(() => reject(new Error(message)), timeoutMs)),
   ]);
 }
+
+for (const role of [undefined, "MANAGER"]) {
+  test(`create_case forwards the configured human role (${role ?? "default"})`, async () => {
+    let headers;
+    const apiServer = http.createServer((req, res) => {
+      headers = req.headers;
+      req.resume();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ caseRef: "CASE-test", title: "work", status: "OPEN" }));
+    });
+    const apiBase = await listen(apiServer);
+    resources.push(() => closeServer(apiServer));
+    const env = { MULINO_API_BASE: `${apiBase}/api/v1` };
+    if (role) env.MULINO_LOCAL_ROLE = role;
+    const client = await connectClient(env);
+    const result = await client.callTool({ name: "create_case", arguments: { objective: "work" } });
+    assert.equal(result.isError, undefined);
+    assert.equal(headers["x-mulino-local-role"], role ?? "OPERATOR");
+    assert.equal(headers.authorization, undefined);
+    assert.equal(headers["x-mulino-local-service"], undefined);
+  });
+}
