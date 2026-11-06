@@ -22,23 +22,31 @@ public class RequestIdempotency {
     public RequestIdempotency(JdbcClient jdbc, ObjectMapper mapper) { this.jdbc = jdbc; this.mapper = mapper; }
 
     public CaseDto execute(String scope, String key, Object request, Supplier<CaseDto> action) {
+        return mapper.treeToValue(executeJson(scope, key, request, action), CaseDto.class);
+    }
+
+    public tools.jackson.databind.JsonNode executeJson(String scope, String key, Object request, Supplier<?> action) {
         if (key.isBlank() || key.length() > 200) throw new InvalidInterfaceRequestException("Invalid Idempotency-Key");
         if (!TransactionSynchronizationManager.isActualTransactionActive()) throw new IllegalStateException("Transaction required");
         String hash = hash(mapper.writeValueAsString(request));
-        jdbc.sql("SELECT pg_advisory_xact_lock(hashtext(:scope),hashtext(:key))")
-                .param("scope", scope).param("key", key).query((rs, row) -> true).single();
+        coordinate(scope, key);
         var saved = jdbc.sql("SELECT request_hash,response::text FROM request_idempotency WHERE scope=:scope AND request_key=:key")
                 .param("scope", scope).param("key", key)
                 .query((rs, row) -> new Receipt(rs.getString(1), rs.getString(2))).optional();
         if (saved.isPresent()) {
             if (!saved.get().hash().equals(hash)) throw new ResponseStatusException(HttpStatus.CONFLICT, "Key already used for different input");
-            return mapper.readValue(saved.get().response(), CaseDto.class);
+            return mapper.readTree(saved.get().response());
         }
-        CaseDto result = action.get();
+        Object result = action.get();
         jdbc.sql("INSERT INTO request_idempotency(scope,request_key,request_hash,response) VALUES (:scope,:key,:hash,CAST(:response AS jsonb))")
                 .param("scope", scope).param("key", key).param("hash", hash)
                 .param("response", mapper.writeValueAsString(result)).update();
-        return result;
+        return mapper.valueToTree(result);
+    }
+    public void coordinate(String scope, String key) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) throw new IllegalStateException("Transaction required");
+        jdbc.sql("SELECT pg_advisory_xact_lock(hashtext(:scope),hashtext(:key))")
+                .param("scope", scope).param("key", key).query((rs, row) -> true).single();
     }
     private static String hash(String input) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(input.getBytes(StandardCharsets.UTF_8))); }

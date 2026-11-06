@@ -174,3 +174,19 @@ for (const role of [undefined, "MANAGER"]) {
     assert.equal(headers["x-mulino-local-service"], undefined);
   });
 }
+
+for (const [name,args,url] of [["whoami",{},"/me"],["get_case",{caseRef:"CASE-a"},"/cases/CASE-a"],["get_plan",{planRef:"PLAN-a"},"/plans/PLAN-a"]]) {
+  test(`${name} calls only the human read endpoint`, async () => {
+    const apiServer = http.createServer((req,res) => {
+      assert.equal(req.url,"/api/v1"+url);
+      assert.equal(req.method,"GET");
+      assert.equal(req.headers["x-mulino-local-role"],"VIEWER");
+      assert.equal(req.headers.authorization,undefined);
+      assert.equal(req.headers["x-mulino-local-service"],undefined);
+      res.writeHead(200,{"Content-Type":"application/json"});res.end('{"status":"OPEN"}');
+    });
+    const apiBase=await listen(apiServer);resources.push(()=>closeServer(apiServer));
+    const client=await connectClient({MULINO_API_BASE:apiBase+"/api/v1",MULINO_LOCAL_ROLE:"VIEWER"});
+    const result=await client.callTool({name,arguments:args});assert.equal(result.isError,undefined);
+  });
+}

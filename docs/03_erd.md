@@ -591,3 +591,12 @@ erDiagram
 
 `request_hash`는 SHA-256 64자리이며 `response`는 JSON object다.
 독립 DDL은 `database/ddl/10_request_idempotency.sql`이다.
+
+### 계획 데이터 (#48, V20)
+
+`measurement_units`, `planning_data_guard`, `bom_versions`, `bom_components`,
+`supplier_material_terms`, `production_product_inputs`, `planning_policies`,
+`planning_cases`, `replenishment_plans`를 추가한다. 계획은 Case·창고에
+속하며 선택적인 원본 Work Item FK를 둔다. 인간 계산에서는 이 FK가 NULL이다.
+BOM과 공급 조건은 ERP 원료·제품·공급처를 참조한다. 기존 LOT 사슬은 유지한다.
+정의는 `database/ddl/12_planning_data.sql`을 따른다.
