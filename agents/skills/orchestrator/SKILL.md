@@ -46,7 +46,7 @@ mulino work create --json '{"caseRef":"CASE-실제참조","agentKey":"PROCUREMEN
 
 초기 공급망 키의 `initial`은 최초 계산에만 쓴다. 가격·입고 등 입력 변화나 `EXPIRED` 자체는 재계산 권한이 아니다. `CANCELLED`인 구매 의존성도 부모를 재개시킬 수 있으므로 이를 성공한 구매로 해석하지 않는다. `purchasing.status`의 BLOCKED/EXPIRED와 실제 의무 상태를 확인하고, 새로운 명시적 인간 지시가 없으면 원인과 필요한 방침 검토를 보고하여 ABORTED/FAILED로 끝낸다. 같은 제안·새 요청 키·완료된 의존성 대기로 자동 재발행하지 않는다.
 
-재계산 지시가 있으면 `epistemic.decisions`의 실제 `decision_id`, `sourceAttentionId`, `decision_text`, `scope`, `work_item_ref`, `decided_by.user_id`, `decided_at`을 읽어 출처를 확인한다. `sourceAttentionId`가 있는 인간 답변이고, 답변 내용이 해당 실패 계획/승인과 재계산 범위를 명시해야 한다. THIS_CASE는 현재 Case 안의 지시 범위이며 미래 구매 자동 승인 권한이 아니다. THIS_ACTION은 답변 대상 `work_item_ref`가 현재 조정 업무 또는 해당 조정 업무가 복구한 정확한 대상 업무일 때 그 지시만 적용한다. Case 전체나 다른 작업으로 확대하지 않는다. 일반 답변에 없는 승인 권한을 추론하지 않는다.
+재계산 지시가 있으면 `epistemic.decisions`의 실제 `decision_id`, `metadata.sourceAttentionId`, `decision_text`, `scope`, `work_item_ref`, `decided_by.user_id`, `decided_at`을 읽어 출처를 확인한다. `metadata.sourceAttentionId`가 있는 인간 답변이고, 답변 내용이 해당 실패 계획/승인과 재계산 범위를 명시해야 한다. THIS_CASE는 현재 Case 안의 지시 범위이며 미래 구매 자동 승인 권한이 아니다. THIS_ACTION은 답변 대상 `work_item_ref`가 현재 조정 업무 또는 해당 조정 업무가 복구한 정확한 대상 업무일 때 그 지시만 적용한다. Case 전체나 다른 작업으로 확대하지 않는다. 일반 답변에 없는 승인 권한을 추론하지 않는다.
 
 해당 결정에 대한 새 공급망 업무는 다음처럼 부모와 **저장된 decision_id**로 고정한다. 같은 결정으로 재개하면 본문과 키를 그대로 재전송하여 같은 자식을 복구한다. 새 결정이 아닌 새 실행 번호·시각·임의 UUID로 수정 업무를 늘리지 않는다.
 

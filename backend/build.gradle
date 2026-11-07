@@ -52,13 +52,19 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 
+    testImplementation platform('io.cucumber:cucumber-bom:8.0.1')
+    testImplementation 'io.cucumber:cucumber-java'
+    testImplementation 'io.cucumber:cucumber-spring'
+    testImplementation 'io.cucumber:cucumber-junit-platform-engine'
+    testImplementation 'org.junit.platform:junit-platform-suite'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
 
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform { excludeTags 'scenario' }
+    systemProperty 'cucumber.filter.tags', '@do-not-tag-scenarios-with-this--unit-test-task-must-run-zero'
 }
 
 tasks.register('generateJooq', JavaExec) {
@@ -81,3 +87,58 @@ tasks.register('generateJooq', JavaExec) {
 tasks.named('compileJava') {
     dependsOn tasks.named('generateJooq')
 }
+
+def scenarioTask = { String taskName, String tags, String agent, boolean dryRun, List<String> extraIncludes = [] ->
+    tasks.register(taskName, Test) {
+        group = 'verification'
+        description = "Cucumber scenarios: ${tags}"
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath
+        include '**/ScenarioSuite.class'
+        extraIncludes.each { include it }
+        useJUnitPlatform()
+        systemProperty 'cucumber.filter.tags', project.findProperty('scenarioTags') ? "(${tags}) and (${project.property('scenarioTags')})" : tags
+        systemProperty 'mulino.scenario.agent', agent
+        systemProperty 'mulino.scenario.route-only', project.findProperty('uatRouteOnly') ?: 'false'
+        // Cucumber reports undefined pending steps as failures even in dry-run mode.
+        // Only those expected failures are tolerated; discovery/configuration failures still fail.
+        if (dryRun) {
+            systemProperty 'cucumber.execution.dry-run', 'true'
+            ignoreFailures = true
+            doLast {
+                def cases = []
+                fileTree(reports.junitXml.outputLocation.get().asFile).matching { include 'TEST-*.xml' }.each { report ->
+                    def doc = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(report)
+                    def tests = doc.getElementsByTagName('testcase')
+                    for (int i=0; i<tests.length; i++) {
+                        def testcase = tests.item(i)
+                        if (testcase.getElementsByTagName('skipped').length > 0) continue
+                        if (!testcase.getAttribute('classname').contains('qm-inbound-inspection.feature') &&
+                            !testcase.getAttribute('classname').contains('batch-recall.feature'))
+                            throw new GradleException('Non-pending process entered pendingScenarios')
+                        def failures = testcase.getElementsByTagName('failure')
+                        for (int j=0; j<failures.length; j++) {
+                            if (failures.item(j).getAttribute('type') != 'io.cucumber.junit.platform.engine.UndefinedStepException')
+                                throw new GradleException('Unexpected pending scenario failure')
+                        }
+                        cases.add(testcase.getAttribute('name'))
+                    }
+                }
+                if (cases.isEmpty()) throw new GradleException('No pending scenarios were discovered')
+                logger.lifecycle('미구현 시나리오 (#26 QM / #27 리콜):')
+                cases.each { logger.lifecycle("  - ${it}") }
+            }
+        }
+        outputs.upToDateWhen { false }
+        testLogging { events 'passed', 'failed', 'skipped'; showStandardStreams = true }
+    }
+}
+// BackendRestartRecoveryTest proves goal 4's one behaviour Cucumber cannot express (the real
+// Spring application context restarting while a purchase approval is PENDING). It is a plain
+// JUnit class tagged "scenario", not a Cucumber pickle, so it never matches cucumber.filter.tags
+// and must be added to sitTest's own include pattern; uatTest and pendingScenarios deliberately
+// leave it out since a context restart is scripted-agent infrastructure, not a live-model or
+// dry-run concern.
+scenarioTask('sitTest', '@sit and not @pending', 'scripted', false, ['**/BackendRestartRecoveryTest.class'])
+scenarioTask('uatTest', '@uat and not @pending', 'live', false)
+scenarioTask('pendingScenarios', '@pending', 'scripted', true)

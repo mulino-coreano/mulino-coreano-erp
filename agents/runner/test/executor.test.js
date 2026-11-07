@@ -92,11 +92,23 @@ test('host human secret never reaches the model container of either runtime', t 
 test('Claude Code result event is the final structured result and its usage is kept', async () => {
   const handle = executor('claude').start(claim);
   assert.deepEqual(await handle.result, { outcome: 'DONE', summary: 'Exact objective', resultRef: 'PLAN-7' });
-  assert.deepEqual(handle.usage, { costUsd: 0.12, inputTokens: 10, outputTokens: 20, turns: 3 });
+  assert.deepEqual(handle.usage, { resolvedModel: 'claude-sonnet-5', costUsd: 0.12, inputTokens: 10, outputTokens: 20, turns: 3 });
 });
 
 test('Claude Code error result fails the Run', async () => {
   await assert.rejects(executor('claude-error').start(claim).result, error => error.code === 'MODEL_PROCESS_FAILED');
+});
+
+test('Claude Code result with native subagent models resolves the requested model, otherwise the costliest one', async () => {
+  for (const [requested, resolved] of [['claude-sonnet-5', 'claude-sonnet-5'], ['sonnet', 'claude-opus-5'], [undefined, 'claude-opus-5']]) {
+    const handle = Object.assign(executor('claude-subagents'), { model: requested }).start(claim);
+    assert.equal((await handle.result).outcome, 'DONE');
+    assert.equal(handle.usage.resolvedModel, resolved);
+    assert.equal(handle.usage.costUsd, 0.25);
+  }
+  const unpriced = executor('claude-unpriced-subagents').start(claim);
+  await unpriced.result;
+  assert.equal(unpriced.usage.resolvedModel, undefined);
 });
 
  test('Codex turn usage is recorded exactly without inventing cost', async () => {
